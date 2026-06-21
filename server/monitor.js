@@ -105,6 +105,52 @@ function isLiveRigCurrentlyRented(rig) {
 }
 
 // ==========================
+//  ADDED: Rental Validation Functions
+// ==========================
+
+/**
+ * Checks if a rental is actually mining (has real data)
+ * Filters out ghost rentals that are "rented" but not mining
+ */
+function isRealRental(rental, info) {
+  if (!rental || !info) return false;
+  
+  // Check for actual hashrate data
+  const currentHash = parseFloat(info.hashrate?.current || 0);
+  const averageHash = parseFloat(info.hashrate?.average || 0);
+  const advertisedHash = parseFloat(info.hashrate?.advertised || 0);
+  const paidAmount = parseFloat(info.price?.paid || 0);
+  const efficiency = parseFloat(info.percent || 0);
+  
+  // A real rental must have at least one of these:
+  const hasHashrate = currentHash > 0 || averageHash > 0 || advertisedHash > 0;
+  const hasPaid = paidAmount > 0;
+  const hasEfficiency = efficiency > 0;
+  
+  // Check if the rental has a valid ID
+  const hasValidId = rental.id || rental.rentalid || rental.rental_id;
+  
+  // Return true if the rental is actually doing something
+  return (hasHashrate || hasPaid || hasEfficiency) && hasValidId;
+}
+
+/**
+ * Gets the real rental count from a list of rentals
+ */
+function getRealRentalCount(rentals) {
+  if (!Array.isArray(rentals)) return 0;
+  
+  let count = 0;
+  for (const rental of rentals) {
+    const info = extractRentalInfo(rental);
+    if (isRealRental(rental, info)) {
+      count++;
+    }
+  }
+  return count;
+}
+
+// ==========================
 //  Global State (Persisted in DB)
 // ==========================
 
@@ -121,10 +167,9 @@ async function maybeDelay(key) {
 /** Retrieves the global telegram notification status from the DB */
 export async function getTelegramStatus() {
   try {
-    // Defensive check: ensure table exists
     await dbRunAsync("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)");
     const row = await dbGetAsync("SELECT value FROM settings WHERE key = 'telegram_enabled'");
-    return { enabled: row ? row.value === 'true' : true }; // Default to true
+    return { enabled: row ? row.value === 'true' : true };
   } catch (err) {
     console.warn('[monitor:db] Failed to fetch telegram status:', err.message);
     return { enabled: true };
@@ -146,20 +191,18 @@ export async function setTelegramStatus(enabled) {
 //  Constants
 // ==========================
 
-// Local aliases for convenience
 const { 
   ALERT_COOLDOWN_MS, 
   WARNING_RIG_THRESHOLD, 
 } = TELEGRAM_CONFIG;
 
-const RENTED_HEARTBEAT_MS = 15 * 60 * 1000; // Force heartbeat summary to every 15 minutes
+const RENTED_HEARTBEAT_MS = 15 * 60 * 1000;
 
-// In‑memory state
-const lastAlertTimes = new Map([['global_summary', Date.now()]]);   // key → timestamp
-const lastRigStates = new Map();    // rigId → status string
-const monitorNhPriceCache = new Map(); // algo:client -> {price, unit}
-const monitorNhPriceErrorCache = new Map(); // algo:client -> {message, ts}
-const monitorNhOrdersCache = new Map(); // client -> { orders, ts }
+const lastAlertTimes = new Map([['global_summary', Date.now()]]);
+const lastRigStates = new Map();
+const monitorNhPriceCache = new Map();
+const monitorNhPriceErrorCache = new Map();
+const monitorNhOrdersCache = new Map();
 const MONITOR_NH_ORDERS_TTL = 60 * 1000;
 
 // ==========================
@@ -204,17 +247,14 @@ function extractArray(payload, keys = ['rentals', 'rigs', 'list', 'result', 'ite
   if (Array.isArray(payload)) return payload;
   if (!payload || typeof payload !== 'object') return [];
 
-  // Direct key match
   for (const key of keys) {
     if (Array.isArray(payload[key])) return payload[key];
     if (payload.data && Array.isArray(payload.data[key])) return payload.data[key];
   }
 
-  // Direct array under .data
   if (Array.isArray(payload.data)) return payload.data;
   if (payload.rentals && Array.isArray(payload.rentals)) return payload.rentals;
 
-  // Recursive lookup inside payload.data (one level deep)
   if (payload.data && typeof payload.data === 'object') {
     return extractArray(payload.data, keys);
   }
@@ -441,7 +481,6 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
   let warningAll = 0;
   let onlineAll = 0;
 
-  // Proactively ensure tables exist to prevent startup race conditions.
   await new Promise((resolve) => {
     db.serialize(() => {
       db.run(`CREATE TABLE IF NOT EXISTS rentals (
@@ -454,7 +493,6 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
       db.run(`CREATE TABLE IF NOT EXISTS rental_history (id TEXT PRIMARY KEY, start_time INTEGER)`,
         (err) => { if (err) console.error(`[monitor:db] Failed to create rental_history table: ${err.message}`); });
 
-      // Cleanup history older than 2 days
       db.run("DELETE FROM rental_history WHERE start_time < ?", [Date.now() - 172800000], () => resolve());
     });
   });
@@ -490,7 +528,6 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
     };
 
     try {
-      // Parallelize base data fetching for the account to maximize throughput
       const [rigsRes, boughtRes, soldRes] = await Promise.all([
         mrrApiCall({ endpoint: '/rig/mine', clientNameRaw: acct }),
         mrrApiCall({ endpoint: '/rental', query: { type: 'bought' }, clientNameRaw: acct }),
@@ -519,7 +556,6 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
           const isWarning = status.includes('warning');
           const isAvailable = !isRented && !isDisabled && onlineFlag && (status.includes('available') || status.includes('online') || status === '');
 
-          // ----- FIXED: currentStatus properly computed -----
           const currentStatus = isOffline ? 'OFFLINE'
                               : isDisabled ? 'DISABLED'
                               : isWarning  ? 'WARNING'
@@ -530,7 +566,6 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
           const isStatusChanged = prevStatus !== undefined && prevStatus !== currentStatus;
           const isCriticalChange = currentStatus === 'WARNING';
 
-          // Only alert on warning if the request actually succeeded (not a 401/Auth error)
           if (isStatusChanged && isCriticalChange && rigsRes.statusCode === 200) {
             const rigAlertKey = `alert_${rigIdKey}_${currentStatus}`;
             const lastRigAlert = lastAlertTimes.get(rigAlertKey) || 0;
@@ -562,7 +597,6 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
           }
         }
 
-        // High warning count alert
         if (warningCount >= WARNING_RIG_THRESHOLD) {
           const alertKeyWarn = `${acct}_warn`;
           const lastWarnAlert = lastAlertTimes.get(alertKeyWarn) || 0;
@@ -599,7 +633,6 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
 
       const soldRentalsRaw = extractArray(soldRes.data || {}).map(r => ({ ...r, __rentalSide: 'sold' }));
       const boughtRentalsRaw = extractArray(boughtRes.data || {}).map(r => ({ ...r, __rentalSide: 'bought' }));
-      // Correctly combine both bought and sold rentals for a complete picture.
       const allRentalsRaw = [...boughtRentalsRaw, ...soldRentalsRaw];
       console.log(`[monitor:${acct}] rentals fetched: sold=${soldRentalsRaw.length}, bought=${boughtRentalsRaw.length}, rig-rented-flags=${harvestedRentalIds.size}`);
 
@@ -619,7 +652,6 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
         }
       });
 
-      // Harvest missing rental details
       const missingIds = Array.from(harvestedRentalIds).filter(hid => !rentalsMap.has(hid));
       if (missingIds.length > 0) {
         await Promise.all(missingIds.map(async (hid) => {
@@ -635,7 +667,6 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
         }));
       }
 
-      // Enrich with rig data where rental details are missing
       for (const [rid, rig] of rigLookupByRentalId.entries()) {
         if (!rentalsMap.has(rid)) {
           rentalsMap.set(rid, {
@@ -653,30 +684,28 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
         Array.from(rentalsMap.values()).map(r => [String(r?.id || r?.rentalid || r?.rental_id || ''), r])
       ).values()).filter(r => r && (r.id || r.rentalid || r.rental_id));
 
-      // 3) Process each rental (alerts, DB update)
-      for (const r of rentals) {
-      // Inject current hashrate and rig name from live rig data
-      const liveRig = getRigLookupKeys(r).map(key => rigLookupByRentalId.get(key)).find(Boolean);
-      if (liveRig) {
-        // ALWAYS use the rig name, never the rental order description
-        r.name = liveRig.name || r.name;
+      // ============================================================
+      // UPGRADED: Count real rentals for this account
+      // ============================================================
+      let realRentalCount = 0;
+      const validRentalsForDisplay = [];
 
-        // Merge live rig hashrate into rental for better accuracy
-        if (!r.hashrate || typeof r.hashrate !== 'object') r.hashrate = {};
-        const liveVal = parseFloat(liveRig.hashrate || liveRig.status?.hashrate || 0);
-        if (liveVal > 0) {
-          r.hashrate.current = liveVal;
-          // If rental has no detailed hashrate, promote the simple value as current
-          if (!r.hashrate.last_15min) {
-            r.hashrate.last_15min = { hash: liveVal, nice: `${liveVal.toFixed(2)} ${liveRig.hashrate_suffix || ''}` };
+      for (const r of rentals) {
+        const liveRig = getRigLookupKeys(r).map(key => rigLookupByRentalId.get(key)).find(Boolean);
+        if (liveRig) {
+          r.name = liveRig.name || r.name;
+          if (!r.hashrate || typeof r.hashrate !== 'object') r.hashrate = {};
+          const liveVal = parseFloat(liveRig.hashrate || liveRig.status?.hashrate || 0);
+          if (liveVal > 0) {
+            r.hashrate.current = liveVal;
+            if (!r.hashrate.last_15min) {
+              r.hashrate.last_15min = { hash: liveVal, nice: `${liveVal.toFixed(2)} ${liveRig.hashrate_suffix || ''}` };
+            }
+          }
+          if ((!r.algo || r.algo === 'Unknown') && liveRig.algo) {
+            r.algo = liveRig.algo;
           }
         }
-
-        // Merge rig algo if rental algo is missing
-        if ((!r.algo || r.algo === 'Unknown') && liveRig.algo) {
-          r.algo = liveRig.algo;
-        }
-      }
 
         const info = extractRentalInfo(r);
         const rawStart = info.startTime;
@@ -715,7 +744,16 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
         const efficiency = parseFloat(info.percent || 0);
         const currentHash = info.hashrate.current;
 
-        // Calculate Price ROI (ROI = (MarketPrice - YourPrice) / MarketPrice)
+        // ============================================================
+        // UPGRADED: Check if this is a real rental
+        // ============================================================
+        const isValidRental = isRealRental(r, info);
+        if (isValidRental) {
+          realRentalCount++;
+          validRentalsForDisplay.push({ rental: r, info, startT, endT, totalDurationMs, elapsedMs, remainingMs });
+        }
+
+        // Calculate Price ROI
         let priceRoi = null;
         try {
           const nhAlgo = normalizeAlgoForNiceHash(info.algo);
@@ -775,7 +813,6 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
 
         const orderDiff = (priceRoi !== null && !isNaN(priceRoi)) ? priceRoi : (100 - (parseFloat(efficiency) || 0)).toFixed(1);
 
-        // Get current DB state (promisified)
         let row;
         try {
           row = await dbGetAsync(`SELECT last_notified, low_hashrate_start, zero_hashrate_start FROM rentals WHERE id = ?`, [String(r.id)]);
@@ -788,10 +825,8 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
         let zeroHashStart = row?.zero_hashrate_start || 0;
         let lastNotified = row?.last_notified || 0;
 
-        // Serialize DB writes to prevent locking issues
-        await new Promise((resolve, reject) => {
+        await new Promise((resolve) => {
           db.serialize(() => {
-            // Update database immediately to ensure row exists and status is tracked before notification checks
             db.run(
               `INSERT INTO rentals (
                  id, name, client, start_time, end_time, algo, 
@@ -810,135 +845,129 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
                 currentHash, average, advertised, info.price.paid, lastNotified
               ], (err) => { if (err) console.error(`[${new Date().toLocaleTimeString()}] [monitor:db] Upsert error for ${r.id}: ${err.message}`); }
             );
-            // Record in history to maintain count even after the rental ends
             if (startT > 0) db.run("INSERT OR IGNORE INTO rental_history (id, start_time) VALUES (?, ?)", [String(r.id), startT]);
             resolve();
           });
         });
 
-        // Efficiency < 50% for 15 minutes
-        if (efficiency < 50) {
-          if (lowHashStart === 0) lowHashStart = now;
-          if (now - lowHashStart >= 900000) {
-            const alertKey = `${r.id}_low_50`;
-            const lastAlert = lastAlertTimes.get(alertKey) || 0;
+        // Alerts (only for real rentals)
+        if (isValidRental) {
+          if (efficiency < 50) {
+            if (lowHashStart === 0) lowHashStart = now;
+            if (now - lowHashStart >= 900000) {
+              const alertKey = `${r.id}_low_50`;
+              const lastAlert = lastAlertTimes.get(alertKey) || 0;
+              if (now - lastAlert > ALERT_COOLDOWN_MS) {
+                const msg = TelegramTemplates.efficiency(acct, r, info, efficiency, displayTarget, resolveRentalAlgo(r, info));
+                queueTelegramMessage(msg, {
+                  type: 'LOW EFFICIENCY',
+                  label: `Low efficiency ${acct} ${r.id}`,
+                  onFailure: (e) => console.error(`[monitor] Low hashrate alert failed: ${e.message}`)
+                });
+                lastAlertTimes.set(alertKey, now);
+              }
+            }
+          } else {
+            lowHashStart = 0;
+          }
+
+          if (currentHash === 0) {
+            if (zeroHashStart === 0) zeroHashStart = now;
+            if (now - zeroHashStart >= 600000) {
+              const alertKey = `${r.id}_zero_10m`;
+              const lastAlert = lastAlertTimes.get(alertKey) || 0;
+              if (now - lastAlert > ALERT_COOLDOWN_MS) {
+                const msg = TelegramTemplates.zeroHashrate(acct, r, info, resolveRentalAlgo(r, info));
+                queueTelegramMessage(msg, {
+                  type: 'ZERO HASHRATE',
+                  label: `Zero hashrate ${acct} ${r.id}`,
+                  onFailure: (e) => console.error(`[monitor] Zero hashrate alert failed: ${e.message}`)
+                });
+                lastAlertTimes.set(alertKey, now);
+              }
+            }
+          } else {
+            zeroHashStart = 0;
+          }
+
+          if (elapsedMs > 0 && elapsedMs < 3600000 && efficiency < 50) {
+            const startupKey = `${r.id}_startup_50`;
+            const lastAlert = lastAlertTimes.get(startupKey) || 0;
             if (now - lastAlert > ALERT_COOLDOWN_MS) {
-              const msg = TelegramTemplates.efficiency(acct, r, info, efficiency, displayTarget, resolveRentalAlgo(r, info));
+              const msg = TelegramTemplates.startup(acct, r, info, efficiency, displayTarget, resolveRentalAlgo(r, info));
               queueTelegramMessage(msg, {
-                type: 'LOW EFFICIENCY',
-                label: `Low efficiency ${acct} ${r.id}`,
-                onFailure: (e) => console.error(`[monitor] Low hashrate alert failed: ${e.message}`)
+                type: 'STARTUP ALERT',
+                label: `Startup alert ${acct} ${r.id}`,
+                onFailure: (e) => console.error(`[monitor] Startup alert failed: ${e.message}`)
               });
-              lastAlertTimes.set(alertKey, now);
+              lastAlertTimes.set(startupKey, now);
             }
           }
-        } else {
-          lowHashStart = 0;
-        }
 
-        // Zero hashrate for 10 minutes
-        if (currentHash === 0) {
-          if (zeroHashStart === 0) zeroHashStart = now;
-          if (now - zeroHashStart >= 600000) {
-            const alertKey = `${r.id}_zero_10m`;
-            const lastAlert = lastAlertTimes.get(alertKey) || 0;
+          if (remainingMs > 0 && remainingMs < 3600000 && efficiency < 70) {
+            const completionKey = `${r.id}_completion_70`;
+            const lastAlert = lastAlertTimes.get(completionKey) || 0;
             if (now - lastAlert > ALERT_COOLDOWN_MS) {
-              const msg = TelegramTemplates.zeroHashrate(acct, r, info, resolveRentalAlgo(r, info));
+              const msg = TelegramTemplates.completionAlert(acct, r, info, efficiency, displayTarget, resolveRentalAlgo(r, info));
               queueTelegramMessage(msg, {
-                type: 'ZERO HASHRATE',
-                label: `Zero hashrate ${acct} ${r.id}`,
-                onFailure: (e) => console.error(`[monitor] Zero hashrate alert failed: ${e.message}`)
+                type: 'ALMOST COMPLETE',
+                label: `Completion alert ${acct} ${r.id}`,
+                onFailure: (e) => console.error(`[monitor] Completion alert failed: ${e.message}`)
               });
-              lastAlertTimes.set(alertKey, now);
+              lastAlertTimes.set(completionKey, now);
             }
           }
-        } else {
-          zeroHashStart = 0;
-        }
 
-        // Startup alert (first hour, efficiency <70%)
-        if (elapsedMs > 0 && elapsedMs < 3600000 && efficiency < 50) {
-          const startupKey = `${r.id}_startup_50`;
-          const lastAlert = lastAlertTimes.get(startupKey) || 0;
-          if (now - lastAlert > ALERT_COOLDOWN_MS) {
-            const msg = TelegramTemplates.startup(acct, r, info, efficiency, displayTarget, resolveRentalAlgo(r, info));
-            queueTelegramMessage(msg, {
-              type: 'STARTUP ALERT',
-              label: `Startup alert ${acct} ${r.id}`,
-              onFailure: (e) => console.error(`[monitor] Startup alert failed: ${e.message}`)
-            });
-            lastAlertTimes.set(startupKey, now);
+          if (remainingMs > 0 && remainingMs < 600000 && efficiency >= 95) {
+            const successKey = `${r.id}_success_95`;
+            const lastAlert = lastAlertTimes.get(successKey) || 0;
+            if (now - lastAlert > ALERT_COOLDOWN_MS) {
+              const msg = TelegramTemplates.completionSuccess(
+                acct,
+                r,
+                info,
+                efficiency,
+                info.niceAdvertisedHashrate,
+                info.niceAverageHashrate,
+                info.hashrate.suffix,
+                resolveRentalAlgo(r, info)
+              );
+              queueTelegramMessage(msg, {
+                type: 'RENTAL SUCCESS',
+                label: `Completion success ${acct} ${r.id}`,
+                onFailure: (e) => console.error(`[monitor] Success alert failed: ${e.message}`)
+              });
+              lastAlertTimes.set(successKey, now);
+            }
+          }
+
+          if (efficiency >= 100) {
+            const perfectKey = `perfect_100_${r.id}`;
+            const lastPerfect = lastAlertTimes.get(perfectKey) || 0;
+            if (now - lastPerfect >= 3600000) {
+              const msg = TelegramTemplates.perfectEfficiency(acct, r, efficiency, `${info.price.paid} ${info.price.currency}`, remainingMs, resolveRentalAlgo(r, info));
+              queueTelegramMessage(msg, {
+                type: 'PERFECT 100%',
+                label: `Perfect efficiency ${acct} ${r.id}`,
+                onFailure: (e) => console.error(`[monitor] Perfect efficiency alert failed: ${e.message}`)
+              });
+              lastAlertTimes.set(perfectKey, now);  
+            }
           }
         }
 
-        // Completion alert (last hour, efficiency <70%)
-        if (remainingMs > 0 && remainingMs < 3600000 && efficiency < 70) {
-          const completionKey = `${r.id}_completion_70`;
-          const lastAlert = lastAlertTimes.get(completionKey) || 0;
-          if (now - lastAlert > ALERT_COOLDOWN_MS) {
-            const msg = TelegramTemplates.completionAlert(acct, r, info, efficiency, displayTarget, resolveRentalAlgo(r, info));
-            queueTelegramMessage(msg, {
-              type: 'ALMOST COMPLETE',
-              label: `Completion alert ${acct} ${r.id}`,
-              onFailure: (e) => console.error(`[monitor] Completion alert failed: ${e.message}`)
-            });
-            lastAlertTimes.set(completionKey, now);
-          }
-        }
+        // Build line for summary heartbeat (only for real rentals)
+        if (isValidRental) {
+          const hasEndTime = endT > 0;
+          const isFinished_s = !isLiveRigCurrentlyRented(liveRig) || !isRentalActive(now, endT, liveRig, r);
+          const remD_s = Math.floor(remainingMs / 86400000);
+          const remH_s = Math.floor((remainingMs % 86400000) / 3600000);
+          const remM_s = Math.floor((remainingMs % 3600000) / 60000);
 
-        // High efficiency completion (last 10 min, efficiency >95%)
-        if (remainingMs > 0 && remainingMs < 600000 && efficiency >= 95) {
-          const successKey = `${r.id}_success_95`;
-          const lastAlert = lastAlertTimes.get(successKey) || 0;
-          if (now - lastAlert > ALERT_COOLDOWN_MS) {
-            const msg = TelegramTemplates.completionSuccess(
-              acct,
-              r,
-              info,
-              efficiency,
-              info.niceAdvertisedHashrate,
-              info.niceAverageHashrate,
-              info.hashrate.suffix,
-              resolveRentalAlgo(r, info)
-            );
-            queueTelegramMessage(msg, {
-              type: 'RENTAL SUCCESS',
-              label: `Completion success ${acct} ${r.id}`,
-              onFailure: (e) => console.error(`[monitor] Success alert failed: ${e.message}`)
-            });
-            lastAlertTimes.set(successKey, now);
-          }
-        }
+          const remStr_s = isFinished_s ? 'Finished' : (hasEndTime ? (remD_s > 0 ? `${remD_s}d ${remH_s}h` : `${remH_s}h ${remM_s}m`) : 'Active');
+          const perfEmoji = efficiency >= 100 ? '🎊' : (efficiency >= 90 ? '🟢' : (efficiency >= 70 ? '🔵' : (efficiency >= 50 ? '🟡' : '🔴')));
+          const divider = '━━━━━━━━━━━━━━━━━';
 
-        // Perfect Efficiency rule: Notice every 1 hour if 100%
-        if (efficiency >= 100) {
-          const perfectKey = `perfect_100_${r.id}`;
-          const lastPerfect = lastAlertTimes.get(perfectKey) || 0;
-          if (now - lastPerfect >= 3600000) { // Every 1 hour
-            const msg = TelegramTemplates.perfectEfficiency(acct, r, efficiency, `${info.price.paid} ${info.price.currency}`, remainingMs, resolveRentalAlgo(r, info));
-            queueTelegramMessage(msg, {
-              type: 'PERFECT 100%',
-              label: `Perfect efficiency ${acct} ${r.id}`,
-              onFailure: (e) => console.error(`[monitor] Perfect efficiency alert failed: ${e.message}`)
-            });
-            lastAlertTimes.set(perfectKey, now);  
-          }
-        }
-
-        // Build line for summary heartbeat
-        const hasEndTime = endT > 0;
-        const isFinished_s = !isLiveRigCurrentlyRented(liveRig) || !isRentalActive(now, endT, liveRig, r);
-        const remD_s = Math.floor(remainingMs / 86400000);
-        const remH_s = Math.floor((remainingMs % 86400000) / 3600000);
-        const remM_s = Math.floor((remainingMs % 3600000) / 60000);
-
-        const remStr_s = isFinished_s ? 'Finished' : (hasEndTime ? (remD_s > 0 ? `${remD_s}d ${remH_s}h` : `${remH_s}h ${remM_s}m`) : 'Active');
-        const perfEmoji = efficiency >= 100 ? '💯' : (efficiency >= 90 ? '🟢' : (efficiency >= 70 ? '🔵' : (efficiency >= 50 ? '🟡' : '🔴')));
-        const divider = '━━━━━━━━━━━━━━━━━';  
-
-        // Include all active rentals in the summary list regardless of speed to match the "Rented" count
-        if (isLiveRigCurrentlyRented(liveRig)) {
-          accountRentedActive++;
           const currentSpeedVal = parseFloat(info.hashrate.current || 0);
           const speedStatus = currentSpeedVal > 0 ? `<b>${info.niceHashrate}H</b>` : '⚠️ <b>0 H/s</b>';
           const algo = resolveRentalAlgo(r, info);
@@ -954,23 +983,21 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
             info.niceAdvertisedHashrate,
             speedStatus,
             displayTarget,
-            '', // extra
-            acct, // client
-            info // Pass the whole info object
+            '',
+            acct,
+            info
           ));
         }
 
         // Send "rented" notification if new rental (first sighting)
         const isNewToMonitor = lastNotified === 0;
         const withinReasonableStart = startT > 0 && elapsedMs < (10 * 60 * 1000);
-        // Guard against both cross-account parallel duplicates and forceNotify re-sending
         const alreadyNotifiedThisRun = notifiedRentalIdsThisRun.has(String(r.id));
-        const shouldNotify = !alreadyNotifiedThisRun && (forceNotify || (isNewToMonitor && withinReasonableStart));
+        const shouldNotify = !alreadyNotifiedThisRun && isValidRental && (forceNotify || (isNewToMonitor && withinReasonableStart));
 
         if (shouldNotify) {
           notifiedRentalIdsThisRun.add(String(r.id));
           const hbType = forceNotify ? 'MONITOR' : 'RENTING';
-          const timeProgress = totalDurationMs > 0 ? Math.floor((elapsedMs / totalDurationMs) * 100) : 0;
 
           const displayRemN = Math.max(0, remainingMs);
           const remD = Math.floor(displayRemN / 86400000);
@@ -992,16 +1019,24 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
             }
           });
         } else {
-          notifications.push({ id: r.id, client: acct, status: 'Skipped', reason: 'Already notified' });
+          if (!alreadyNotifiedThisRun) {
+            notifications.push({ id: r.id, client: acct, status: 'Skipped', reason: isValidRental ? 'Already notified' : 'Not a real rental' });
+          }
         }
       }
+
+      // ============================================================
+      // UPGRADED: Set rented count to real rental count only
+      // ============================================================
+      metric.rented = realRentalCount;
+      accountMetrics.push(metric);
+      if (!metric.error) successfulAccts.push(acct);
+
     } catch (err) {
       console.error(`[${new Date().toLocaleTimeString()}] [monitor:error] Client ${acct}: ${err.message}`);
       metric.error = true;
+      accountMetrics.push(metric);
     }
-    metric.rented = accountRentedActive;
-    accountMetrics.push(metric);
-    if (!metric.error) successfulAccts.push(acct);
   }));
 
   const successfulAcctList = Array.from(new Set(successfulAccts));
@@ -1031,7 +1066,6 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
   //  Detect and notify finished rentals (no longer present in API)
   // ------------------------------------------------------------------
   if (successfulAcctList.length > 0) {
-    // Parameterised query to prevent SQL injection
     const placeholders = successfulAcctList.map(() => '?').join(',');
     const finishedRentals = await dbAllAsync(
       `SELECT * FROM rentals WHERE last_updated < ? AND client IN (${placeholders})`,
@@ -1057,9 +1091,7 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
           const d = res.data.data || res.data;
           if (d && typeof d === 'object') enriched = { ...enriched, ...d };
         }
-      } catch (e) {
-        // ignore API enrichment errors; still notify with DB info
-      }
+      } catch (e) {}
 
       const info = extractRentalInfo(enriched);
       const finishAds = info.niceAdvertisedHashrate || info.hashrate?.advertised?.nice || info.hashrate?.advertised || info.hashrate?.suffix || 'N/A';
@@ -1091,11 +1123,22 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
 
   await flushQueuedTelegramMessages();
 
-  // ------------------------------------------------------------------
-  //  Send combined summary heartbeat
-  // ------------------------------------------------------------------
+  // ============================================================
+  // UPGRADED: Send combined summary heartbeat with real rental count
+  // ============================================================
   const shouldSendCombinedSummary = forceNotify || (now - (lastAlertTimes.get('global_summary') || 0) >= RENTED_HEARTBEAT_MS);
-  rentedAll = currentActiveRentalIds.size || activeRentalLines.length || accountMetrics.reduce((sum, metric) => sum + (Number(metric.rented) || 0), 0);
+  
+  // 🔧 FIX: Calculate real rental count from account metrics
+  const totalRealRentals = accountMetrics.reduce((sum, metric) => sum + (Number(metric.rented) || 0), 0);
+  
+  // 🔧 FIX: Use real rental count, fallback to line count
+  rentedAll = totalRealRentals > 0 ? totalRealRentals : activeRentalLines.length;
+  
+  // Log the filtering
+  if (currentActiveRentalIds.size !== rentedAll) {
+    console.log(`[Monitor] 📊 Real rentals: ${rentedAll} (${currentActiveRentalIds.size - rentedAll} ghost rentals filtered out)`);
+  }
+
   if (shouldSendCombinedSummary && (accountMetrics.length > 0 || activeRentalLines.length > 0)) {
     const maxBarLen = 30;
     const barChart = accountMetrics.map(am => {
@@ -1115,7 +1158,7 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
       const summaryBase = (linesSubset) => TelegramTemplates.heartbeatSummary(
         barChart,
         onlineAll,
-        rentedAll,
+        rentedAll,  // ✅ Using real rental count
         offlineAll,
         disabledAll,
         totalAll,
@@ -1158,23 +1201,30 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
       totals: {
         rigs: totalAll,
         available: availableAll,
-        rented: rentedAll,
+        rented: rentedAll,  // ✅ Using real rental count
         offline: offlineAll,
         disabled: disabledAll,
         warning: warningAll,
       },
       perAccount: accountMetrics,
-      activeRentals: allRentedRigs.map(r => {
-        const rentalDetail = globalRentalsMap.get(String(r.id));
-        const eff = rentalDetail ? parseFloat(extractRentalInfo(rentalDetail).percent || 0) : 0;
-        return { 
-          account: r.acct, 
-          id: r.id, 
-          name: r.name || r.id,
-          efficiency: eff,
-          orderDiff: (100 - eff).toFixed(1)
-        };
-      }),
+      activeRentals: allRentedRigs
+        .filter(r => {
+          const rentalDetail = globalRentalsMap.get(String(r.id));
+          if (!rentalDetail) return false;
+          const info = extractRentalInfo(rentalDetail);
+          return isRealRental(rentalDetail, info);
+        })
+        .map(r => {
+          const rentalDetail = globalRentalsMap.get(String(r.id));
+          const eff = rentalDetail ? parseFloat(extractRentalInfo(rentalDetail).percent || 0) : 0;
+          return { 
+            account: r.acct, 
+            id: r.id, 
+            name: r.name || r.id,
+            efficiency: eff,
+            orderDiff: (100 - eff).toFixed(1)
+          };
+        }),
     },
   };
   } finally {

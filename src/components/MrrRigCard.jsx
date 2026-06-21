@@ -38,10 +38,10 @@ const normalizeOrderAlgo = (order) => {
 
   return normalizeAlgoForNiceHash(
     order?.algo ||
-      pick(order?.algorithm) ||
-      rawOrder?.algo ||
-      pick(rawOrder?.algorithm) ||
-      rawOrder?.type,
+    pick(order?.algorithm) ||
+    rawOrder?.algo ||
+    pick(rawOrder?.algorithm) ||
+    rawOrder?.type,
   );
 };
 
@@ -154,27 +154,42 @@ const MrrRigCard = ({
   setEnrichedInfo,
   mrrClient,
 }) => {
+  // ==========================================
+  // 1. Basic state and derived values
+  // ==========================================
   const statusStr = String(
     typeof rig.status === "object" ? rig.status.status : rig.status || "",
   ).toLowerCase();
   const rentalId = rig.rentalid || rig.current_rental_id || rig.rental_id;
-  const isRented =
-    statusStr.includes("rented") ||
-    statusStr.includes("active") ||
-    Boolean(rentalId);
+  const isRented = statusStr.includes("rented") || statusStr.includes("active") || Boolean(rentalId);
   const displayId = isRented && rentalId ? rentalId : rig.id;
   const idLabel = isRented && rentalId ? "Rental" : "Rig";
   const [nowMs, setNowMs] = useState(0);
 
+  // ==========================================
+  // 2. Algorithm and unit definitions (defined ONCE)
+  // ==========================================
+  const rawAlgo = info?.algo || rig.algo || rig.algorithm || rig.type || algoName;
+  const normalizedAlgo = normalizeAlgoForNiceHash(rawAlgo || algoName);
+  const mrrUnit = getMrrAlgorithmUnit(normalizedAlgo || rawAlgo);
+  const mrrApiKey = getMrrAlgoKey(normalizedAlgo);
+  const isAsicBoostAlgo = isAsicBoost(normalizedAlgo);
+
+  // ==========================================
+  // 3. State for MRR rate
+  // ==========================================
   const [mrrMarketRate, setMrrMarketRate] = useState(0);
   const [isLoadingMrrRate, setIsLoadingMrrRate] = useState(false);
   const [mrrRateError, setMrrRateError] = useState(null);
+  const [mrrUsedKey, setMrrUsedKey] = useState(''); // ✅ NEW: track which key actually succeeded
 
-  // ✅ Helper to get USD price for any currency
+  // ==========================================
+  // 4. Helper functions
+  // ==========================================
   const getUsdPrice = useCallback((currency) => {
     const map = {
       'BTC': 'bitcoin',
-      'ETH': 'ethereum', 
+      'ETH': 'ethereum',
       'LTC': 'litecoin',
       'DOGE': 'dogecoin',
       'BCH': 'bitcoin-cash',
@@ -183,70 +198,146 @@ const MrrRigCard = ({
     return coinPrices?.[id]?.usd || 0;
   }, [coinPrices]);
 
+  // ==========================================
+  // 5. useEffect hooks (mrrUnit is already defined)
+  // ==========================================
   useEffect(() => {
     if (!isRented) return undefined;
-
     const updateNow = () => setNowMs(Date.now());
     updateNow();
     const timer = setInterval(updateNow, 30000);
     return () => clearInterval(timer);
   }, [isRented]);
 
-  // Fetch MRR market rate
-
   const effectiveMrrClient = mrrClient || rig?.mrrClient || null;
-  
-  // Use effectiveMrrClient instead of mrrClient in the fetch effect
+
   useEffect(() => {
-  const rawAlgo = info?.algo || rig.algo || rig.algorithm || rig.type || algoName;
-  const normalizedAlgo = normalizeAlgoForNiceHash(rawAlgo || algoName);
-  
-  // ✅ Use fallback client
-  const client = mrrClient || rig?.mrrClient || null;
-  
-  if (!normalizedAlgo || normalizedAlgo === "UNKNOWN" || !client) {
-    // If no client, use calculated rate
-    return;
-  }
+    const rawAlgo = info?.algo || rig.algo || rig.algorithm || rig.type || algoName;
+    const normalizedAlgo = normalizeAlgoForNiceHash(rawAlgo || algoName);
 
-  const fetchRate = async () => {
-    setIsLoadingMrrRate(true);
-    setMrrRateError(null);
-    
-    try {
-      const mrrAlgoKey = getMrrAlgoKey(normalizedAlgo);
-      
-      // ✅ Use the fallback client
-      const response = await client.call({
-        method: "GET",
-        endpoint: "/market/stats",
-        query: { algorithm: mrrAlgoKey }
-      });
-      
-      if (response.statusCode === 200 && response.data?.success) {
-        const stats = response.data.data;
-        const avgPrice = stats?.avg_price || stats?.average || 0;
-        
-        if (avgPrice > 0) {
-          setMrrMarketRate(avgPrice);
-          console.log(`✅ MRR rate for ${mrrAlgoKey}: ${avgPrice}`);
-        } else {
-          setMrrRateError("No filled orders");
+    // If algo is unknown, only try calculated
+    if (!normalizedAlgo || normalizedAlgo === "UNKNOWN") {
+      if (info?.price?.paid && info?.hashrate?.advertised) {
+        const paid = parseFloat(info.price.paid);
+        const advertised = parseFloat(info.hashrate.advertised);
+        const duration = parseFloat(info.duration || 0);
+        if (paid > 0 && advertised > 0 && duration > 0) {
+          const calculatedRate = paid / (duration / 24) / advertised;
+          setMrrMarketRate(calculatedRate);
+          setMrrUsedKey('calculated');
+          console.log(`✅ Using calculated MRR rate: ${calculatedRate}`);
         }
-      } else {
-        setMrrRateError(response.data?.message || "API error");
       }
-    } catch (error) {
-      setMrrRateError(error.message);
-      console.error("❌ MRR fetch failed:", error);
-    } finally {
-      setIsLoadingMrrRate(false);
+      return;
     }
-  };
 
-  fetchRate();
-}, [info?.algo, rig.algo, rig.algorithm, rig.type, algoName, mrrClient, rig?.mrrClient]);
+    // Always try API fetch (public endpoint, no auth required)
+    const fetchRate = async () => {
+      setIsLoadingMrrRate(true);
+      setMrrRateError(null);
 
+      try {
+        const primaryKey = getMrrAlgoKey(normalizedAlgo);
+        const keysToTry = [primaryKey];
+        if (normalizedAlgo === "SHA256ASICBOOST" || normalizedAlgo === "SHA256AB") {
+          if (primaryKey !== "sha256") keysToTry.push("sha256");
+        }
+
+        let rate = 0;
+        let usedKey = '';
+
+        for (const key of keysToTry) {
+          try {
+            const url = `https://www.miningrigrentals.com/api/v2/market/algos/${key}`;
+            console.log(`🔍 Fetching MRR rate for ${key} from: ${url}`);
+            const response = await fetch(url);
+            if (!response.ok) throw new Error(`MRR API returned ${response.status} for ${key}`);
+            const data = await response.json();
+            console.log(`📊 MRR API response for ${key}:`, data);
+
+            let foundRate = 0;
+            if (data.success && data.data) {
+              if (data.data.suggested_price?.amount) {
+                foundRate = parseFloat(data.data.suggested_price.amount);
+              } else if (data.data.stats?.prices?.lowest?.price) {
+                foundRate = parseFloat(data.data.stats.prices.lowest.price);
+              } else if (data.data.price) {
+                foundRate = parseFloat(data.data.price);
+              } else if (data.data.BTC) {
+                foundRate = parseFloat(data.data.BTC);
+              }
+            } else if (data.price) {
+              foundRate = parseFloat(data.price);
+            } else if (data.BTC) {
+              foundRate = parseFloat(data.BTC);
+            }
+
+            if (foundRate > 0) {
+              rate = foundRate;
+              usedKey = key;
+              console.log(`✅ MRR rate for ${key}: ${rate} BTC/${mrrUnit}/Day`);
+              break;
+            }
+          } catch (err) {
+            console.warn(`⚠️ Failed to fetch MRR rate for ${key}:`, err.message);
+          }
+        }
+
+        if (rate > 0) {
+          setMrrMarketRate(rate);
+          setMrrUsedKey(usedKey);
+          setMrrRateError(null);
+          setIsLoadingMrrRate(false);
+          return;
+        }
+
+        // No API rate – fallback to calculated
+        console.warn(`⚠️ No API rate found, falling back to calculated`);
+        if (info?.price?.paid && info?.hashrate?.advertised) {
+          const paid = parseFloat(info.price.paid);
+          const advertised = parseFloat(info.hashrate.advertised);
+          const duration = parseFloat(info.duration || 0);
+          if (paid > 0 && advertised > 0 && duration > 0) {
+            const calculatedRate = paid / (duration / 24) / advertised;
+            setMrrMarketRate(calculatedRate);
+            setMrrUsedKey('calculated');
+            setMrrRateError(null);
+            console.log(`✅ Using calculated MRR rate: ${calculatedRate}`);
+            setIsLoadingMrrRate(false);
+            return;
+          }
+        }
+        setMrrRateError("No rate available");
+        setIsLoadingMrrRate(false);
+      } catch (error) {
+        console.error(`❌ MRR fetch failed:`, error);
+        // Final fallback to calculated
+        if (info?.price?.paid && info?.hashrate?.advertised) {
+          const paid = parseFloat(info.price.paid);
+          const advertised = parseFloat(info.hashrate.advertised);
+          const duration = parseFloat(info.duration || 0);
+          if (paid > 0 && advertised > 0 && duration > 0) {
+            const calculatedRate = paid / (duration / 24) / advertised;
+            setMrrMarketRate(calculatedRate);
+            setMrrUsedKey('calculated');
+            setMrrRateError(null);
+            console.log(`✅ Using calculated MRR rate: ${calculatedRate}`);
+            setIsLoadingMrrRate(false);
+            return;
+          }
+        }
+        setMrrRateError(error.message);
+        setIsLoadingMrrRate(false);
+      }
+    };
+
+    fetchRate();
+  }, [info?.algo, info?.price?.paid, info?.hashrate?.advertised, info?.duration,
+  rig.algo, rig.algorithm, rig.type, algoName, mrrUnit]);
+
+  // ==========================================
+  // 6. Computed values (useMemo)
+  // ==========================================
   const adsVal = useMemo(
     () =>
       info?.rawAds ||
@@ -270,7 +361,7 @@ const MrrRigCard = ({
     (typeof rig.status === "object" ? rig.status.end : null);
   const startT = new Date(
     rentalStartTime +
-      (String(rentalStartTime || "").endsWith("UTC") ? "" : " UTC"),
+    (String(rentalStartTime || "").endsWith("UTC") ? "" : " UTC"),
   ).getTime();
   const endT = new Date(
     rentalEndTime + (String(rentalEndTime || "").endsWith("UTC") ? "" : " UTC"),
@@ -280,11 +371,11 @@ const MrrRigCard = ({
   const durationHoursFromDates = totalMs > 0 ? totalMs / 3600000 : 0;
   const durationHoursExplicit = parseFloat(
     info?.duration ??
-      info?.hours ??
-      rig.duration ??
-      rig.hours ??
-      rig.length ??
-      0,
+    info?.hours ??
+    rig.duration ??
+    rig.hours ??
+    rig.length ??
+    0,
   );
   const durationHours =
     durationHoursExplicit > 0 ? durationHoursExplicit : durationHoursFromDates;
@@ -296,12 +387,6 @@ const MrrRigCard = ({
     (adsVal > 0 ? (avgVal / adsVal) * 100 : 0);
   const effNum = Number.parseFloat(rawEffValue);
   const eff = Number.isFinite(effNum) ? effNum.toFixed(2) : "0.00";
-
-  const rawAlgo =
-    info?.algo || rig.algo || rig.algorithm || rig.type || algoName;
-  const normalizedAlgo = normalizeAlgoForNiceHash(rawAlgo || algoName);
-  const mrrApiKey = getMrrAlgoKey(normalizedAlgo);
-  const isAsicBoostAlgo = isAsicBoost(normalizedAlgo);
 
   const paidPrice = resolvePaidPrice(
     info?.normalized?.price || info?.price || rig.price,
@@ -347,7 +432,6 @@ const MrrRigCard = ({
     [paidAmount, paidCurrency, coinPrices],
   );
 
-  const mrrUnit = getMrrAlgorithmUnit(normalizedAlgo || rawAlgo);
   const advertisedUnit =
     rig.hashrate?.suffix ||
     rig.hashrate?.advertised?.type ||
@@ -359,22 +443,42 @@ const MrrRigCard = ({
     adsVal > 0 ? convertHashrateValue(adsVal, advertisedUnit, mrrUnit) : 0;
   const durationDays = durationHours > 0 ? durationHours / 24 : 0;
 
-  // Calculate fallback rate
-  const calculatedMrrRate =
-    paidBtcAmount > 0 && adsInMrrUnit > 0 && durationDays > 0
-      ? paidBtcAmount / durationDays / adsInMrrUnit
-      : 0;
+  // 1. Try API rate
+  const mrrDailyRate = mrrMarketRate > 0 ? mrrMarketRate : 0;
 
-  // Use API rate if available
-  const mrrDailyRate = mrrMarketRate > 0 ? mrrMarketRate : calculatedMrrRate;
+  // 2. Try calculated rate from rental data
+  const calculatedMrrRate = useMemo(() => {
+    if (paidBtcAmount > 0 && adsInMrrUnit > 0 && durationDays > 0) {
+      return paidBtcAmount / durationDays / adsInMrrUnit;
+    }
+    return 0;
+  }, [paidBtcAmount, adsInMrrUnit, durationDays]);
 
+  // 3. Try to get rate from info object
+  const infoMrrRate = useMemo(() => {
+    if (info?.mrrRate) return info.mrrRate;
+    if (info?.price?.rate) return info.price.rate;
+    return 0;
+  }, [info]);
+
+  // Use the best available rate
+  const finalMrrRate = useMemo(() => {
+    if (mrrMarketRate > 0) return mrrMarketRate;
+    if (calculatedMrrRate > 0) return calculatedMrrRate;
+    if (infoMrrRate > 0) return infoMrrRate;
+    return 0;
+  }, [mrrMarketRate, calculatedMrrRate, infoMrrRate]);
+
+  // ✅ FIXED: Show the actual key that was used (mrrUsedKey) or fallback to mrrApiKey
   const mrrDailyRateSource = mrrMarketRate > 0
-    ? `MRR API (${mrrApiKey})` 
+    ? `MRR API (${mrrUsedKey || mrrApiKey})`
     : calculatedMrrRate > 0
       ? "Calculated from MRR sold rental"
-      : isLoadingMrrRate
-        ? "Loading MRR API..."
-        : "Waiting for MRR API";
+      : infoMrrRate > 0
+        ? "From rental info"
+        : isLoadingMrrRate
+          ? "Loading MRR API..."
+          : "No MRR rate available";
 
   const normalizedCardAlgo = normalizeAlgoForNiceHash(algoName || rawAlgo);
   const nhOrder = [...(nhOrders || [])]
@@ -405,7 +509,7 @@ const MrrRigCard = ({
     buyNhPrice > 0
       ? Number.parseFloat(nhOrder?.add_fee ?? nhOrder?.priceWithFee ?? 0) > 0
         ? Number.parseFloat(nhOrder.add_fee ?? nhOrder.priceWithFee)
-        : buyNhPrice * 1.04
+        : buyNhPrice
       : 0;
   const myNhUnit = getAlgorithmUnit(
     normalizeAlgoForNiceHash(algoName || rawAlgo),
@@ -422,23 +526,34 @@ const MrrRigCard = ({
     ? niceHashSourcePrice * (toMultiplier / fromMultiplier)
     : 0;
 
-  const roiPercent =
-    niceHashSourcePrice > 0 && mrrDailyRate > 0
-      ? calculatePriceComparison(
-          mrrDailyRate,
-          mrrUnit,
-          niceHashSourcePrice,
-          myNhUnit,
-        )
-      : null;
-  const roiLabel =
-    roiPercent !== null
-      ? formatPercent(roiPercent)
-      : niceHashSourcePrice > 0
-        ? mrrDailyRate <= 0
-          ? "Waiting for MRR rate"
-          : "Waiting for MRR sold rate"
-        : "Waiting for NiceHash buy order";
+  // ============================================================
+  // FIXED: ROI calculation using final rate
+  // ============================================================
+  const roiPercent = useMemo(() => {
+    if (niceHashSourcePrice > 0 && finalMrrRate > 0) {
+      const result = calculatePriceComparison(
+        finalMrrRate,
+        mrrUnit,
+        niceHashSourcePrice,
+        myNhUnit,
+      );
+      return result;
+    }
+    return null;
+  }, [finalMrrRate, mrrUnit, niceHashSourcePrice, myNhUnit]);
+
+  const roiLabel = useMemo(() => {
+    if (roiPercent !== null) {
+      return formatPercent(roiPercent);
+    }
+    if (niceHashSourcePrice > 0) {
+      if (finalMrrRate <= 0) {
+        return isLoadingMrrRate ? "Loading..." : "No MRR rate";
+      }
+      return "Waiting for data";
+    }
+    return "No NH price";
+  }, [roiPercent, niceHashSourcePrice, finalMrrRate, isLoadingMrrRate]);
 
   const displayAlgo = getAlgoDisplayName(normalizedAlgo || rawAlgo);
 
@@ -450,7 +565,7 @@ const MrrRigCard = ({
   const targetHashrate =
     totalMs - elapsedMs > 0
       ? (adsVal * (totalMs / 1000) - avgVal * (elapsedMs / 1000)) /
-        ((totalMs - elapsedMs) / 1000)
+      ((totalMs - elapsedMs) / 1000)
       : 0;
   const isBehind = targetHashrate > adsVal;
   const hSuffix = rig.hashrate?.suffix || rig.hashrate?.advertised?.type || "";
@@ -758,7 +873,6 @@ const MrrRigCard = ({
                   ~ {paidBtcAmount.toFixed(8)} BTC
                 </div>
               )}
-            {/* ✅ USD value directly from CoinGecko */}
             {usdValue > 0 && String(paidCurrency || "").toUpperCase() !== "USD" && (
               <div
                 style={{
@@ -808,13 +922,25 @@ const MrrRigCard = ({
                     ✓ API
                   </span>
                 )}
+                {calculatedMrrRate > 0 && mrrMarketRate === 0 && (
+                  <span
+                    style={{
+                      marginLeft: "4px",
+                      fontSize: "6px",
+                      opacity: 0.5,
+                      color: "#fbbf24",
+                    }}
+                  >
+                    ✓ Calc
+                  </span>
+                )}
               </div>
               <div
                 style={{ color: "#fbbf24", fontWeight: 800, marginTop: "3px" }}
               >
-                {mrrDailyRate > 0 ? (
+                {finalMrrRate > 0 ? (
                   <>
-                    {mrrDailyRate.toFixed(8)}
+                    {finalMrrRate.toFixed(8)}
                     <span style={{ opacity: 0.5 }}> BTC/{mrrUnit}/Day</span>
                     {mrrMarketRate > 0 && (
                       <span
@@ -825,7 +951,7 @@ const MrrRigCard = ({
                           fontFamily: "monospace",
                         }}
                       >
-                        ({mrrApiKey})
+                        ({mrrUsedKey || mrrApiKey})
                       </span>
                     )}
                   </>

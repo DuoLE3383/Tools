@@ -1,3 +1,6 @@
+// core/telegram.js
+// Browser-safe Telegram templates - works in both Node.js and browser environments
+
 export const TELEGRAM_CONFIG = {
   ALERT_COOLDOWN_MS: 10 * 60 * 1000,
   WARNING_RIG_THRESHOLD: 3,
@@ -33,6 +36,7 @@ const divider = "━━━━━━━━━━━━━━";
 
 /**
  * Shared Telegram Templates
+ * All templates are browser-safe and don't use Node.js modules
  */
 export const TelegramTemplates = {
   divider,
@@ -55,7 +59,7 @@ export const TelegramTemplates = {
     return (
       `${perfEmoji} <b>${escapeHtml(algo)}</b> 🔀 <b>${escapeHtml(client)}</b> | ${escapeHtml(name)}\n` +
       `⏱ Remaining: ${remaining}\n` +
-      `⚡ Cur: <b>${cur}</b> | ` +
+      `📡 Cur: <b>${cur}</b> | ` +
       `📊 Eff: <code>${typeof efficiency === "number" ? efficiency.toFixed(2) : efficiency}%</code>\n` +
       `📈 Avg: <code>${avg}</code> | Adv: <code>${ads}</code>\n` +
       `💰 Paid: <b>${escapeHtml(info.price?.paid)} ${escapeHtml(info.price?.currency)}</b>\n` +
@@ -122,7 +126,7 @@ export const TelegramTemplates = {
     );
   },
 
-  completionAlert: (acct, ads, r, info, efficiency, target, algo) => {
+  completionAlert: (acct, r, info, efficiency, target, algo) => {
     return (
       `🏁 <b>[ALMOST COMPLETE]</b>\n` +
       `<b>Algo:</b> <code>${escapeHtml(algo)}</code>\n` +
@@ -131,7 +135,6 @@ export const TelegramTemplates = {
       `${divider}\n` +
       `<b>Time:</b> ${formatTimeRange(info.startTime)}\n` +
       `<b>Final Eff:</b> ${efficiency}%\n` +
-      `Adv: <code>${ads}</code>\n` +
       `<b>Target:</b> ${target.toFixed(2)}`
     );
   },
@@ -141,7 +144,6 @@ export const TelegramTemplates = {
     r,
     info = { price: {} },
     efficiency,
-    ads,
     avg,
     suffix,
     algo,
@@ -153,28 +155,26 @@ export const TelegramTemplates = {
       `<b>Rig:</b> ${formatRig(r)}\n` +
       `<b>Algo:</b> <code>${escapeHtml(algo)}</code>\n` +
       `<b>Avg Speed:</b> ${avg} ${suffix}\n` +
-      `<b>Adv:</b> <code>${ads}</code>\n` +
       `<b>Final Efficiency:</b> <b>${parseFloat(efficiency).toFixed(2)}%</b>\n` +
       `<b>Paid:</b> ${escapeHtml(info.price?.paid)} ${escapeHtml(info.price?.currency)}`
     );
   },
 
-  perfectEfficiency: (acct, r, efficiency, info, ads, remainingMs, algo) => {
+  perfectEfficiency: (acct, r, efficiency, info, remainingMs, algo) => {
     const remH = Math.floor(remainingMs / 3600000);
     return (
-      `💯 <b>[PERFECT 100%]</b>\n` +
+      `🎊 <b>[PERFECT 100%]</b>\n` +
       `<b>Account:</b> <code>${formatAccount(acct)}</code>\n` +
       `${divider}\n` +
       `<b>Rig:</b> ${formatRig(r)}\n` +
       `<b>Algo:</b> <code>${escapeHtml(algo)}</code>\n` +
       `<b>Status:</b> Running perfectly at ${efficiency}%\n` +
       `<b>Remaining:</b> ~${remH}h\n` +
-      `Adv: <code>${ads}</code>\n` +
       `<b>Cost:</b> ${info.price.paid} ${info.price.currency}`
     );
   },
 
-  finished: (r, info, algo, ads) => {
+  finished: (r, info, algo) => {
     return (
       `🏁 <b>[RENTAL FINISHED]</b>\n` +
       `<b>Account:</b> <code>${formatAccount(r.client)}</code>\n` +
@@ -182,7 +182,6 @@ export const TelegramTemplates = {
       `<b>Rig:</b> ${formatRig(r)}\n` +
       `<b>Algo:</b> <code>${escapeHtml(algo)}</code>\n` +
       `<b>Final Avg:</b> ${info.niceAverageHashrate}\n` +
-      `Adv: <code>${ads}</code>\n` +
       `<b>Final Eff:</b> <b>${info.percent}%</b>\n` +
       `<b>Total Paid:</b> ${info.price.paid} ${info.price.currency}`
     );
@@ -200,22 +199,50 @@ export const TelegramTemplates = {
     rented24h,
     algos,
   ) => {
-    return (
-      `📊 <b>SUMMARY</b> [${time}]\n` +
-      `${divider}\n` +
-      `🟢 Online: <b>${online}</b> / Renting: <b>${rented}</b>\n` +
-      `🔴 Offline: <b>${offline}</b> / Disabled: <b>${disabled}</b>\n` +
-      `📦 Total Rigs: <b>${total}</b>\n` +
-      `🆕 Rented (24h): <b>${rented24h}</b>\n` +
-      `${divider}\n` +
-      `<b>Algorithms Online:</b>\n${algos.join("\n")}\n` +
-      `${divider}\n` +
-      `<b>Active Rentals Detail:</b>\n\n<code>${lines.join("")}</code>`
-    );
+    const rentedCount = typeof rented === 'number' ? rented : parseInt(rented) || 0;
+    
+    let summary = `📊 <b>SUMMARY</b> [${time || new Date().toLocaleTimeString()}]\n`;
+    summary += `${divider}\n`;
+    summary += `🟢 Online: <b>${online || 0}</b> / Renting: <b>${rentedCount}</b>\n`;
+    summary += `🔴 Offline: <b>${offline || 0}</b> / Disabled: <b>${disabled || 0}</b>\n`;
+    summary += `📦 Total Rigs: <b>${total || 0}</b>\n`;
+    summary += `🆕 Rented (24h): <b>${rented24h || 0}</b>\n`;
+    summary += `${divider}\n`;
+    
+    if (algos && algos.length > 0) {
+      summary += `<b>Algorithms Online:</b>\n${algos.join("\n")}\n`;
+      summary += `${divider}\n`;
+    }
+    
+    if (lines && lines.length > 0) {
+      summary += `<b>Active Rentals Detail:</b>\n\n`;
+      summary += lines.join("");
+    } else {
+      summary += `<b>Active Rentals Detail:</b>\n\n`;
+      summary += `<i>No active rentals</i>\n`;
+    }
+    
+    return summary;
   },
 
-  rigStatusWarning: (acct, rig, algo, ads) =>
-    `⚠️ <b>[RIG WARNING]</b>\n<b>MRR:</b> ${formatAccount(acct)}\n<b>Rig:</b> ${formatRig(rig)}\n<b>Algo:</b> <code>${escapeHtml(algo)}</code>\n Adv: <code>${ads}</code>\n <b>Status:</b> <code>${rig.status?.status || rig.status}</code>`,
-  highWarningCount: (acct, count, algo) =>
+  rigStatusWarning: (acct, rig, algo) =>
+    `⚠️ <b>[RIG WARNING]</b>\n<b>MRR:</b> ${formatAccount(acct)}\n<b>Rig:</b> ${formatRig(rig)}\n<b>Algo:</b> <code>${escapeHtml(algo)}</code>\n<b>Status:</b> <code>${rig.status?.status || rig.status}</code>`,
+    
+  highWarningCount: (acct, count) =>
     `⚠️ <b>[SYSTEM ALERT]</b>\n<b>MRR:</b> ${formatAccount(acct)}\n<b>High Warning Count:</b> <b>${count}</b> rigs in warning state.`,
 };
+
+// ============================================================
+// SERVER-ONLY: Template reload function (safe for browser)
+// ============================================================
+
+/**
+ * Reload templates - kept for backward compatibility.
+ * In browser, this returns the existing templates.
+ * In Node.js, you can override this with a server-side implementation.
+ */
+export function reloadTelegramTemplates() {
+  // In browser environments, this just returns the static templates
+  // Server can override this by importing a separate server module
+  return TelegramTemplates;
+}

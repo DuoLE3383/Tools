@@ -253,6 +253,8 @@ export default function CryptoRatePage({ onCall, onPriceUpdate }) {
         maxWidth: "100%",
         overflow: "hidden",
         boxSizing: "border-box",
+        width: "600px",
+        height: "500px"
       }}
     >
       {/* Header */}

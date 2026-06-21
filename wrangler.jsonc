@@ -27,12 +27,12 @@
 		"MRR_SECRET_RIG_BT": "",
 		"MRR_KEY_RIG_SL": "",
 		"MRR_SECRET_RIG_SL": "",
-		"TUNNEL_URL": "https://plants-backing-kevin-secretary.trycloudflare.com/"
+		"TUNNEL_URL": "https://damages-static-champagne-steering.trycloudflare.com"
 	},
 	"kv_namespaces": [
 		{
-			"binding": "my_kv",
-			"id": "ea7dc2d3ab8c4ca8969c9911f4dd4768",
+			"binding": "server",
+			"id": "0f1ddf5ff91d400dad8cfb3c316bfa1e",
 			"remote": true
 		}
 	],

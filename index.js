@@ -16,6 +16,19 @@ import sqlite3 from 'sqlite3';
 import { migrateOldCsvToDb } from './server/migrate.js';
 import { initMiningTrainingDb } from './server/miningTrainingDb.js';
 import { setDb } from './server/db.js';
+import { fetchAndSaveCoinPrices } from './server/coinGecko/coinGeckoClient.js';
+
+// Initial fetch
+fetchAndSaveCoinPrices(true).then(() => {
+  console.log('[CoinGecko] Initial DB seed complete.');
+});
+
+// Refresh every 60 minutes
+setInterval(() => {
+  fetchAndSaveCoinPrices(true).catch(err => {
+    console.error('[CoinGecko] Scheduled update failed:', err.message);
+  });
+}, 60 * 60 * 1000);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
