@@ -1,0 +1,38 @@
+/**
+ * For more details on how to configure Wrangler, refer to:
+ * https://developers.cloudflare.com/workers/wrangler/configuration/
+ */
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "nh-tool",
+	"main": "worker/index.js",
+	"compatibility_date": "2026-05-26",
+	"assets": {
+		"not_found_handling": "single-page-application"
+	},
+	"observability": {
+		"enabled": true
+	},
+	"upload_source_maps": true,
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	
+	"vars": {
+		"NICEHASH_API_KEY": "",
+		"NICEHASH_API_SECRET": "",
+		"NICEHASH_ORG_ID": "",
+		"NICEHASH_ENVIRONMENT": "production",
+		"MRR_KEY_RIG_BT": "",
+		"MRR_SECRET_RIG_BT": "",
+		"MRR_KEY_RIG_SL": "",
+		"MRR_SECRET_RIG_SL": ""
+	},
+	"kv_namespaces": [
+		{
+			"binding": "KV",
+			"id": "c5111bcaf291482887368894e523525a",
+			"preview_id": "<ID_OF_PREVIEW_KV_NAMESPACE_FOR_LOCAL_DEVELOPMENT>"
+		}
+	]
+}
