@@ -1174,7 +1174,7 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
           id: r.id, 
           name: r.name || r.id,
           efficiency: eff,
-          orderDiff: (100 - eff).toFixed(2)
+          orderDiff: (100 - eff).toFixed(1)
         };
       }),
     },

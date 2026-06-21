@@ -14,7 +14,7 @@ const DATA_DIR = path.join(PROJECT_ROOT, 'data');
 export async function migrateOldCsvToDb() {
   console.log('[migrate] Checking for old CSV files to import...');
   // Search for CSVs in the project root, ignoring the data directory
-  const csvFiles = await fg('*.csv', { cwd: PROJECT_ROOT, absolute: true, ignore: ['data/**'] });
+  const csvFiles = await fg('*.csv' || '*.xlsx', { cwd: PROJECT_ROOT, absolute: true, ignore: ['data/**'] });
 
   if (csvFiles.length === 0) {
     console.log('[migrate] No old CSV files found in the root directory.');

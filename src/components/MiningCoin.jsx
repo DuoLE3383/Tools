@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchMiningStats } from "./miningStatsFetcher";
 import {
   getAlgoDisplayName,
@@ -7,11 +7,6 @@ import {
   normalizeAlgoForNiceHash,
 } from "../core/mapping";
 import { getNiceHashPriceValue } from "../core/mrrUtils";
-import {
-  normalizeHeroRows,
-  normalizeMiningDutchRows,
-  mergeMiningRoutes,
-} from "./miningWorkspaceData";
 
 const numberValue = (value) => {
   if (value === null || value === undefined || value === "") return 0;
@@ -42,6 +37,130 @@ const percentValue = (value) => {
   return `${num >= 0 ? "+" : ""}${num.toFixed(2)}%`;
 };
 
+const normalizeKey = (algo) =>
+  normalizeAlgoForNiceHash(algo || "").toUpperCase();
+
+function normalizeMiningDutchRows(payload) {
+  const source = payload?.miningpooldutch || payload || {};
+  const rows = Array.isArray(source?.coinStats) ? source.coinStats : [];
+  return rows
+    .map((row) => {
+      const nicehashAlgo = normalizeKey(row.algorithm || row.algo);
+      return {
+        provider: "Mining-Dutch",
+        coin: row.coin || row.symbol || row.algorithm || "Pool",
+        algorithm: row.algorithm || row.algo || "N/A",
+        nicehashAlgo,
+        mrrAlgo: mapNiceHashToMRR(nicehashAlgo),
+        btcPerDay: numberValue(row.btcPerDay),
+        usdPerDay: numberValue(row.usdPerDay),
+        miners: numberValue(row.miners),
+        hashrate: row.hashrate || "N/A",
+      };
+    })
+    .filter((row) => row.nicehashAlgo && row.nicehashAlgo !== "UNKNOWN");
+}
+
+function normalizeHeroRows(payload) {
+  const source =
+    payload?.herominers_global || payload?.herominers || payload || {};
+  const rows = Array.isArray(source?.coinStats) ? source.coinStats : [];
+  return rows
+    .map((row) => {
+      const nicehashAlgo = normalizeKey(row.algorithm || row.algo);
+      return {
+        provider: "HeroMiners",
+        coin: row.coin || row.symbol || "Coin",
+        algorithm: row.algorithm || row.algo || "N/A",
+        nicehashAlgo,
+        mrrAlgo: mapNiceHashToMRR(nicehashAlgo),
+        miners: numberValue(row.miners),
+        workers: numberValue(row.workers),
+        poolHashrate: row.poolHashrate || row.pool_hashrate || "N/A",
+        networkHashrate: row.networkHashrate || row.network_hashrate || "N/A",
+      };
+    })
+    .filter((row) => row.nicehashAlgo && row.nicehashAlgo !== "UNKNOWN");
+}
+
+function mergeRows(miningDutchRows, heroRows, niceHashPrices) {
+  const heroByAlgo = new Map();
+  for (const row of heroRows) {
+    const current = heroByAlgo.get(row.nicehashAlgo) || {
+      coins: [],
+      miners: 0,
+      workers: 0,
+      poolHashrates: [],
+    };
+
+    current.coins.push(row.coin);
+    current.miners += row.miners;
+    current.workers += row.workers;
+    if (row.poolHashrate && row.poolHashrate !== "N/A")
+      current.poolHashrates.push(row.poolHashrate);
+    heroByAlgo.set(row.nicehashAlgo, current);
+  }
+
+  const dutchByAlgo = new Map();
+  for (const row of miningDutchRows) {
+    const current = dutchByAlgo.get(row.nicehashAlgo) || {
+      rows: [],
+      btcPerDay: 0,
+      usdPerDay: 0,
+      miners: 0,
+      hashrate: row.hashrate,
+    };
+
+    current.rows.push(row);
+    current.btcPerDay += row.btcPerDay;
+    current.usdPerDay += row.usdPerDay;
+    current.miners += row.miners;
+    current.hashrate = current.hashrate || row.hashrate;
+    dutchByAlgo.set(row.nicehashAlgo, current);
+  }
+
+  const algos = new Set([...heroByAlgo.keys(), ...dutchByAlgo.keys()]);
+  return Array.from(algos)
+    .map((nicehashAlgo) => {
+      const dutch = dutchByAlgo.get(nicehashAlgo);
+      const hero = heroByAlgo.get(nicehashAlgo);
+      const nhPrice = niceHashPrices[nicehashAlgo] || 0;
+      const poolBtc = dutch?.btcPerDay || 0;
+      const spread =
+        poolBtc > 0 && nhPrice > 0
+          ? ((poolBtc - nhPrice) / nhPrice) * 100
+          : null;
+      const activityScore = (hero?.miners || 0) + (hero?.workers || 0) * 0.25;
+      const profitScore = poolBtc * 100000000;
+
+      return {
+        nicehashAlgo,
+        mrrAlgo: mapNiceHashToMRR(nicehashAlgo),
+        label: getAlgoDisplayName(nicehashAlgo),
+        unit: getAlgorithmUnit(nicehashAlgo),
+        miningDutchBtcPerDay: poolBtc,
+        miningDutchUsdPerDay: dutch?.usdPerDay || 0,
+        miningDutchMiners: dutch?.miners || 0,
+        miningDutchHashrate: dutch?.hashrate || "N/A",
+        heroCoins: Array.from(new Set(hero?.coins || [])).sort(),
+        heroMiners: hero?.miners || 0,
+        heroWorkers: hero?.workers || 0,
+        heroPoolHashrates: hero?.poolHashrates || [],
+        niceHashPrice: nhPrice,
+        spread,
+        rankScore: profitScore + activityScore,
+        bestSource: poolBtc > 0 ? "Mining-Dutch" : "HeroMiners",
+        dutchRows: dutch?.rows || [],
+      };
+    })
+    .sort((a, b) => {
+      const spreadA = a.spread ?? -Infinity;
+      const spreadB = b.spread ?? -Infinity;
+      if (spreadB !== spreadA) return spreadB - spreadA;
+      return b.rankScore - a.rankScore;
+    });
+}
+
 export default function MiningCoin({ onCall, nhClient = "BT" }) {
   const [heroStats, setHeroStats] = useState(null);
   const [dutchStats, setDutchStats] = useState(null);
@@ -52,20 +171,13 @@ export default function MiningCoin({ onCall, nhClient = "BT" }) {
   const [onlyProfitable, setOnlyProfitable] = useState(true);
   const [lastUpdated, setLastUpdated] = useState("");
 
-  // Use refs to avoid stale closure in loadData
-  const heroStatsRef = useRef(null);
-  const dutchStatsRef = useRef(null);
-  
-  useEffect(() => { heroStatsRef.current = heroStats; }, [heroStats]);
-  useEffect(() => { dutchStatsRef.current = dutchStats; }, [dutchStats]);
-
   const miningDutchRows = useMemo(
     () => normalizeMiningDutchRows(dutchStats),
     [dutchStats],
   );
   const heroRows = useMemo(() => normalizeHeroRows(heroStats), [heroStats]);
   const combinedRows = useMemo(
-    () => mergeMiningRoutes(miningDutchRows, heroRows, niceHashPrices),
+    () => mergeRows(miningDutchRows, heroRows, niceHashPrices),
     [miningDutchRows, heroRows, niceHashPrices],
   );
 
@@ -115,10 +227,8 @@ export default function MiningCoin({ onCall, nhClient = "BT" }) {
           heroResult.status === "fulfilled" ? heroResult.value : null;
         const dutch =
           dutchResult.status === "fulfilled" ? dutchResult.value : null;
-
-        // Fall back to refs if current fetch failed
-        const nextHero = hero || heroStatsRef.current;
-        const nextDutch = dutch || dutchStatsRef.current;
+        const nextHero = hero || heroStats;
+        const nextDutch = dutch || dutchStats;
 
         if (hero) setHeroStats(hero);
         if (dutch) setDutchStats(dutch);
@@ -165,7 +275,7 @@ export default function MiningCoin({ onCall, nhClient = "BT" }) {
         setLoading(false);
       }
     },
-    [nhClient, onCall], // Removed heroStats/dutchStats deps - uses refs now
+    [heroStats, dutchStats, nhClient, onCall],
   );
 
   useEffect(() => {

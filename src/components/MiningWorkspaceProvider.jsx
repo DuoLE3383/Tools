@@ -26,8 +26,6 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "BT" }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [lastUpdated, setLastUpdated] = useState("");
-
-  // Refs to avoid stale closure in refresh callback
   const heroStatsRef = useRef(null);
   const dutchStatsRef = useRef(null);
   const mrrMarketStatsRef = useRef(null);
@@ -35,9 +33,11 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "BT" }) {
   useEffect(() => {
     heroStatsRef.current = heroStats;
   }, [heroStats]);
+
   useEffect(() => {
     dutchStatsRef.current = dutchStats;
   }, [dutchStats]);
+
   useEffect(() => {
     mrrMarketStatsRef.current = mrrMarketStats;
   }, [mrrMarketStats]);
@@ -69,7 +69,6 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "BT" }) {
           );
         }
 
-        // Use refs for fallback (not state - avoids stale closure)
         let mrrMarketPayload = mrrMarketStatsRef.current;
         if (typeof onCall === "function") {
           try {
@@ -79,7 +78,7 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "BT" }) {
             });
             if (mrrMarketPayload) setMrrMarketStats(mrrMarketPayload);
           } catch {
-            // Keep snapshot
+            // Keep the previous snapshot if the market request fails.
           }
         }
 
@@ -131,27 +130,30 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "BT" }) {
           nextMrrMarketRows,
         );
 
-        // Fire-and-forget training snapshot — never blocks refresh
         if (typeof onCall === "function") {
-          onCall("/api/v2/mining/training-snapshot", {
-            method: "POST",
-            body: {
-              capturedAt: new Date().toISOString(),
-              nhClient,
-              heroRows: nextHeroRows,
-              miningDutchRows: nextDutchRows,
-              mrrMarketRows: nextMrrMarketRows,
-              routes: nextRoutes,
-              opportunities: nextOpportunities,
-              niceHashPrices: nextNiceHashPrices,
-              summary: {
-                bestAlgo: nextOpportunities[0]?.nicehashAlgo || "",
-                bestWinner: nextOpportunities[0]?.winner || "",
-                bestScore: nextOpportunities[0]?.opportunityScore || 0,
+          try {
+            await onCall("/api/v2/mining/training-snapshot", {
+              method: "POST",
+              body: {
+                capturedAt: new Date().toISOString(),
+                nhClient,
+                heroRows: nextHeroRows,
+                miningDutchRows: nextDutchRows,
+                mrrMarketRows: nextMrrMarketRows,
+                routes: nextRoutes,
+                opportunities: nextOpportunities,
+                niceHashPrices: nextNiceHashPrices,
+                summary: {
+                  bestAlgo: nextOpportunities[0]?.nicehashAlgo || "",
+                  bestWinner: nextOpportunities[0]?.winner || "",
+                  bestScore: nextOpportunities[0]?.opportunityScore || 0,
+                },
               },
-            },
-            silent: true,
-          }).catch(() => {}); // No `await` — fire and forget
+              silent: true,
+            });
+          } catch {
+            // Training snapshot persistence should never block refresh.
+          }
         }
 
         setLastUpdated(new Date().toISOString());
@@ -161,7 +163,7 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "BT" }) {
         setLoading(false);
       }
     },
-    [nhClient, onCall], // Removed stale state deps — uses refs
+    [nhClient, onCall],
   );
 
   useEffect(() => {

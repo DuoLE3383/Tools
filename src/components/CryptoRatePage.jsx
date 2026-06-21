@@ -1,3 +1,4 @@
+// CryptoRatePage.jsx - Add callback to share prices
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 
 const COINS = [
@@ -21,9 +22,7 @@ function Sparkline({ data, width = 180, height = 80, color = "#60a5fa" }) {
           alignItems: "center",
           justifyContent: "center",
         }}
-      >
-        {/* <span style={{ fontSize: '8px', opacity: 0.2, fontWeight: 'bold', letterSpacing: '0.1em' }}>NO HISTORY</span> */}
-      </div>
+      />
     );
   }
 
@@ -59,7 +58,7 @@ function Sparkline({ data, width = 180, height = 80, color = "#60a5fa" }) {
   );
 }
 
-export default function CryptoRatePage({ onCall }) {
+export default function CryptoRatePage({ onCall, onPriceUpdate }) {
   const [prices, setPrices] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -73,26 +72,47 @@ export default function CryptoRatePage({ onCall }) {
     setAmounts({ [id]: val });
   };
 
+  // ✅ Function to format prices for MrrRigCard
+  const formatPricesForRigCard = useCallback((data) => {
+    const formatted = {};
+    Object.keys(data).forEach(key => {
+      const coinData = data[key];
+      // Find the matching COIN entry
+      const coin = COINS.find(c => c.id === key);
+      const symbol = coin?.symbol || key.toUpperCase();
+      
+      formatted[symbol] = {
+        usd: coinData?.usd || 0,
+        btc: coinData?.btc || 0,
+        change24h: coinData?.usd_24h_change || 0,
+        marketCap: coinData?.usd_market_cap || 0,
+        volume24h: coinData?.usd_24h_vol || 0,
+      };
+    });
+    return formatted;
+  }, []);
+
   const fetchPrices = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const ids = COINS.map((c) => c.id).join(",");
       const res = await onCall("/api/v2/prices/coingecko", {
-        query: { ids, vs_currencies: "usd", sparkline: true },
+        query: { ids, vs_currencies: "usd,btc", sparkline: true },
         silent: true,
       });
 
-      const data =
-        res?.data ||
-        (res && typeof res === "object" && !res.error ? res : null);
+      const data = res?.data || (res && typeof res === "object" && !res.error ? res : null);
 
       if (data && (data.bitcoin || data.BTC || data.btc)) {
         setPrices(data);
+        // ✅ Send formatted prices to parent
+        if (onPriceUpdate) {
+          const formatted = formatPricesForRigCard(data);
+          onPriceUpdate(formatted);
+        }
       } else {
-        // Detect if the server leaked a system config object instead of price data
         const isSystemConfig = data && data.environments && data.default_client;
-
         const detail = isSystemConfig
           ? "Backend Routing Error: Market API obscured by System Config."
           : typeof res === "string"
@@ -103,26 +123,20 @@ export default function CryptoRatePage({ onCall }) {
               res?.message ||
               `Format Mismatch (Keys: ${res ? Object.keys(res).join(",") : "null"})`;
 
-        if (isSystemConfig) {
-          setWsEnabled(false); // Kill WS attempts if routing is clearly broken
-        }
-
+        if (isSystemConfig) setWsEnabled(false);
         if (!prices) setError(`Market data unavailable. ${detail}`);
         throw new Error(detail);
       }
     } catch (err) {
       console.error(`[CryptoRate] REST fetch failed: ${err.message}`);
-      // We don't set a hard error here because the WebSocket might still connect and provide data
     } finally {
       setLoading(false);
     }
-  }, [onCall]);
+  }, [onCall, onPriceUpdate, formatPricesForRigCard]);
 
   useEffect(() => {
-    // Initial fetch to populate data immediately
     fetchPrices();
 
-    // Initialize WebSocket for real-time updates
     let socket = null;
     let reconnectTimeout = null;
     let isComponentMounted = true;
@@ -131,7 +145,6 @@ export default function CryptoRatePage({ onCall }) {
     const connectWs = () => {
       if (!isComponentMounted || !wsEnabled) return;
 
-      // Close existing socket if any
       if (socket) {
         socket.onclose = null;
         socket.close();
@@ -153,6 +166,11 @@ export default function CryptoRatePage({ onCall }) {
           const message = JSON.parse(event.data);
           if (message.type === "price_update" && message.data) {
             setPrices((prev) => ({ ...prev, ...message.data }));
+            // ✅ Send updated prices to parent
+            if (onPriceUpdate) {
+              const formatted = formatPricesForRigCard(message.data);
+              onPriceUpdate(formatted);
+            }
           }
         } catch (err) {
           console.warn("[WS] Failed to parse price update", err);
@@ -164,15 +182,12 @@ export default function CryptoRatePage({ onCall }) {
         setWsStatus("disconnected");
 
         if (retryCount < 2 && wsEnabled) {
-          // Exponential backoff: 5s, 10s, 20s, 30s, 30s
           const delay = Math.min(30000, 5000 * Math.pow(2, retryCount));
           reconnectTimeout = setTimeout(connectWs, delay);
           retryCount++;
         } else {
           setWsEnabled(false);
-          console.warn(
-            "[WS] Maximum reconnection attempts reached or disabled. Staying in polling mode.",
-          );
+          console.warn("[WS] Maximum reconnection attempts reached.");
         }
       };
 
@@ -188,9 +203,9 @@ export default function CryptoRatePage({ onCall }) {
       if (socket) socket.close();
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
     };
-  }, [fetchPrices, wsEnabled]);
+  }, [fetchPrices, wsEnabled, onPriceUpdate, formatPricesForRigCard]);
 
-  // Polling fallback: If WebSocket is not connected, refresh prices every 60 seconds
+  // Polling fallback
   useEffect(() => {
     const pollTimer = setInterval(() => {
       if (wsStatus !== "connected" && !loading) {
@@ -203,11 +218,7 @@ export default function CryptoRatePage({ onCall }) {
 
   const getCoinData = (id) => {
     const coin = COINS.find((c) => c.id === id);
-    return (
-      prices?.[id] ||
-      prices?.[coin?.symbol] ||
-      prices?.[coin?.symbol?.toLowerCase()]
-    );
+    return prices?.[id] || prices?.[coin?.symbol] || prices?.[coin?.symbol?.toLowerCase()];
   };
 
   const getPrice = (data) => data?.usd || (typeof data === "number" ? data : 0);
@@ -215,8 +226,7 @@ export default function CryptoRatePage({ onCall }) {
   const results = useMemo(() => {
     const currentInput = parseFloat(amounts[baseCoin]) || 0;
     const baseData = baseCoin === "usd" ? null : getCoinData(baseCoin);
-    const usdValue =
-      baseCoin === "usd" ? currentInput : currentInput * getPrice(baseData);
+    const usdValue = baseCoin === "usd" ? currentInput : currentInput * getPrice(baseData);
 
     return COINS.map((coin) => {
       const data = getCoinData(coin.id);
@@ -269,7 +279,7 @@ export default function CryptoRatePage({ onCall }) {
               borderRadius: "50%",
               background: wsStatus === "connected" ? "#10b981" : "#f59e0b",
             }}
-          ></div>
+          />
           <span
             style={{
               opacity: 0.4,
@@ -282,9 +292,7 @@ export default function CryptoRatePage({ onCall }) {
           </span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <span
-            style={{ fontSize: "1rem", color: "#60a5fa", fontWeight: "700" }}
-          >
+          <span style={{ fontSize: "1rem", color: "#60a5fa", fontWeight: "700" }}>
             $
           </span>
           <input
@@ -310,7 +318,7 @@ export default function CryptoRatePage({ onCall }) {
             placeholder="0"
           />
           <button
-            onClick={() => {}}
+            onClick={fetchPrices}
             style={{
               background: "rgba(96,165,250,0.08)",
               border: "1px solid rgba(96,165,250,0.1)",
@@ -329,7 +337,7 @@ export default function CryptoRatePage({ onCall }) {
         </div>
       </div>
 
-      {/* Square Grid - No History */}
+      {/* Square Grid */}
       <div
         style={{
           display: "grid",
@@ -342,14 +350,8 @@ export default function CryptoRatePage({ onCall }) {
             key={coin.id}
             style={{
               aspectRatio: "2 / 1",
-              background:
-                baseCoin === coin.id
-                  ? "rgba(96,165,250,0.06)"
-                  : "rgba(30,41,59,0.12)",
-              border:
-                baseCoin === coin.id
-                  ? "1px solid rgba(96,165,250,0.15)"
-                  : "1px solid rgba(255,255,255,0.03)",
+              background: baseCoin === coin.id ? "rgba(96,165,250,0.06)" : "rgba(30,41,59,0.12)",
+              border: baseCoin === coin.id ? "1px solid rgba(96,165,250,0.15)" : "1px solid rgba(255,255,255,0.03)",
               borderRadius: "10px",
               padding: "14px 12px 12px",
               display: "flex",
@@ -358,21 +360,8 @@ export default function CryptoRatePage({ onCall }) {
               transition: "all 0.2s ease",
             }}
           >
-            {/* Symbol + Change */}
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-              }}
-            >
-              <span
-                style={{
-                  fontWeight: "800",
-                  color: "#d660fa",
-                  fontSize: "0.85rem",
-                }}
-              >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontWeight: "800", color: "#d660fa", fontSize: "0.85rem" }}>
                 {coin.symbol}
               </span>
               <span
@@ -382,21 +371,17 @@ export default function CryptoRatePage({ onCall }) {
                   fontSize: "0.85rem",
                 }}
               >
-                {coin.change >= 0 ? "▲" : "▼"}{" "}
-                {Math.abs(coin.change).toFixed(1)}%
+                {coin.change >= 0 ? "▲" : "▼"} {Math.abs(coin.change).toFixed(1)}%
               </span>
             </div>
 
-            {/* Amount Input */}
             <div style={{ margin: "8px 0" }}>
               <input
                 type="number"
                 value={
                   baseCoin === coin.id
                     ? amounts[coin.id]
-                    : coin.calculated > 0
-                      ? coin.calculated.toFixed(6)
-                      : "0.000000"
+                    : coin.calculated > 0 ? coin.calculated.toFixed(6) : "0.000000"
                 }
                 onChange={(e) => onValueChange(coin.id, e.target.value)}
                 style={{
@@ -415,7 +400,6 @@ export default function CryptoRatePage({ onCall }) {
               />
             </div>
 
-            {/* Price */}
             <div
               style={{
                 fontSize: "0.75rem",

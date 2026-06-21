@@ -1,6 +1,15 @@
 import path from "path";
 import fs from "node:fs/promises";
 import sqlite3 from "sqlite3";
+import * as cheerio from "cheerio";
+import { 
+  ALGO_DISPLAY_NAMES, 
+  NICEHASH_ALGO_MAP, 
+  normalizeAlgoForNiceHash, 
+  getAlgorithmDisplayName,
+  getAlgorithmUnit,
+  normalizeAlgo 
+} from "../src/core/mapping.js";
 
 const DATA_DIR = path.resolve(process.cwd(), "data");
 const TRENDS_DB_PATH = path.join(DATA_DIR, "mining_trends.db");
@@ -10,11 +19,8 @@ const COMMON_HEADERS = {
 };
 
 let lastNotifiedOpportunities = new Map();
-let opportunityDb = null;
-let dbInitPromise = null;
-
-// ---- Concurrency lock ----
-let isScanning = false;
+let btcPriceCache = { price: 60000, timestamp: 0 };
+const BTC_PRICE_TTL = 60000;
 
 const TREND_WINDOW_HOURS = 24;
 const MIN_NOTIFY_INTERVAL_MS = 30 * 60 * 1000;
@@ -112,56 +118,9 @@ async function sendMineTelegram(message) {
 }
 
 // =========================
-//  Algo helpers
-// =========================
-const ALGO_DISPLAY = {
-  SHA256: "SHA256", SHA256ASICBOOST: "SHA256AsicBoost", SCRYPT: "Scrypt",
-  DAGGERHASHIMOTO: "DaggerHashimoto (ETH)", ETCHASH: "Etchash",
-  KAWPOW: "KawPow", EQUIHASH: "Equihash", ZHASH: "ZHash",
-  AUTOLYKOS: "Autolykos v2", RANDOMXMONERO: "RandomX (XMR)",
-  OCTOPUS: "Octopus", KHEAVYHASH: "KHeavyHash (KAS)",
-  EAGLESONG: "Eaglesong", VERUSHASH: "VerusHash", NEXAPOW: "NexaPow",
-  FISHHASH: "FishHash (IRON)", DYNEXSOLVE: "DynexSolve",
-  BEAMV3: "BeamV3", BLAKE3: "Blake3 (ALPH)",
-  JANUSHASH: "Janushash", XELISHASHV3: "XelisHash v3",
-  PROGPOWZ: "ProgPow Zano", PEARLHASH: "PearlHash",
-  IRONFISH: "IronFish", ALEPHIUM: "Alephium",
-};
-
-function getDisplayName(algo) {
-  const key = String(algo || "").toUpperCase().trim();
-  return ALGO_DISPLAY[key] || algo;
-}
-
-const ALGO_MAP = {
-  SHA256: "SHA256", SHA256AB: "SHA256ASICBOOST", SHA256ASICBOOST: "SHA256ASICBOOST",
-  SCRYPT: "SCRYPT", DAGGERHASHIMOTO: "DAGGERHASHIMOTO", ETHASH: "DAGGERHASHIMOTO",
-  ETCHASH: "ETCHASH", KAWPOW: "KAWPOW", EQUIHASH: "EQUIHASH", ZHASH: "ZHASH",
-  AUTOLYKOSV2: "AUTOLYKOS", AUTOLYKOS: "AUTOLYKOS",
-  RANDOMX: "RANDOMXMONERO", RANDOMXMONERO: "RANDOMXMONERO",
-  OCTOPUS: "OCTOPUS", KHEAVYHASH: "KHEAVYHASH", KASPA: "KHEAVYHASH",
-  EAGLESONG: "EAGLESONG", VERUSHASH: "VERUSHASH", NEXAPOW: "NEXAPOW",
-  FISHHASH: "FISHHASH", DYNEXSOLVE: "DYNEXSOLVE",
-  BEAMHASHIII: "BEAMV3", BEAMV3: "BEAMV3",
-  BLAKE3_ALPH: "ALEPHIUM", BLAKE3: "ALEPHIUM",
-  JANUSHASH: "JANUSHASH", XELISHASHV3: "XELISHASHV3",
-  X11: "X11", PROGPOWZ: "PROGPOWZ", PEARLHASH: "PEARLHASH",
-  IRONFISH: "IRONFISH", ALEPHIUM: "ALEPHIUM",
-};
-
-function normalizeAlgo(algo) {
-  if (!algo) return "UNKNOWN";
-  const n = String(algo).toUpperCase().trim();
-  for (const [k, v] of Object.entries(ALGO_MAP)) {
-    if (n.includes(k)) return v;
-  }
-  return "UNKNOWN";
-}
-
-// =========================
 //  Scrape HeroMiners
 // =========================
-async function scrapeHeroMinersGlobal(force = false) {
+export async function scrapeHeroMinersGlobal(force = true) {
   try {
     const res = await fetch("https://herominers.com/sitemap.xml", {
       headers: COMMON_HEADERS, signal: AbortSignal.timeout(10000),
@@ -210,15 +169,14 @@ async function scrapeHeroMinersGlobal(force = false) {
 // =========================
 //  Scrape Mining-Dutch
 // =========================
-async function scrapeMiningDutchGlobal(force = false) {
+export async function scrapeMiningDutchGlobal(force = false) {
   try {
     const res = await fetch("https://www.mining-dutch.nl/", {
       headers: COMMON_HEADERS, signal: AbortSignal.timeout(10000),
     });
     if (!res.ok) throw new Error(`Dutch: ${res.status}`);
     const html = await res.text();
-    const cheerioModule = await import("cheerio");
-    const $ = cheerioModule.load(html);
+    const $ = cheerio.load(html);
     const coinStats = [];
     const nowMiningTable = $('h4:contains("Currently Mining")').next("table");
     nowMiningTable.find("tbody > tr").each((i, el) => {
@@ -239,120 +197,158 @@ async function scrapeMiningDutchGlobal(force = false) {
 }
 
 // =========================
-//  Fetch NH Prices (parallel, one batch per algo)
+//  Fetch NH Prices
 // =========================
 async function fetchNhPrices(algos, nhClient = "BT") {
-  const results = {};
   if (!Array.isArray(algos) || algos.length === 0) return results;
   const baseUrl = `http://localhost:${process.env.PORT || 3000}`;
+  const endpoint = type === "nh" ? "/api/v2/hashpower/order/price" : "/api/v2/mrr/rentals";
+  const queryParam = type === "nh" ? "algorithm" : "algo";
+  
   const settled = await Promise.allSettled(
     algos.map(async (algo) => {
       try {
-        const r = await fetch(
-          `${baseUrl}/api/v2/hashpower/order/price?algorithm=${encodeURIComponent(algo)}&client=${nhClient}`,
-          { signal: AbortSignal.timeout(8000) }
-        );
+        const url = type === "nh"
+          ? `${baseUrl}${endpoint}?${queryParam}=${encodeURIComponent(algo)}&client=BT`
+          : `${baseUrl}${endpoint}?${queryParam}=${encodeURIComponent(algo)}&limit=1`;
+        const r = await fetch(url, { signal: AbortSignal.timeout(3000) });
         if (!r.ok) return [algo, 0];
         const d = await r.json();
-        const price = parseFloat(d?.price ?? d?.fixedPrice ?? d?.marketPrice ?? 0);
+        let price = 0;
+        if (type === "nh") {
+          price = parseFloat(d?.price ?? d?.fixedPrice ?? d?.marketPrice ?? 0);
+        } else {
+          const rental = d?.data?.rentals?.[0] || d?.data?.[0] || {};
+          price = parseFloat(rental.price || rental.min_price || rental.rate || 0);
+        }
         return [algo, Number.isFinite(price) ? price : 0];
       } catch { return [algo, 0]; }
     })
   );
+  const results = {};
   for (const item of settled) {
     if (item.status === "fulfilled") results[item.value[0]] = item.value[1];
   }
   return results;
 }
 
-// =========================
-//  Batch trend analysis (single query for ALL algos)
-// =========================
-async function analyzeAllTrends(normalizedAlgos) {
-  const results = new Map();
-  if (!Array.isArray(normalizedAlgos) || normalizedAlgos.length === 0) return results;
-
-  try {
-    const db = await getTrendDb();
-    // One big batch: fetch ALL relevant rows in a single query
-    const cutoff = new Date(Date.now() - TREND_WINDOW_HOURS * 60 * 60 * 1000).toISOString();
-    const placeholders = normalizedAlgos.map(() => '?').join(',');
-    const rows = await all(
-      db,
-      `SELECT algo, captured_at, spread_pct, pool_btc_per_day, pool_miners 
-       FROM mining_opportunities 
-       WHERE algo IN (${placeholders}) AND captured_at >= ? 
-       ORDER BY algo, captured_at ASC`,
-      [...normalizedAlgos, cutoff]
-    );
-
-    // Group by algo in a single pass
-    const grouped = new Map();
-    for (const row of rows) {
-      if (!grouped.has(row.algo)) grouped.set(row.algo, []);
-      grouped.get(row.algo).push(row);
-    }
-
-    // Process each group
-    for (const algo of normalizedAlgos) {
-      const algoRows = grouped.get(algo) || [];
-      if (algoRows.length < 3) {
-        results.set(algo, { direction: "insufficient", samples: algoRows.length, spreadChange: 0 });
-        continue;
-      }
-      const oldest = algoRows[0];
-      const newest = algoRows[algoRows.length - 1];
-      const spreadChange = newest.spread_pct - oldest.spread_pct;
-      let direction = "stable";
-      if (spreadChange > 3) direction = "improving";
-      else if (spreadChange < -3) direction = "declining";
-      results.set(algo, { direction, spreadChange, samples: algoRows.length });
-    }
-  } catch (err) {
-    console.error("[mine:trend:batch]", err.message);
-    // Return defaults for all
-    for (const algo of normalizedAlgos) {
-      results.set(algo, { direction: "error", samples: 0, spreadChange: 0 });
-    }
+function calculateProfitability(poolBtc, nhPrice, mrrPrice, coinPrices = null) {
+  const result = { vsNiceHash: null, vsMrr: null, status: "neutral", recommendation: "", profitBtc: 0, profitUsd: 0 };
+  if (poolBtc > 0 && nhPrice > 0) {
+    const spread = ((poolBtc - nhPrice) / nhPrice) * 100;
+    result.vsNiceHash = spread;
+    result.profitBtc = poolBtc - nhPrice;
+    if (coinPrices?.usd) result.profitUsd = result.profitBtc * coinPrices.usd;
+    if (spread > 5) { result.status = "profitable"; result.recommendation = "✅ Mine on pool, sell on NiceHash"; }
+    else if (spread < -5) { result.status = "loss"; result.recommendation = "❌ Buy on NiceHash instead"; }
+    else { result.status = "neutral"; result.recommendation = "➖ Break-even"; }
   }
-  return results;
+  if (poolBtc > 0 && mrrPrice > 0) {
+    result.vsMrr = ((poolBtc - mrrPrice) / mrrPrice) * 100;
+  }
+  return result;
 }
 
-// =========================
-//  Main scanner (with concurrency lock)
-// =========================
-export async function scanMiningOpportunities(force = false) {
-  if (isScanning) {
-    console.warn("[mine:scan] Already scanning, skipping...");
-    return { success: false, error: "Scan already in progress" };
+function extractCoinNames(heroRows, dutchRows) {
+  const coinNames = new Set();
+  for (const row of heroRows || []) {
+    if (row.coin) coinNames.add(row.coin.toUpperCase());
+    if (row.subdomain) coinNames.add(row.subdomain.toUpperCase());
+    if (row.algorithm) coinNames.add(row.algorithm.toUpperCase());
   }
-  isScanning = true;
+  for (const row of dutchRows || []) {
+    if (row.coin) coinNames.add(row.coin.toUpperCase());
+    if (row.algorithm) coinNames.add(row.algorithm.toUpperCase());
+  }
+  return Array.from(coinNames);
+}
+
+async function sendOpportunityAlert(opp) {
+  const emoji = opp.profitStatus === "profitable" ? "🟢" : opp.profitStatus === "loss" ? "🔴" : "🟡";
+  const coinsDisplay = opp.heroCoins?.slice(0, 5).join(", ") || "N/A";
+  let priceLine = '';
+  if (opp.coinPrices) {
+    const usdPrice = opp.coinPrices.usd ? `$${opp.coinPrices.usd.toFixed(2)}` : 'N/A';
+    const change24h = opp.coinPrices.price_change_24h !== undefined ? 
+      `${opp.coinPrices.price_change_24h >= 0 ? '+' : ''}${opp.coinPrices.price_change_24h.toFixed(2)}%` : 'N/A';
+    priceLine = `<b>Coin Price:</b> ${usdPrice} (24h: ${change24h})\n`;
+  }
+  const msg = `${emoji} <b>Mining ${opp.profitStatus.toUpperCase()}</b>\n━━━━━━━━━━━━━━━━━━\n` +
+    `<b>Algo:</b> <code>${opp.label}</code>\n` +
+    `<b>Pool:</b> <code>${opp.poolBtcPerDay.toFixed(8)} BTC/day</code>\n` +
+    `<b>NH:</b> <code>${opp.nhPriceBtc.toFixed(8)} BTC/day</code>\n` +
+    `<b>MRR:</b> <code>${(opp.mrrPriceBtc || 0).toFixed(8)} BTC/day</code>\n` +
+    `<b>Spread:</b> <code>${opp.spreadPct !== null ? (opp.spreadPct >= 0 ? "+" : "") + opp.spreadPct.toFixed(2) : "N/A"}%</code>\n` +
+    (opp.profitUsd ? `<b>Profit:</b> $${opp.profitUsd.toFixed(2)}\n` : '') +
+    priceLine +
+    `<b>Miners:</b> ${opp.poolMiners}\n` +
+    `<b>Coins:</b> ${coinsDisplay}\n` +
+    `<b>${opp.recommendation || ""}</b>\n` +
+    `━━━━━━━━━━━━━━━━━━\n<i>Updated every 15 min</i>`;
+  await sendMineTelegram(msg);
+}
+
+// async function sendMiningSummary(topOpps) {
+//   const lines = topOpps.map((o, i) => {
+//     const pct = o.spreadPct !== null ? (o.spreadPct >= 0 ? "+" + o.spreadPct.toFixed(2) : o.spreadPct.toFixed(2)) : "N/A";
+//     return `🟢 <b>${i + 1}. ${o.label}</b> — ${o.poolBtcPerDay.toFixed(8)} BTC/day (${pct}%) | ${o.poolMiners} miners`;
+//   });
+//   const msg = `📊 <b>Mining Summary</b>\n━━━━━━━━━━━━━━━━━━\n` +
+//     `<b>Time:</b> ${new Date().toLocaleTimeString()}\n` +
+//     `<b>Profitable:</b> ${topOpps.length}\n━━━━━━━━━━━━━━━━━━\n` +
+//     lines.join("\n") +
+//     `\n━━━━━━━━━━━━━━━━━━\n<i>Updated every 15 min</i>`;
+//   await sendMineTelegram(msg);
+// }
+
+export async function scanMiningOpportunities(force = false) {
+  console.log(`[mine:scan] Scanning...`);
+  
   try {
-  console.log(`[mine:scan] Scanning mining opportunities...`);
+    await fetchAndSaveCoinPrices(force);
+  } catch (err) {
+    console.warn('[mine:scan] CoinGecko fetch failed:', err.message);
+  }
+  
+  const btcPrice = await getBtcPrice();
   const [heroRes, dutchRes] = await Promise.all([
-    scrapeHeroMinersGlobal(force),
-    scrapeMiningDutchGlobal(force),
+    scrapeHeroMinersGlobal(btcPrice),
+    scrapeMiningDutchGlobal(btcPrice, force),
   ]);
 
+  const coinNames = extractCoinNames(heroRes?.coinStats, dutchRes?.coinStats);
+  const coinIdMap = new Map();
+  const coinIdSet = new Set();
+  for (const name of coinNames) {
+    const id = getCoinGeckoId(name);
+    if (id) { coinIdMap.set(name, id); coinIdSet.add(id); }
+  }
+  
+  let coinPrices = {};
+  try {
+    coinPrices = await getCoinPricesFromDb(Array.from(coinIdSet));
+  } catch (err) {
+    console.warn('[mine:scan] Failed to get coin prices:', err.message);
+  }
+
   const algoSet = new Set();
-  for (const row of heroRes.coinStats || []) {
+  for (const row of heroRes?.coinStats || []) {
     if (row.normalizedAlgo && row.normalizedAlgo !== "UNKNOWN") algoSet.add(row.normalizedAlgo);
   }
-  for (const row of dutchRes.coinStats || []) {
+  for (const row of dutchRes?.coinStats || []) {
     if (row.normalizedAlgo && row.normalizedAlgo !== "UNKNOWN") algoSet.add(row.normalizedAlgo);
   }
 
   const algos = Array.from(algoSet).filter(Boolean);
   if (algos.length === 0) return { success: false, error: "No algos found" };
 
-  // Fetch NH prices and trends in parallel
-  const [nhPrices, trendResults] = await Promise.all([
-    fetchNhPrices(algos),
-    analyzeAllTrends(algos),
+  const [nhPrices, mrrPrices] = await Promise.all([
+    fetchPrices(algos, "nh"),
+    fetchPrices(algos, "mrr"),
   ]);
 
   const heroByAlgo = new Map();
-  for (const row of heroRes.coinStats || []) {
+  for (const row of heroRes?.coinStats || []) {
     const k = row.normalizedAlgo;
     if (!heroByAlgo.has(k)) heroByAlgo.set(k, { btcPerDay: 0, miners: 0 });
     const cur = heroByAlgo.get(k);
@@ -361,7 +357,7 @@ export async function scanMiningOpportunities(force = false) {
   }
 
   const dutchByAlgo = new Map();
-  for (const row of dutchRes.coinStats || []) {
+  for (const row of dutchRes?.coinStats || []) {
     const k = row.normalizedAlgo;
     if (!dutchByAlgo.has(k)) dutchByAlgo.set(k, { btcPerDay: 0, miners: 0 });
     const cur = dutchByAlgo.get(k);
@@ -369,77 +365,75 @@ export async function scanMiningOpportunities(force = false) {
     cur.miners += row.miners || 0;
   }
 
-  const db = await getTrendDb();
-  const capturedAt = new Date().toISOString();
-  const notifyMessages = [];
+  // ✅ Define opportunities BEFORE using it
   const opportunities = [];
+  const now = new Date();
 
-  // Build opportunities + insert + check notify in a single loop (no per-algo await on DB)
-  const inserts = [];
   for (const algo of algos) {
     const hero = heroByAlgo.get(algo);
     const dutch = dutchByAlgo.get(algo);
     const poolBtc = Math.max(hero?.btcPerDay || 0, dutch?.btcPerDay || 0);
     const nhPrice = nhPrices[algo] || 0;
+    const mrrPrice = mrrPrices[algo] || 0;
     const spread = poolBtc > 0 && nhPrice > 0 ? ((poolBtc - nhPrice) / nhPrice) * 100 : null;
-    const trend = trendResults.get(algo) || { direction: "insufficient", samples: 0 };
-    const opp = {
+    const coinName = hero?.coins?.[0] || algo;
+    const coinId = coinIdMap.get(coinName) || getCoinGeckoId(coinName, algo);
+    const coinPriceData = coinId ? coinPrices[coinId] || null : null;
+    const profit = calculateProfitability(poolBtc, nhPrice, mrrPrice, coinPriceData);
+
+    opportunities.push({
       algo,
       label: getDisplayName(algo),
       poolBtcPerDay: poolBtc,
       nhPriceBtc: nhPrice,
+      mrrPriceBtc: mrrPrice,
       spreadPct: spread,
+      spreadVsMrr: profit.vsMrr,
       poolMiners: Math.max(hero?.miners || 0, dutch?.miners || 0),
       source: poolBtc > 0 ? (dutch?.btcPerDay > hero?.btcPerDay ? "Mining-Dutch" : "HeroMiners") : "N/A",
-      trend,
-    };
-    opportunities.push(opp);
+    });
+  }
 
-    // Batch DB inserts
-    inserts.push(
-      run(db,
-        `INSERT INTO mining_opportunities (algo, captured_at, pool_btc_per_day, nh_price_btc, mrr_price_btc, spread_pct, pool_miners, trend_direction, summary_json)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [opp.algo, capturedAt, opp.poolBtcPerDay, opp.nhPriceBtc, 0, opp.spreadPct ?? 0, opp.poolMiners, trend.direction, JSON.stringify(opp)]
-      )
-    );
+  opportunities.sort((a, b) => (b.spreadPct ?? -Infinity) - (a.spreadPct ?? -Infinity));
 
-    const shouldNotify = opp.spreadPct !== null && opp.spreadPct >= SPREAD_THRESHOLD_PCT && opp.poolBtcPerDay > 0;
-    if (shouldNotify) {
+  const db = await getTrendDb();
+  const capturedAt = now.toISOString();
+  const notifyMessages = [];
+
+  // ✅ Now opportunities is defined, use it here
+  for (const opp of opportunities) {
+    try {
+      await run(db,
+        `INSERT INTO mining_opportunities (algo, captured_at, pool_btc_per_day, nh_price_btc, mrr_price_btc, spread_pct, pool_miners)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [opp.algo, capturedAt, opp.poolBtcPerDay || 0, opp.nhPriceBtc || 0, 
+         opp.mrrPriceBtc || 0, opp.spreadPct ?? 0, opp.poolMiners || 0]
+      );
+    } catch (err) {
+      console.warn('[DB] Insert failed for', opp.algo, err.message);
+    }
+
+    if (opp.spreadPct !== null && opp.spreadPct >= CONFIG.SPREAD_THRESHOLD_PCT && opp.poolBtcPerDay > 0) {
       const lastNotified = lastNotifiedOpportunities.get(opp.algo) || 0;
-      const timeSinceLast = Date.now() - lastNotified;
-      const isFresh = timeSinceLast > MIN_NOTIFY_INTERVAL_MS || (trend.direction === "improving" && timeSinceLast > 15 * 60 * 1000);
-      if (isFresh || force) {
+      if (Date.now() - lastNotified > CONFIG.MIN_NOTIFY_INTERVAL_MS || force) {
         lastNotifiedOpportunities.set(opp.algo, Date.now());
         notifyMessages.push(opp);
       }
     }
   }
 
-  // Execute all INSERTs in parallel
-  await Promise.all(inserts);
-
-  opportunities.sort((a, b) => {
-    const sa = a.spreadPct ?? -Infinity;
-    const sb = b.spreadPct ?? -Infinity;
-    if (sb !== sa) return sb - sa;
-    return b.poolBtcPerDay - a.poolBtcPerDay;
-  });
-
-  // Send alerts for notifiable opportunities
   if (notifyMessages.length > 0) {
-    await sendOpportunityAlerts(notifyMessages);
+    for (const opp of notifyMessages) {
+      await sendOpportunityAlert(opp);
+    }
   }
 
-  const positiveCount = opportunities.filter((o) => o.spreadPct !== null && o.spreadPct > 0).length;
-  if (positiveCount > 0) {
-    await sendMiningSummary(opportunities.filter((o) => o.spreadPct !== null && o.spreadPct > 0).slice(0, 10));
+  const profitable = opportunities.filter((o) => o.profitStatus === "profitable");
+  if (profitable.length > 0) {
+    await sendMiningSummary(profitable.slice(0, 10));
   }
 
   return { success: true, scannedAt: capturedAt, totalAlgos: algos.length, opportunities: opportunities.slice(0, 20), notificationsSent: notifyMessages.length, positiveCount };
-  } finally {
-    isScanning = false;
-  }
 }
 
 // =========================
@@ -495,20 +489,74 @@ export async function handleMiningOpportunityScan(req, res) {
   }
 }
 
-// =========================
-//  Background scheduler
-// =========================
+export async function getMiningStatus() {
+  try {
+    const db = await getTrendDb();
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const stats = await all(db,
+      `SELECT COUNT(*) as total, 
+        SUM(CASE WHEN profit_status = 'profitable' THEN 1 ELSE 0 END) as profitable,
+        SUM(CASE WHEN profit_status = 'loss' THEN 1 ELSE 0 END) as loss,
+        SUM(CASE WHEN profit_status = 'neutral' THEN 1 ELSE 0 END) as neutral,
+        AVG(spread_pct) as avg_spread, MAX(spread_pct) as max_spread,
+        SUM(pool_miners) as total_miners
+       FROM mining_opportunities WHERE captured_at >= ?`, [oneHourAgo]
+    );
+    const latest = await all(db,
+      `SELECT algo, coin_name, coin_id, pool_btc_per_day, spread_pct, profit_status, pool_miners
+       FROM mining_opportunities WHERE captured_at >= ? AND spread_pct IS NOT NULL
+       ORDER BY spread_pct DESC LIMIT 10`, [oneHourAgo]
+    );
+    const coinPrices = await getCoinPricesFromDb();
+    return { success: true, timestamp: new Date().toISOString(), summary: stats[0] || {}, topOpportunities: latest, coinPrices };
+  } catch (err) { return { success: false, error: err.message }; }
+}
+
+export async function sendMiningStatus() {
+  const status = await getMiningStatus();
+  if (!status.success) return status;
+  const s = status.summary;
+  const msg = `${s.profitable > 0 ? "🟢" : "🔴"} <b>Mining System Status</b>\n` +
+    `━━━━━━━━━━━━━━━━━━\n<b>Time:</b> ${new Date().toLocaleString()}\n` +
+    `<b>Algos:</b> ${s.total}\n<b>Miners:</b> ${(s.total_miners || 0).toLocaleString()}\n` +
+    `━━━━━━━━━━━━━━━━━━\n<b>Profitability:</b>\n  🟢 Profitable: ${s.profitable}\n  🟡 Neutral: ${s.neutral}\n  🔴 Loss: ${s.loss}\n` +
+    `━━━━━━━━━━━━━━━━━━\n<b>Stats:</b>\n  📊 Avg Spread: ${(s.avg_spread || 0).toFixed(2)}%\n  📈 Max Spread: ${(s.max_spread || 0).toFixed(2)}%\n` +
+    `━━━━━━━━━━━━━━━━━━\n<i>System scans every 15 minutes</i>`;
+  await sendMineTelegram(msg);
+  return { success: true };
+}
+
 let scanInterval = null;
+let coinPriceInterval = null;
 
 export function startMiningOpportunityScanner() {
-  if (scanInterval) { console.log("[mine:scan] Already running"); return; }
-  console.log("[mine:scan] Starting background scanner (every 30 min)");
-  scanMiningOpportunities(true).catch((err) => console.error("[mine:scan:init]", err.message));
+  if (scanInterval) {
+    console.log("[mine:scan] Scanner already running");
+    return;
+  }
+  console.log("[mine:scan] Starting scanner (every 15 min)");
+  
+  // Initial scan
+  scanMiningOpportunities(true).catch((err) => {
+    console.error("[mine:scan] Initial scan failed:", err.message);
+  });
+  
   scanInterval = setInterval(() => {
-    scanMiningOpportunities(false).catch((err) => console.error("[mine:scan:tick]", err.message));
-  }, 30 * 60 * 1000);
+    scanMiningOpportunities(false).catch((err) => {
+      console.error("[mine:scan] Scheduled scan failed:", err.message);
+    });
+  }, 5000);
 }
 
 export function stopMiningOpportunityScanner() {
-  if (scanInterval) { clearInterval(scanInterval); scanInterval = null; console.log("[mine:scan] Stopped"); }
+  if (scanInterval) {
+    clearInterval(scanInterval);
+    scanInterval = null;
+    console.log("[mine:scan] Scanner stopped");
+  }
+  if (coinPriceInterval) {
+    clearInterval(coinPriceInterval);
+    coinPriceInterval = null;
+    console.log("[CoinGecko] Price fetcher stopped");
+  }
 }
