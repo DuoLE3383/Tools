@@ -17,7 +17,6 @@
 	"compatibility_flags": [
 		"nodejs_compat"
 	],
-	
 	"vars": {
 		"NICEHASH_API_KEY": "",
 		"NICEHASH_API_SECRET": "",
@@ -30,9 +29,9 @@
 	},
 	"kv_namespaces": [
 		{
-			"binding": "KV",
-			"id": "c5111bcaf291482887368894e523525a",
-			"preview_id": "<ID_OF_PREVIEW_KV_NAMESPACE_FOR_LOCAL_DEVELOPMENT>"
+			"binding": "my_kv",
+			"id": "ea7dc2d3ab8c4ca8969c9911f4dd4768",
+			"remote": true
 		}
-	]
+	],
 }
