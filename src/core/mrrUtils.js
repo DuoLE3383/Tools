@@ -157,7 +157,7 @@ export function getPriceDataLocal(source) {
       obj.currency || obj.price_unit || "BTC",
     ).toUpperCase();
 
-    const preferredKeys = ["BTC", "USD", "LTC"];
+    const preferredKeys = ["BTC", "USD", "LTC", "ETH", "DOGE"];
     for (const key of preferredKeys) {
       const value = getObjValue(key);
       if (value !== undefined) return { value, currency: key.toUpperCase() };

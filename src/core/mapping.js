@@ -2,10 +2,8 @@
 
 export const ALGO_DISPLAY_NAMES = {
   SHA256: "SHA256",
-  SHA256ASICBOOST: "SHA256AsicBoost",
-  SHA256AB: "SHA256AsicBoost",
+  SHA256ASICBOOST: "SHA256AB",
   SCRYPT: "Scrypt",
-  ETH: "DaggerHashimoto",
   DAGGERHASHIMOTO: "DaggerHashimoto",
   ETCHASH: "Etchash",
   EQUIHASH: "Equihash",
@@ -45,9 +43,7 @@ export const ALGO_DISPLAY_NAMES = {
 // NiceHash algorithm normalization
 export const NICEHASH_ALGO_MAP = {
   SHA256: "SHA256",
-  SHA256AB: "SHA256ASICBOOST",
   SHA256ASICBOOST: "SHA256ASICBOOST",
-  SHA256ASICSBOOST: "SHA256ASICBOOST",
   SCRYPT: "SCRYPT",
   ETH: "DAGGERHASHIMOTO",
   DAGGERHASHIMOTO: "DAGGERHASHIMOTO",
@@ -82,7 +78,6 @@ export const NICEHASH_ALGO_MAP = {
 // MRR algorithm mapping
 export const MRR_ALGO_MAP = {
   SHA256: "sha256",
-  SHA256AB: "sha256ab",
   SHA256ASICBOOST: "sha256ab",
   SCRYPT: "scrypt",
   ETH: "daggerhashimoto",
