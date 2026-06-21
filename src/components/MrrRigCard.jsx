@@ -286,25 +286,18 @@ const MrrRigCard = ({
   const roiFormulaLabel = "MRR Sold Rate vs NiceHash Buy Order";
 
   const normalizedCardAlgo = normalizeAlgoForNiceHash(algoName || rawAlgo);
+  // Pick the highest-price order matching this algorithm from the full My Orders List
   const nhOrder = [...(nhOrders || [])]
-    .sort(
-      (a, b) =>
-        Number(
-          Boolean(
-            b?.isActive ||
-            b?.rawOrder?.status?.code === "ACTIVE" ||
-            b?.rawOrder?.status === "ACTIVE",
-          ),
-        ) -
-        Number(
-          Boolean(
-            a?.isActive ||
-            a?.rawOrder?.status?.code === "ACTIVE" ||
-            a?.rawOrder?.status === "ACTIVE",
-          ),
-        ),
-    )
-    .find((order) => normalizeOrderAlgo(order) === normalizedCardAlgo);
+    .filter((order) => normalizeOrderAlgo(order) === normalizedCardAlgo)
+    .sort((a, b) => {
+      const priceA = getNiceHashPriceValue(
+        a?.price ?? a?.rawOrder?.price ?? a,
+      );
+      const priceB = getNiceHashPriceValue(
+        b?.price ?? b?.rawOrder?.price ?? b,
+      );
+      return priceB - priceA; // highest price first
+    })[0];
 
   const orderNhPrice = getNiceHashPriceValue(
     nhOrder?.price ?? nhOrder?.rawOrder?.price ?? nhOrder,
@@ -314,7 +307,7 @@ const MrrRigCard = ({
     buyNhPrice > 0
       ? Number.parseFloat(nhOrder?.add_fee ?? nhOrder?.priceWithFee ?? 0) > 0
         ? Number.parseFloat(nhOrder.add_fee ?? nhOrder.priceWithFee)
-        : buyNhPrice * 1.04
+        : buyNhPrice
       : 0;
   const myNhUnit = getAlgorithmUnit(
     normalizeAlgoForNiceHash(algoName || rawAlgo),
