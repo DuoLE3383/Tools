@@ -292,3 +292,43 @@ function getUnitMultiplier(unit) {
     .trim();
   return HASHRATE_SUFFIXES[normalized] || 1;
 }
+
+// ============================================================
+// ✅ NEW EXPORTS - Fix for MrrRigCard.jsx
+// ============================================================
+
+/**
+ * Check if algorithm is SHA256 AsicBoost
+ */
+export function isAsicBoost(algo) {
+  if (!algo) return false;
+  const normalized = String(algo).toUpperCase().trim();
+  return normalized === "SHA256ASICBOOST" || 
+         normalized === "SHA256AB" ||
+         normalized.includes("ASICBOOST");
+}
+
+/**
+ * Get appropriate MRR algorithm key for API calls
+ * Special handling for AsicBoost vs standard SHA256
+ */
+export function getMrrAlgoKey(algo) {
+  if (!algo) return "sha256";
+  const normalized = String(algo).toUpperCase().trim();
+  
+  // If it's AsicBoost, use sha256ab
+  if (isAsicBoost(normalized)) {
+    return "sha256ab";
+  }
+  
+  // Otherwise use standard mapping
+  return mapNiceHashToMRR(normalized);
+}
+
+/**
+ * Build MRR API URL for algorithm rate
+ */
+export function buildMrrApiUrl(algo) {
+  const mrrAlgo = getMrrAlgoKey(algo);
+  return `https://www.miningrigrentals.com/api/v2/market/algos/${mrrAlgo}`;
+}

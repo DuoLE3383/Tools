@@ -16,6 +16,8 @@ import {
   getAlgorithmUnit,
   getMrrAlgorithmUnit,
   calculatePriceComparison,
+  getMrrAlgoKey,
+  isAsicBoost,
 } from "../core/mapping.js";
 
 const formatPercent = (value) => {
@@ -125,18 +127,15 @@ const convertPaidToBtc = (
   if (!amount || amount <= 0) return 0;
   if (upperCurrency === "BTC") return amount;
 
-  // Try CoinGecko API price first
   const coinId = COINGECKO_BY_CURRENCY[upperCurrency];
   const apiBtcRate = coinId
     ? Number.parseFloat(coinPrices?.[coinId]?.btc || 0)
     : 0;
   if (apiBtcRate > 0) return amount * apiBtcRate;
 
-  // Fallback to hardcoded approximate rate
   const fallbackRate = FALLBACK_BTC_RATES[upperCurrency];
   if (fallbackRate !== undefined) return amount * fallbackRate;
 
-  // Last resort: use the fallbackBtc parameter from price data
   return Number.isFinite(fallbackBtc) && fallbackBtc > 0 ? fallbackBtc : 0;
 };
 
@@ -169,6 +168,7 @@ const MrrRigCard = ({
   expandedPools,
   togglePoolInfo,
   setEnrichedInfo,
+  mrrClient, // NEW: MRR client for API calls
 }) => {
   const statusStr = String(
     typeof rig.status === "object" ? rig.status.status : rig.status || "",
@@ -182,6 +182,12 @@ const MrrRigCard = ({
   const idLabel = isRented && rentalId ? "Rental" : "Rig";
   const [nowMs, setNowMs] = useState(0);
 
+  // NEW: State for MRR market rate from API
+  const [mrrMarketRate, setMrrMarketRate] = useState(0);
+  const [isLoadingMrrRate, setIsLoadingMrrRate] = useState(false);
+  const [mrrRateError, setMrrRateError] = useState(null);
+
+  // Timer for rental progress
   useEffect(() => {
     if (!isRented) return undefined;
 
@@ -190,6 +196,51 @@ const MrrRigCard = ({
     const timer = setInterval(updateNow, 30000);
     return () => clearInterval(timer);
   }, [isRented]);
+
+  // NEW: Fetch MRR market rate from API using /market/stats
+  useEffect(() => {
+    const rawAlgo = info?.algo || rig.algo || rig.algorithm || rig.type || algoName;
+    const normalizedAlgo = normalizeAlgoForNiceHash(rawAlgo || algoName);
+    
+    if (!normalizedAlgo || normalizedAlgo === "UNKNOWN" || !mrrClient) return;
+
+    const fetchRate = async () => {
+      setIsLoadingMrrRate(true);
+      setMrrRateError(null);
+      
+      try {
+        const mrrAlgoKey = getMrrAlgoKey(normalizedAlgo);
+        
+        // Use /market/stats to get actual filled order prices
+        const response = await mrrClient.call({
+          method: "GET",
+          endpoint: "/market/stats",
+          query: { algorithm: mrrAlgoKey }
+        });
+        
+        if (response.statusCode === 200 && response.data?.success) {
+          const stats = response.data.data;
+          const avgPrice = stats?.avg_price || stats?.average || 0;
+          
+          if (avgPrice > 0) {
+            setMrrMarketRate(avgPrice);
+            console.log(`✅ MRR avg rate for ${mrrAlgoKey}: ${avgPrice}`);
+          } else {
+            setMrrRateError("No filled orders in last 24h");
+          }
+        } else {
+          setMrrRateError(response.data?.message || "API error");
+        }
+      } catch (error) {
+        setMrrRateError(error.message);
+        console.error("❌ Failed to fetch MRR stats:", error);
+      } finally {
+        setIsLoadingMrrRate(false);
+      }
+    };
+
+    fetchRate();
+  }, [info?.algo, rig.algo, rig.algorithm, rig.type, algoName, mrrClient]);
 
   const adsVal = useMemo(
     () =>
@@ -244,6 +295,9 @@ const MrrRigCard = ({
   const rawAlgo =
     info?.algo || rig.algo || rig.algorithm || rig.type || algoName;
   const normalizedAlgo = normalizeAlgoForNiceHash(rawAlgo || algoName);
+  const mrrApiKey = getMrrAlgoKey(normalizedAlgo);
+  const isAsicBoostAlgo = isAsicBoost(normalizedAlgo);
+
   const paidPrice = resolvePaidPrice(
     info?.price || rig.price,
     info?.price_converted || rig.price_converted,
@@ -275,28 +329,32 @@ const MrrRigCard = ({
   const adsInMrrUnit =
     adsVal > 0 ? convertHashrateValue(adsVal, advertisedUnit, mrrUnit) : 0;
   const durationDays = durationHours > 0 ? durationHours / 24 : 0;
-  const mrrDailyRate =
+
+  // ✅ Calculate fallback rate from rental payment
+  const calculatedMrrRate =
     paidBtcAmount > 0 && adsInMrrUnit > 0 && durationDays > 0
       ? paidBtcAmount / durationDays / adsInMrrUnit
       : 0;
-  const mrrDailyRateSource =
-    paidBtcAmount > 0
+
+  // ✅ Use API rate if available, otherwise fallback to calculated rate
+  const mrrDailyRate = mrrMarketRate > 0 ? mrrMarketRate : calculatedMrrRate;
+
+  // ✅ Update source label to show actual source
+  const mrrDailyRateSource = mrrMarketRate > 0
+    ? `MRR API (${mrrApiKey})` 
+    : calculatedMrrRate > 0
       ? "Calculated from MRR sold rental"
-      : "Waiting for paid BTC conversion";
-  const roiFormulaLabel = "MRR Sold Rate vs NiceHash Buy Order";
+      : isLoadingMrrRate
+        ? "Loading MRR API..."
+        : "Waiting for MRR API";
 
   const normalizedCardAlgo = normalizeAlgoForNiceHash(algoName || rawAlgo);
-  // Pick the highest-price order matching this algorithm from the full My Orders List
   const nhOrder = [...(nhOrders || [])]
     .filter((order) => normalizeOrderAlgo(order) === normalizedCardAlgo)
     .sort((a, b) => {
-      const priceA = getNiceHashPriceValue(
-        a?.price ?? a?.rawOrder?.price ?? a,
-      );
-      const priceB = getNiceHashPriceValue(
-        b?.price ?? b?.rawOrder?.price ?? b,
-      );
-      return priceB - priceA; // highest price first
+      const priceA = getNiceHashPriceValue(a?.price ?? a?.rawOrder?.price ?? a);
+      const priceB = getNiceHashPriceValue(b?.price ?? b?.rawOrder?.price ?? b);
+      return priceB - priceA;
     })[0];
 
   const orderNhPrice = getNiceHashPriceValue(
@@ -326,8 +384,11 @@ const MrrRigCard = ({
     roiPercent !== null
       ? formatPercent(roiPercent)
       : buyNhPriceWithFee > 0
-        ? "Waiting for MRR sold rate"
+        ? mrrDailyRate <= 0
+          ? "Waiting for MRR rate"
+          : "Waiting for MRR sold rate"
         : "Waiting for NiceHash buy order";
+
   const displayAlgo = getAlgoDisplayName(normalizedAlgo || rawAlgo);
 
   const elapsedMs =
@@ -344,13 +405,12 @@ const MrrRigCard = ({
   const hSuffix = rig.hashrate?.suffix || rig.hashrate?.advertised?.type || "";
 
   const getEfficiencyAccent = (efficiency) => {
-    if (!Number.isFinite(efficiency)) return "rgba(148, 163, 184, 0.18)"; // Default grey
-    if (efficiency >= 98) return "rgba(197, 34, 238, 0.3)"; // Cyan
-    if (efficiency >= 70) return "rgba(23, 185, 131, 0.3)"; // Green
-    if (efficiency >= 50) return "rgba(251, 191, 36, 0.30)"; // Yellow
-    if (efficiency >= 30) return "rgba(251, 36, 36, 0.3)"; // Red
-
-    return "rgba(239, 68, 68, 0.30)"; // Red
+    if (!Number.isFinite(efficiency)) return "rgba(148, 163, 184, 0.18)";
+    if (efficiency >= 98) return "rgba(197, 34, 238, 0.3)";
+    if (efficiency >= 70) return "rgba(23, 185, 131, 0.3)";
+    if (efficiency >= 50) return "rgba(251, 191, 36, 0.30)";
+    if (efficiency >= 30) return "rgba(251, 36, 36, 0.3)";
+    return "rgba(239, 68, 68, 0.30)";
   };
 
   const accent = getEfficiencyAccent(effNum);
@@ -378,6 +438,24 @@ const MrrRigCard = ({
     borderRadius: "10px",
     padding: "6px",
   };
+
+  // NEW: AsicBoost badge
+  const asicBoostBadge = isAsicBoostAlgo ? (
+    <span
+      style={{
+        background: "rgba(245, 158, 11, 0.2)",
+        color: "#fbbf24",
+        fontSize: "7px",
+        padding: "1px 6px",
+        borderRadius: "999px",
+        fontWeight: "700",
+        marginLeft: "4px",
+        border: "1px solid rgba(245, 158, 11, 0.3)",
+      }}
+    >
+      AB
+    </span>
+  ) : null;
 
   return (
     <article className="rig-card" style={shellStyle}>
@@ -483,23 +561,33 @@ const MrrRigCard = ({
               }}
             >
               {displayAlgo}
+              {asicBoostBadge}
             </span>
-            |{/* <span>{roiFormulaLabel}</span> */}
+            |
             {paidLabel && (
-              <>
-                {/* <span style={{ opacity: 0.35 }}>•</span> */}
-                <span
-                  style={{
-                    color: "#fbbf24",
-                    fontWeight: 900,
-                    fontSize: "11px",
-                  }}
-                >
-                  Paid {paidLabel}
-                </span>
-              </>
+              <span
+                style={{
+                  color: "#fbbf24",
+                  fontWeight: 900,
+                  fontSize: "11px",
+                }}
+              >
+                Paid {paidLabel}
+              </span>
             )}
           </div>
+          {/* NEW: Show API status info */}
+          {mrrMarketRate <= 0 && !isLoadingMrrRate && mrrRateError && (
+            <div
+              style={{
+                fontSize: "7px",
+                color: "#f87171",
+                opacity: 0.7,
+              }}
+            >
+              MRR API: {mrrRateError}
+            </div>
+          )}
         </div>
 
         <div
@@ -546,18 +634,7 @@ const MrrRigCard = ({
             >
               {roiLabel}
             </div>
-            {/* <div style={{ fontSize: '8px', opacity: 0.7, marginTop: '2px' }}>
-              {roiFormulaLabel}
-            </div> */}
-            {/* <div style={{ fontSize: '7px', opacity: 0.5, marginTop: '1px' }}>
-              (MRR Sold Rate - NiceHash Buy Order) / NiceHash Buy Order
-            </div> */}
           </div>
-          {/* {isRented && (
-            <div style={{ fontSize: '9px', opacity: 0.7 }}>
-              {formatRentalStartTime(rentalStartTime)}
-            </div>
-          )} */}
         </div>
       </div>
 
@@ -578,10 +655,14 @@ const MrrRigCard = ({
               marginBottom: "4px",
             }}
           >
-            {/* <div style={{ color: '#e2e8f0', fontWeight: 700 }}>Rental Snapshot</div> */}
             <div style={{ fontSize: "8px", color: "#94a3b8" }}>
               {mrrDailyRateSource}
             </div>
+            {isLoadingMrrRate && (
+              <span style={{ fontSize: "7px", color: "#60a5fa" }}>
+                loading...
+              </span>
+            )}
           </div>
 
           <div
@@ -653,6 +734,18 @@ const MrrRigCard = ({
                 }}
               >
                 MRR Rate
+                {mrrMarketRate > 0 && (
+                  <span
+                    style={{
+                      marginLeft: "4px",
+                      fontSize: "6px",
+                      opacity: 0.5,
+                      color: "#34d399",
+                    }}
+                  >
+                    ✓ API
+                  </span>
+                )}
               </div>
               <div
                 style={{ color: "#fbbf24", fontWeight: 800, marginTop: "3px" }}
@@ -661,7 +754,21 @@ const MrrRigCard = ({
                   <>
                     {mrrDailyRate.toFixed(8)}
                     <span style={{ opacity: 0.5 }}> BTC/{mrrUnit}/Day</span>
+                    {mrrMarketRate > 0 && (
+                      <span
+                        style={{
+                          marginLeft: "4px",
+                          fontSize: "6px",
+                          opacity: 0.4,
+                          fontFamily: "monospace",
+                        }}
+                      >
+                        ({mrrApiKey})
+                      </span>
+                    )}
                   </>
+                ) : isLoadingMrrRate ? (
+                  "Loading..."
                 ) : (
                   "N/A"
                 )}

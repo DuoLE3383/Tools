@@ -1,21 +1,39 @@
-const TUNNEL_URL = 'https://undo-formerly-maintenance-lined.trycloudflare.com'; // <-- your tunnel URL
-
-export default {
-  async fetch(request, env) {
-    const url = new URL(request.url);
-
-    // Proxy ALL /api/* requests to the tunnel
-    if (url.pathname.startsWith('/api/')) {
-      const backendUrl = TUNNEL_URL + url.pathname + url.search;
-      const proxyRequest = new Request(backendUrl, {
-        method: request.method,
-        headers: request.headers,
-        body: request.body,
-      });
-      return fetch(proxyRequest);
-    }
-
-    // Serve static assets (frontend)
-    return env.ASSETS.fetch(request);
-  }
-};
+/**
+ * For more details on how to configure Wrangler, refer to:
+ * https://developers.cloudflare.com/workers/wrangler/configuration/
+ */
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "tools",
+	"main": "worker/index.js",
+	"compatibility_date": "2026-05-26",
+	"assets": {
+		"directory": "./dist",
+		"not_found_handling": "single-page-application"
+	},
+	"observability": {
+		"enabled": true
+	},
+	"upload_source_maps": true,
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"vars": {
+		"NICEHASH_API_KEY": "",
+		"NICEHASH_API_SECRET": "",
+		"NICEHASH_ORG_ID": "",
+		"NICEHASH_ENVIRONMENT": "production",
+		"MRR_KEY_RIG_BT": "",
+		"MRR_SECRET_RIG_BT": "",
+		"MRR_KEY_RIG_SL": "",
+		"MRR_SECRET_RIG_SL": "",
+		"TUNNEL_URL": "https://plants-backing-kevin-secretary.trycloudflare.com/"
+	},
+	"kv_namespaces": [
+		{
+			"binding": "my_kv",
+			"id": "ea7dc2d3ab8c4ca8969c9911f4dd4768",
+			"remote": true
+		}
+	],
+}

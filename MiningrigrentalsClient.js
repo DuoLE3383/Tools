@@ -38,7 +38,14 @@ export class MiningRigRentalsClient {
     this.clientName = name;
     this.baseUrl = "https://www.miningrigrentals.com/api/v2";
   }
-
+  async getMarketStats(algorithm, duration = 24) {
+  const response = await this.call({
+    method: "GET",
+    endpoint: "/market/stats",
+    query: { algorithm, duration }
+  });
+  return response.data?.data || null;
+  }
   async call({
     method = "GET",
     endpoint,
