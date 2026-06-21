@@ -30,7 +30,9 @@ export default defineConfig(({ command }) => ({
         // ws: true,
         configure: (proxy) => {
           proxy.on('error', (err) => console.error('Proxy error:', err));
-        }
+        },
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, '')
       },
     },
   },
