@@ -17,6 +17,8 @@ const DATA_DIR = path.resolve(process.cwd(), 'data');
 /** In-memory cache for CoinGecko prices with TTL */
 const coinGeckoCache = new Map();
 const COINGECKO_CACHE_TTL = 60000; // 1 minute
+const hasToken = !!process.env.TELEGRAM_BOT_TOKEN;
+const hasChatId = !!process.env.TELEGRAM_CHAT_ID;
 
 /** Hardcoded fallback BTC rates for common coins when APIs are unavailable */
 const FALLBACK_BTC_RATES = {
@@ -1056,8 +1058,6 @@ export function registerRoutes(app) {
   }));
 
   app.get('/api/v2/notify/telegram/health', asyncHandler(async (req, res) => {
-    const hasToken = !!process.env.TELEGRAM_BOT_TOKEN;
-    const hasChatId = !!process.env.TELEGRAM_CHAT_ID;
     res.json({
       success: hasToken && hasChatId,
       configured: hasToken && hasChatId,
@@ -1108,7 +1108,6 @@ export function registerRoutes(app) {
       return res.json({ success: true, data: cached.data, cached: true });
     }
 
-    const url = `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd,btc&include_24hr_change=true`;
 
     try {
       const response = await fetch(url, {

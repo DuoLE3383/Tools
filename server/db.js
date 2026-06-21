@@ -98,6 +98,9 @@ export async function getTrendDb() {
     await run(db, `CREATE INDEX IF NOT EXISTS idx_coin_prices_coin ON coin_prices(coin_id, captured_at)`);
     await run(db, `CREATE INDEX IF NOT EXISTS idx_coin_prices_time ON coin_prices(captured_at)`);
 
+    // Migrate old schema: add missing columns if table already existed
+    await updateMiningOpportunitiesTable();
+
     opportunityDb = db;
     return db;
   })();

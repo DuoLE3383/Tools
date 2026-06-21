@@ -79,7 +79,8 @@ export async function initializeApp(env) {
   const syncManager = new SyncManager({ db, nhConfigs, mrrConfigs, mrrApiCall, resolveNhClient, getNiceHashApp });
   syncManager.run();
 
-  // Start the monitor with a safe recursive pattern to prevent overlaps
+  // Start the monitor: first a force heartbeat after 15s (once DB/API are warm),
+  // then recurse every 60s for routine scans (non-force)
   const startMonitor = async () => {
     try {
       await runRentalMonitor();
@@ -91,10 +92,15 @@ export async function initializeApp(env) {
     }
   };
 
-  startMonitor();
-
   // Delay first heartbeat until sync/app load is complete (15s)
-  setTimeout(() => runRentalMonitor(true), 15000);
+  setTimeout(() => {
+    runRentalMonitor(true)
+      .then(() => startMonitor())
+      .catch((err) => {
+        console.error('[Monitor] Force heartbeat failed, starting normal loop anyway:', err.message);
+        startMonitor();
+      });
+  }, 15000);
 
   // Start mining opportunity scanner for Telegram alerts
   setTimeout(() => startMiningOpportunityScanner(), 30000);

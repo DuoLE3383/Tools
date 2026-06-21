@@ -513,13 +513,11 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
           const rentalId = getRentalIdFromRig(rig);
           const onlineFlag = typeof rig?.status?.online === 'boolean' ? rig.status.online : Boolean(rig?.online);
 
-          const isRented = rentedFlag || status.includes('rented') || status.includes('active') ||
-                           (rentalId && rentalId !== '0');
+          const isRented = rentedFlag || status.includes('rented') || status.includes('active') || (rentalId && rentalId !== '0');
           const isDisabled = status.includes('disabled');
           const isOffline = status.includes('offline') || !onlineFlag;
           const isWarning = status.includes('warning');
-          const isAvailable = !isRented && !isDisabled && onlineFlag &&
-                              (status.includes('available') || status.includes('online') || status === '');
+          const isAvailable = !isRented && !isDisabled && onlineFlag && (status.includes('available') || status.includes('online') || status === '');
 
           // ----- FIXED: currentStatus properly computed -----
           const currentStatus = isOffline ? 'OFFLINE'
@@ -1180,6 +1178,6 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
     },
   };
   } finally {
-    isMonitorRunning = true;
+    isMonitorRunning = false;
   }
 }
