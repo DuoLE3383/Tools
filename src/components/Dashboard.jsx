@@ -99,6 +99,7 @@ export default function Dashboard({
                 onClick={() => {
                   window.history.pushState({}, "", "/mining");
                   window.dispatchEvent(new PopStateEvent("popstate"));
+                  window.open("/mining", "_blank");
                 }}
                 style={{ fontSize: "10px" }}
               >
