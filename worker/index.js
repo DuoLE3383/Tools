@@ -1,4 +1,4 @@
-const TUNNEL_URL = 'https://damages-static-champagne-steering.trycloudflare.com'; // <-- your URL
+const TUNNEL_URL = 'https://geo-venice-heating-fruit.trycloudflare.com'; // <-- your URL
 
 export default {
   async fetch(request, env) {

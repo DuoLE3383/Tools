@@ -27,11 +27,11 @@
 		"MRR_SECRET_RIG_BT": "",
 		"MRR_KEY_RIG_SL": "",
 		"MRR_SECRET_RIG_SL": "",
-		"TUNNEL_URL": "https://damages-static-champagne-steering.trycloudflare.com"
+		"TUNNEL_URL": " https://geo-venice-heating-fruit.trycloudflare.com"
 	},
 	"kv_namespaces": [
 		{
-			"binding": "server",
+			"binding": "KV",
 			"id": "0f1ddf5ff91d400dad8cfb3c316bfa1e",
 			"remote": true
 		}
