@@ -120,8 +120,8 @@ export default function Dashboard({
           borderRadius: "16px",
           padding: "24px",
           height: "850px",
-          minHeight: "200px",
-          overflow: "auto",
+          minHeight: "500px",
+          overflow: "hidden",
         }}
       >
         <Pools

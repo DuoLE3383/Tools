@@ -9,7 +9,7 @@ import {
   getStatusClass,
   getRoiColor,
   getNiceHashPriceValue,
-} from "../../core/mrrUtils.js";
+} from "../core/mrrUtils.js";
 import {
   HASHRATE_SUFFIXES,
   getAlgoDisplayName,
@@ -399,6 +399,7 @@ const MrrRigCard = ({
 
   const asicBoostBadge = isAsicBoostAlgo ? (
     <span style={{ background: "rgba(245, 158, 11, 0.2)", color: "#fbbf24", fontSize: "7px", padding: "1px 6px", borderRadius: "999px", fontWeight: "700", marginLeft: "4px", border: "1px solid rgba(245, 158, 11, 0.3)" }}>
+
     </span>
   ) : null;
 
@@ -425,7 +426,7 @@ const MrrRigCard = ({
           </strong>
           <div style={{ display: "flex", alignItems: "center", gap: "5px", flexWrap: "wrap", color: "#94a3b8", fontSize: "9px" }}>
             <span style={{ fontSize: "14px", fontWeight: 900, color: "#38bdf8", textShadow: "0 0 18px rgba(56, 189, 248, 0.22)" }}>
-              {displayAlgo}
+              {displayAlgo}{asicBoostBadge}
             </span>
             |
             {paidLabel && <span style={{ color: "#fbbf24", fontWeight: 900, fontSize: "11px" }}>Paid {paidLabel}</span>}
@@ -467,13 +468,13 @@ const MrrRigCard = ({
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "5px", fontSize: "9px" }}>
             <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: "9px", padding: "6px" }}>
               <div style={{ opacity: 0.6, textTransform: "uppercase", fontSize: "8px" }}>MRR Rate</div>
-              <div style={{ color: "#fbbf24", fontWeight: 600, marginTop: "3px" }}>
+              <div style={{ color: "#fbbf24", fontWeight: 800, marginTop: "3px" }}>
                 {finalMrrRate > 0 ? (
                   <>
                     {finalMrrRate.toFixed(8)}
-                    <span style={{ opacity: 0.5, fontSize: "7px" }}> BTC/{mrrUnit}/Day</span>
+                    <span style={{ opacity: 0.5, fontSize: "8px" }}> BTC/{mrrUnit}/Day</span>
                     {mrrMarketRate > 0 && (
-                      <span style={{ marginLeft: "4px", fontSize: "7px", opacity: 0.4, fontFamily: "monospace" }}>
+                      <span style={{ marginLeft: "4px", fontSize: "6px", opacity: 0.4, fontFamily: "monospace" }}>
                         ({mrrUsedKey || mrrApiKey})
                       </span>
                     )}
@@ -483,11 +484,11 @@ const MrrRigCard = ({
             </div>
             <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: "9px", padding: "6px" }}>
               <div style={{ opacity: 0.6, textTransform: "uppercase", fontSize: "8px" }}>NiceHash</div>
-              <div style={{ color: "#60a5fa", fontWeight: 600, marginTop: "3px" }}>
+              <div style={{ color: "#60a5fa", fontWeight: 800, marginTop: "3px" }}>
                 {niceHashPriceInMrrUnit > 0 ? (
                   <>
                     {niceHashPriceInMrrUnit.toFixed(8)}
-                    <span style={{ opacity: 0.5, fontSize: "7px" }}> BTC/{mrrUnit}/Day</span>
+                    <span style={{ opacity: 0.5, fontSize: "8px" }}> BTC/{mrrUnit}/Day</span>
                   </>
                 ) : "N/A"}
               </div>
@@ -519,9 +520,6 @@ const MrrRigCard = ({
               <div style={{ width: "100%", height: "4px", background: "rgba(255,255,255,0.08)", borderRadius: "999px", overflow: "hidden" }}>
                 <div style={{ width: `${Math.min(100, Math.max(0, timeProgress || 0))}%`, height: "100%", background: "linear-gradient(90deg, #3b82f6, #8b5cf6)", borderRadius: "999px" }} />
               </div>
-              {/* Time End*/}
-              <span style={{ alignItems: "flex-end", marginTop: "3px", display: "flex", justifyContent: "end", fontSize: "11px", color: "#94a3b8", padding: "3px 0" }}><CountdownTimer endTime={info?.endTime || rig.end} /></span>
-
             </div>
             {/* Hashrates Grid: Current, Average, Advertised, Target */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px", marginTop: "4px" }}>
@@ -547,7 +545,8 @@ const MrrRigCard = ({
               </div>
             </div>
           </div>
-
+          {/* Time */}
+          <span style={{ alignItems: "flex-end", marginTop: "5px", display: "flex", justifyContent: "space-between", fontSize: "10px", color: "#94a3b8", padding: "3px 0" }}>⏳ Ends in: <CountdownTimer endTime={info?.endTime || rig.end} /></span>
         </section>
       </div>
 
