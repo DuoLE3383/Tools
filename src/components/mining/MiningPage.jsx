@@ -5,17 +5,8 @@ import { RentedRigProvider } from "../mrr/RentedRigContext.jsx";
 import {
   MiningWorkspaceProvider,
   useMiningWorkspace,
-<<<<<<< Updated upstream
 } from "./MiningWorkspaceProvider";
 import { btcValue, compactNumber, percentValue } from "./miningWorkspaceData";
-=======
-} from "./MiningWorkspaceProvider.jsx";
-import {
-  btcValue,
-  compactNumber,
-  percentValue,
-} from "./miningWorkspaceData.js";
->>>>>>> Stashed changes
 import { useState, useEffect, useMemo, useCallback } from "react";
 
 function StatCard({ label, value, accent }) {
@@ -623,56 +614,21 @@ function MiningRouteHero() {
 }
 // --- NEW: Stratum Connection Helper component ---
 function StratumConnectionHelper({ onCall }) {
-  const { heroRows, loading: workspaceLoading } = useMiningWorkspace();
+  const { heroRows, loading: workspaceLoading } = useMiningWorkspace(); // Already provides heroRows
   const [dutchPoolStatus, setDutchPoolStatus] = useState(null);
   const [dutchMultiport, setDutchMultiport] = useState(null);
   const [dutchLoading, setDutchLoading] = useState(true);
   const [error, setError] = useState("");
 
-<<<<<<< Updated upstream
-  // Fetch HeroMiners algorithms – we can reuse the existing fetchMiningStats
-  // but for simplicity we call the same endpoint that HeroMinersCard uses.
-  const fetchHeroAlgos = useCallback(async () => {
-    try {
-      const response = await onCall("/api/v2/mining-stats/herominers_global", {
-        query: { client: "BT" },
-        silent: true,
-      });
-      if (response?.success && Array.isArray(response.coinStats)) {
-        // Extract unique algorithms and map to subdomain
-        const algoSet = new Set();
-        response.coinStats.forEach((coin) => {
-          if (coin.algorithm) algoSet.add(coin.algorithm);
-        });
-        const algoList = Array.from(algoSet)
-          .filter(Boolean)
-          .map((algo) => {
-            // Build subdomain: lowercased and remove spaces/dots? 
-            // Common pattern: algo.herominers.com
-            // For some like "Equihash 192/7" we need to map to "equihash" maybe? 
-            // We'll simplify: just lowercase and replace spaces with dash.
-            let subdomain = algo.toLowerCase().replace(/\s+/g, '-');
-            // Overrides for known mappings (optional)
-            // e.g., "ZelHash" -> "zelhash", "BeamV3" -> "beam"
-            // We'll keep it simple, but we can add a mapping if needed.
-            return { algorithm: algo, subdomain: subdomain + ".herominers.com" };
-          });
-        setHeroAlgos(algoList);
-      } else {
-        throw new Error("Failed to fetch HeroMiners algorithms");
-=======
   const heroAlgos = useMemo(() => {
     const algoMap = new Map();
     heroRows.forEach((row) => {
-      const algo = row.algorithm;
-      if (!algo || !row.raw) return;
-      const subdomain = (row.raw.subdomain || row.raw.host || "").trim();
-      if (subdomain) {
-        algoMap.set(algo, {
-          algorithm: algo,
-          subdomain: `${subdomain}.herominers.com`,
+      // The `raw` object contains the original API response for the coin
+      if (row.algorithm && row.raw?.subdomain) {
+        algoMap.set(row.algorithm, {
+          algorithm: row.algorithm,
+          subdomain: `${row.raw.subdomain}.herominers.com`,
         });
->>>>>>> Stashed changes
       }
     });
     return Array.from(algoMap.values());
