@@ -1,7 +1,7 @@
 {
-  "name": "nh-tool",
+  "name": "tools",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.3.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,7 +10,7 @@
     "start": "node start.js",
     "start:backend": "npm run backend",
     "start:frontend": "npm run dev",
-    "build:exe": "npm run build && npx pkg . --output release/nh-tool.exe",
+    "build:exe": "npm run build && npx pkg . --output release/tools.exe",
     "electron:build": "npm run build:exe",
     "all": "concurrently --kill-others --names \"BACKEND,FRONTEND\" \"npm run backend\" \"npm run dev\"",
     "build": "vite build",
