@@ -5,8 +5,17 @@ import { RentedRigProvider } from "../mrr/RentedRigContext.jsx";
 import {
   MiningWorkspaceProvider,
   useMiningWorkspace,
+<<<<<<< Updated upstream
 } from "./MiningWorkspaceProvider";
 import { btcValue, compactNumber, percentValue } from "./miningWorkspaceData";
+=======
+} from "./MiningWorkspaceProvider.jsx";
+import {
+  btcValue,
+  compactNumber,
+  percentValue,
+} from "./miningWorkspaceData.js";
+>>>>>>> Stashed changes
 import { useState, useEffect, useMemo, useCallback } from "react";
 
 function StatCard({ label, value, accent }) {
@@ -586,7 +595,7 @@ function MiningRouteHero() {
                     <div
                       style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}
                     >
-                      {row.heroCoins.slice(0, 4).map((coin) => (
+                      {row.heroCoins.map((coin) => (
                         <span
                           key={coin}
                           style={{
@@ -612,15 +621,15 @@ function MiningRouteHero() {
     </section>
   );
 }
-
 // --- NEW: Stratum Connection Helper component ---
 function StratumConnectionHelper({ onCall }) {
-  const [heroAlgos, setHeroAlgos] = useState([]);
+  const { heroRows, loading: workspaceLoading } = useMiningWorkspace();
   const [dutchPoolStatus, setDutchPoolStatus] = useState(null);
   const [dutchMultiport, setDutchMultiport] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [dutchLoading, setDutchLoading] = useState(true);
   const [error, setError] = useState("");
 
+<<<<<<< Updated upstream
   // Fetch HeroMiners algorithms – we can reuse the existing fetchMiningStats
   // but for simplicity we call the same endpoint that HeroMinersCard uses.
   const fetchHeroAlgos = useCallback(async () => {
@@ -651,14 +660,27 @@ function StratumConnectionHelper({ onCall }) {
         setHeroAlgos(algoList);
       } else {
         throw new Error("Failed to fetch HeroMiners algorithms");
+=======
+  const heroAlgos = useMemo(() => {
+    const algoMap = new Map();
+    heroRows.forEach((row) => {
+      const algo = row.algorithm;
+      if (!algo || !row.raw) return;
+      const subdomain = (row.raw.subdomain || row.raw.host || "").trim();
+      if (subdomain) {
+        algoMap.set(algo, {
+          algorithm: algo,
+          subdomain: `${subdomain}.herominers.com`,
+        });
+>>>>>>> Stashed changes
       }
-    } catch (err) {
-      setError(err.message);
-    }
-  }, [onCall]);
+    });
+    return Array.from(algoMap.values());
+  }, [heroRows]);
 
   // Fetch Mining-Dutch pool status and multiport
   const fetchDutchData = useCallback(async () => {
+    setDutchLoading(true);
     try {
       const [statusRes, multiportRes] = await Promise.all([
         onCall("/api/v2/mining-dutch/poolstatus", { silent: true }),
@@ -673,19 +695,16 @@ function StratumConnectionHelper({ onCall }) {
       else setDutchMultiport(null);
     } catch (err) {
       setError(err.message);
+    } finally {
+      setDutchLoading(false);
     }
   }, [onCall]);
 
-  const fetchAll = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    await Promise.all([fetchHeroAlgos(), fetchDutchData()]);
-    setLoading(false);
-  }, [fetchHeroAlgos, fetchDutchData]);
-
   useEffect(() => {
-    queueMicrotask(() => void fetchAll());
-  }, [fetchAll]);
+    queueMicrotask(() => void fetchDutchData());
+  }, [fetchDutchData]);
+
+  const loading = workspaceLoading || dutchLoading;
 
   return (
     <details
@@ -712,7 +731,9 @@ function StratumConnectionHelper({ onCall }) {
       >
         <span>🔌 Stratum Connection Helper</span>
         <span style={{ color: "#64748b", fontSize: "12px" }}>
-          {loading ? "Loading..." : `${heroAlgos.length} algos · ${dutchMultiport?.ports?.length || 0} ports`}
+          {loading
+            ? "Loading..."
+            : `${heroAlgos.length} algos · ${dutchMultiport?.ports?.length || 0} ports`}
         </span>
       </summary>
       <div style={{ padding: "0 16px 16px" }}>
@@ -720,12 +741,20 @@ function StratumConnectionHelper({ onCall }) {
           <div style={{ color: "#f87171", marginBottom: "12px" }}>{error}</div>
         )}
         {loading ? (
-          <div style={{ color: "#94a3b8", padding: "12px 0" }}>Fetching stratum data...</div>
+          <div style={{ color: "#94a3b8", padding: "12px 0" }}>
+            Fetching stratum data...
+          </div>
         ) : (
           <div style={{ display: "grid", gap: "16px" }}>
             {/* HeroMiners */}
             <div>
-              <h4 style={{ color: "#38bdf8", margin: "0 0 8px", fontSize: "13px" }}>
+              <h4
+                style={{
+                  color: "#38bdf8",
+                  margin: "0 0 8px",
+                  fontSize: "13px",
+                }}
+              >
                 HeroMiners – Algorithms & Subdomains
               </h4>
               <div
@@ -751,7 +780,9 @@ function StratumConnectionHelper({ onCall }) {
                       }}
                     >
                       <span style={{ color: "#e2e8f0" }}>{item.algorithm}</span>
-                      <span style={{ color: "#94a3b8", wordBreak: "break-all" }}>
+                      <span
+                        style={{ color: "#94a3b8", wordBreak: "break-all" }}
+                      >
                         {item.subdomain}
                       </span>
                     </div>
@@ -766,14 +797,23 @@ function StratumConnectionHelper({ onCall }) {
 
             {/* Mining-Dutch */}
             <div>
-              <h4 style={{ color: "#fbbf24", margin: "0 0 8px", fontSize: "13px" }}>
+              <h4
+                style={{
+                  color: "#fbbf24",
+                  margin: "0 0 8px",
+                  fontSize: "13px",
+                }}
+              >
                 Mining-Dutch – Stratum Endpoints
               </h4>
-              {dutchMultiport && dutchMultiport.ports && Array.isArray(dutchMultiport.ports) ? (
+              {dutchMultiport &&
+              dutchMultiport.ports &&
+              Array.isArray(dutchMultiport.ports) ? (
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
+                    gridTemplateColumns:
+                      "repeat(auto-fill, minmax(220px, 1fr))",
                     gap: "6px",
                   }}
                 >
@@ -806,7 +846,13 @@ function StratumConnectionHelper({ onCall }) {
                 </div>
               )}
               {dutchPoolStatus && (
-                <div style={{ marginTop: "8px", fontSize: "11px", color: "#64748b" }}>
+                <div
+                  style={{
+                    marginTop: "8px",
+                    fontSize: "11px",
+                    color: "#64748b",
+                  }}
+                >
                   Pool status: {dutchPoolStatus.message || "OK"}
                 </div>
               )}

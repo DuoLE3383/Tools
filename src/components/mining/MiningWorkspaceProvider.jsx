@@ -15,6 +15,7 @@ import {
   normalizeMrrMarketRows,
   normalizeMiningDutchRows,
 } from "./miningWorkspaceData";
+import { getNiceHashPriceValue } from "../../core/mrrUtils";
 
 const MiningWorkspaceContext = createContext(null);
 
@@ -48,10 +49,24 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "BT" }) {
       setError("");
 
       try {
-        const [heroResult, dutchResult] = await Promise.allSettled([
-          fetchMiningStats("herominers_global", "BT", null, null, 20000, force),
-          fetchMiningStats("miningpooldutch", "BT", null, null, 20000, force),
-        ]);
+        const [heroResult, dutchResult, mrrMarketResult] =
+          await Promise.allSettled([
+            fetchMiningStats(
+              "herominers_global",
+              "BT",
+              null,
+              null,
+              20000,
+              force,
+            ),
+            fetchMiningStats("miningpooldutch", "BT", null, null, 20000, force),
+            typeof onCall === "function"
+              ? onCall("/api/v2/mrr/rentals", {
+                  query: { client: nhClient, type: "sold" },
+                  silent: true,
+                })
+              : Promise.resolve(null),
+          ]);
 
         const hero =
           heroResult.status === "fulfilled" ? heroResult.value : null;
@@ -60,6 +75,9 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "BT" }) {
 
         if (hero) setHeroStats(hero);
         if (dutch) setDutchStats(dutch);
+        if (mrrMarketResult.status === "fulfilled" && mrrMarketResult.value) {
+          setMrrMarketStats(mrrMarketResult.value);
+        }
 
         if (!hero && !dutch) {
           throw new Error(
@@ -69,22 +87,10 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "BT" }) {
           );
         }
 
-        let mrrMarketPayload = mrrMarketStatsRef.current;
-        if (typeof onCall === "function") {
-          try {
-            mrrMarketPayload = await onCall("/api/v2/mrr/rentals", {
-              query: { client: nhClient, type: "sold" },
-              silent: true,
-            });
-            if (mrrMarketPayload) setMrrMarketStats(mrrMarketPayload);
-          } catch {
-            // Keep the previous snapshot if the market request fails.
-          }
-        }
-
         const nextHero = hero || heroStatsRef.current;
         const nextDutch = dutch || dutchStatsRef.current;
-        const nextMrrMarket = mrrMarketPayload || mrrMarketStatsRef.current;
+        const nextMrrMarket =
+          mrrMarketResult.value || mrrMarketStatsRef.current;
         const nextHeroRows = normalizeHeroRows(nextHero);
         const nextDutchRows = normalizeMiningDutchRows(nextDutch);
         const nextMrrMarketRows = normalizeMrrMarketRows(nextMrrMarket);
@@ -105,10 +111,7 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "BT" }) {
                   query: { algorithm: algo, market: "USA", client: nhClient },
                   silent: true,
                 });
-                const price = Number.parseFloat(
-                  data?.price ?? data?.fixedPrice ?? data?.marketPrice ?? 0,
-                );
-                return [algo, Number.isFinite(price) ? price : 0];
+                return [algo, getNiceHashPriceValue(data)];
               } catch {
                 return [algo, 0];
               }

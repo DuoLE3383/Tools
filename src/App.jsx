@@ -297,6 +297,12 @@ export default function App() {
               >
                 Mining
               </button>
+              <button
+                className="btn-pro danger"
+                onClick={() => callApi('/api/v2/admin/clean-cache', { method: 'POST', showModal: true })}
+              >
+                Clean Cache
+              </button>
             </div>
           </div>
         </header>

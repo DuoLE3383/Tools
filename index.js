@@ -56,6 +56,16 @@ app.get('/', (req, res) => {
   });
 });
 
+// ✅ NEW: Endpoint to clear the persistent cache
+app.post('/api/v2/admin/clean-cache', async (req, res) => {
+  try {
+    await cleanAllCache();
+    res.json({ success: true, message: 'Persistent server cache cleared.' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // ============================================================
 // DATABASE SETUP
 // ============================================================

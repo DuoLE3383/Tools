@@ -1,3 +1,4 @@
+<<<<<<< Updated upstream
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchMiningStats } from "./miningStatsFetcher";
 import {
@@ -7,6 +8,11 @@ import {
   normalizeAlgoForNiceHash,
 } from "../../core/mapping";
 import { getNiceHashPriceValue } from "../../core/mrrUtils";
+=======
+import { useMemo, useState } from "react";
+import { btcValue, compactNumber, percentValue } from "./miningWorkspaceData";
+import { useMiningWorkspace } from "./MiningWorkspaceProvider";
+>>>>>>> Stashed changes
 
 const numberValue = (value) => {
   if (value === null || value === undefined || value === "") return 0;
@@ -162,13 +168,16 @@ function mergeRows(miningDutchRows, heroRows, niceHashPrices) {
 }
 
 export default function MiningCoin({ onCall, nhClient = "BT" }) {
-  const [heroStats, setHeroStats] = useState(null);
-  const [dutchStats, setDutchStats] = useState(null);
-  const [niceHashPrices, setNiceHashPrices] = useState({});
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const {
+    routes: combinedRows,
+    loading,
+    error,
+    lastUpdated,
+    refresh,
+  } = useMiningWorkspace();
   const [query, setQuery] = useState("");
   const [onlyProfitable, setOnlyProfitable] = useState(true);
+<<<<<<< Updated upstream
   const [lastUpdated, setLastUpdated] = useState("");
 
   const miningDutchRows = useMemo(
@@ -180,6 +189,8 @@ export default function MiningCoin({ onCall, nhClient = "BT" }) {
     () => mergeRows(miningDutchRows, heroRows, niceHashPrices),
     [miningDutchRows, heroRows, niceHashPrices],
   );
+=======
+>>>>>>> Stashed changes
 
   const visibleRows = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -212,6 +223,7 @@ export default function MiningCoin({ onCall, nhClient = "BT" }) {
   const bestRow = visibleRows[0] || null;
   const profitableCount = combinedRows.filter((row) => row.spread > 0).length;
 
+<<<<<<< Updated upstream
   const loadData = useCallback(
     async (force = false) => {
       setLoading(true);
@@ -284,6 +296,8 @@ export default function MiningCoin({ onCall, nhClient = "BT" }) {
     });
   }, [loadData]);
 
+=======
+>>>>>>> Stashed changes
   return (
     <section
       className="mining-coin-page"
@@ -330,7 +344,7 @@ export default function MiningCoin({ onCall, nhClient = "BT" }) {
           </label>
           <button
             className="btn-pro secondary"
-            onClick={() => void loadData(true)}
+            onClick={() => void refresh(true)}
             disabled={loading}
           >
             {loading ? "Refreshing..." : "Refresh"}
@@ -514,7 +528,7 @@ export default function MiningCoin({ onCall, nhClient = "BT" }) {
                     <div
                       style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}
                     >
-                      {row.heroCoins.slice(0, 8).map((coin) => (
+                      {row.heroCoins.map((coin) => (
                         <span
                           key={coin}
                           style={{
@@ -529,11 +543,6 @@ export default function MiningCoin({ onCall, nhClient = "BT" }) {
                           {coin}
                         </span>
                       ))}
-                      {row.heroCoins.length > 8 && (
-                        <span style={{ color: "#64748b" }}>
-                          +{row.heroCoins.length - 8}
-                        </span>
-                      )}
                     </div>
                   </BodyCell>
                 </tr>
