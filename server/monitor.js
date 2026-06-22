@@ -125,7 +125,6 @@ function isRealRental(rental, info) {
   // A real rental must have at least one of these:
   const hasHashrate = currentHash > 0 || averageHash > 0 || advertisedHash > 0;
   const hasPaid = paidAmount > 0;
-  // const hasEfficiency = efficiency == 0;
   const hasEfficiency = efficiency == 0;
   
   // Check if the rental has a valid ID
