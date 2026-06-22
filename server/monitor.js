@@ -126,12 +126,13 @@ function isRealRental(rental, info) {
   const hasHashrate = currentHash > 0 || averageHash > 0 || advertisedHash > 0;
   const hasPaid = paidAmount > 0;
   // const hasEfficiency = efficiency == 0;
+  const hasEfficiency = efficiency == 0;
   
   // Check if the rental has a valid ID
   const hasValidId = rental.id || rental.rentalid || rental.rental_id;
   
   // Return true if the rental is actually doing something
-  return (hasHashrate || hasPaid || hasEfficiency) && hasValidId;
+  return (hasPaid) && hasValidId;
 }
 
 /**
