@@ -125,7 +125,7 @@ function isRealRental(rental, info) {
   // A real rental must have at least one of these:
   const hasHashrate = currentHash > 0 || averageHash > 0 || advertisedHash > 0;
   const hasPaid = paidAmount > 0;
-  const hasEfficiency = efficiency > 0;
+  // const hasEfficiency = efficiency == 0;
   
   // Check if the rental has a valid ID
   const hasValidId = rental.id || rental.rentalid || rental.rental_id;
@@ -710,7 +710,10 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
         const info = extractRentalInfo(r);
         const rawStart = info.startTime;
         const rawEnd = info.endTime;
-
+        
+        if (!info.price) {
+  info.price = { paid: 0, currency: 'BTC' };
+}
         const parseUtc = (d) => {
           if (!d) return 0;
           const s = String(d);

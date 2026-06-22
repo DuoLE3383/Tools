@@ -212,11 +212,83 @@ const MrrRigCard = ({
   const effectiveMrrClient = mrrClient || rig?.mrrClient || null;
 
   useEffect(() => {
-    const rawAlgo = info?.algo || rig.algo || rig.algorithm || rig.type || algoName;
-    const normalizedAlgo = normalizeAlgoForNiceHash(rawAlgo || algoName);
+  const rawAlgo = info?.algo || rig.algo || rig.algorithm || rig.type || algoName;
+  const normalizedAlgo = normalizeAlgoForNiceHash(rawAlgo || algoName);
 
-    // If algo is unknown, only try calculated
-    if (!normalizedAlgo || normalizedAlgo === "UNKNOWN") {
+  if (!normalizedAlgo || normalizedAlgo === "UNKNOWN") {
+    // Try calculated fallback
+    if (info?.price?.paid && info?.hashrate?.advertised) {
+      const paid = parseFloat(info.price.paid);
+      const advertised = parseFloat(info.hashrate.advertised);
+      const duration = parseFloat(info.duration || 0);
+      if (paid > 0 && advertised > 0 && duration > 0) {
+        const calculatedRate = paid / (duration / 24) / advertised;
+        setMrrMarketRate(calculatedRate);
+        setMrrUsedKey('calculated');
+        console.log(`✅ Using calculated MRR rate: ${calculatedRate}`);
+      }
+    }
+    return;
+  }
+
+  const fetchRate = async () => {
+    setIsLoadingMrrRate(true);
+    setMrrRateError(null);
+
+    const primaryKey = getMrrAlgoKey(normalizedAlgo);
+    const keysToTry = [primaryKey];
+    if (normalizedAlgo === "SHA256ASICBOOST" || normalizedAlgo === "SHA256AB") {
+      if (primaryKey !== "sha256") keysToTry.push("sha256");
+    }
+
+    let rate = 0;
+    let usedKey = '';
+
+    for (const key of keysToTry) {
+      try {
+        // ✅ Use backend proxy instead of direct fetch
+        const url = `/api/v2/mrr/market/algos/${key}`;
+        console.log(`🔍 Fetching MRR rate for ${key} via proxy...`);
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`Proxy returned ${response.status}`);
+        const data = await response.json();
+        console.log(`📊 MRR API response for ${key}:`, data);
+
+        let foundRate = 0;
+        if (data.success && data.data) {
+          if (data.data.suggested_price?.amount) {
+            foundRate = parseFloat(data.data.suggested_price.amount);
+          } else if (data.data.stats?.prices?.lowest?.price) {
+            foundRate = parseFloat(data.data.stats.prices.lowest.price);
+          } else if (data.data.price) {
+            foundRate = parseFloat(data.data.price);
+          } else if (data.data.BTC) {
+            foundRate = parseFloat(data.data.BTC);
+          }
+        } else if (data.price) {
+          foundRate = parseFloat(data.price);
+        } else if (data.BTC) {
+          foundRate = parseFloat(data.BTC);
+        }
+
+        if (foundRate > 0) {
+          rate = foundRate;
+          usedKey = key;
+          console.log(`✅ MRR rate for ${key}: ${rate} BTC/${mrrUnit}/Day`);
+          break;
+        }
+      } catch (err) {
+        console.warn(`⚠️ Failed to fetch MRR rate for ${key}:`, err.message);
+      }
+    }
+
+    if (rate > 0) {
+      setMrrMarketRate(rate);
+      setMrrUsedKey(usedKey);
+      setMrrRateError(null);
+    } else {
+      // 🔄 Fallback: calculate from rental data (more robust)
+      console.warn(`⚠️ No API rate, trying calculated fallback`);
       if (info?.price?.paid && info?.hashrate?.advertised) {
         const paid = parseFloat(info.price.paid);
         const advertised = parseFloat(info.hashrate.advertised);
@@ -225,115 +297,31 @@ const MrrRigCard = ({
           const calculatedRate = paid / (duration / 24) / advertised;
           setMrrMarketRate(calculatedRate);
           setMrrUsedKey('calculated');
-          console.log(`✅ Using calculated MRR rate: ${calculatedRate}`);
-        }
-      }
-      return;
-    }
-
-    // Always try API fetch (public endpoint, no auth required)
-    const fetchRate = async () => {
-      setIsLoadingMrrRate(true);
-      setMrrRateError(null);
-
-      try {
-        const primaryKey = getMrrAlgoKey(normalizedAlgo);
-        const keysToTry = [primaryKey];
-        if (normalizedAlgo === "SHA256ASICBOOST" || normalizedAlgo === "SHA256AB") {
-          if (primaryKey !== "sha256") keysToTry.push("sha256");
-        }
-
-        let rate = 0;
-        let usedKey = '';
-
-        for (const key of keysToTry) {
-          try {
-            const url = `https://www.miningrigrentals.com/api/v2/market/algos/${key}`;
-            console.log(`🔍 Fetching MRR rate for ${key} from: ${url}`);
-            const response = await fetch(url);
-            if (!response.ok) throw new Error(`MRR API returned ${response.status} for ${key}`);
-            const data = await response.json();
-            console.log(`📊 MRR API response for ${key}:`, data);
-
-            let foundRate = 0;
-            if (data.success && data.data) {
-              if (data.data.suggested_price?.amount) {
-                foundRate = parseFloat(data.data.suggested_price.amount);
-              } else if (data.data.stats?.prices?.lowest?.price) {
-                foundRate = parseFloat(data.data.stats.prices.lowest.price);
-              } else if (data.data.price) {
-                foundRate = parseFloat(data.data.price);
-              } else if (data.data.BTC) {
-                foundRate = parseFloat(data.data.BTC);
-              }
-            } else if (data.price) {
-              foundRate = parseFloat(data.price);
-            } else if (data.BTC) {
-              foundRate = parseFloat(data.BTC);
-            }
-
-            if (foundRate > 0) {
-              rate = foundRate;
-              usedKey = key;
-              console.log(`✅ MRR rate for ${key}: ${rate} BTC/${mrrUnit}/Day`);
-              break;
-            }
-          } catch (err) {
-            console.warn(`⚠️ Failed to fetch MRR rate for ${key}:`, err.message);
-          }
-        }
-
-        if (rate > 0) {
-          setMrrMarketRate(rate);
-          setMrrUsedKey(usedKey);
           setMrrRateError(null);
-          setIsLoadingMrrRate(false);
-          return;
-        }
-
-        // No API rate – fallback to calculated
-        console.warn(`⚠️ No API rate found, falling back to calculated`);
-        if (info?.price?.paid && info?.hashrate?.advertised) {
-          const paid = parseFloat(info.price.paid);
-          const advertised = parseFloat(info.hashrate.advertised);
-          const duration = parseFloat(info.duration || 0);
-          if (paid > 0 && advertised > 0 && duration > 0) {
-            const calculatedRate = paid / (duration / 24) / advertised;
+          console.log(`✅ Using calculated MRR rate: ${calculatedRate}`);
+        } else {
+          // Also try using rawAds from info or rig
+          const rawAds = info?.rawAds || getRawHashrate(rig.hashrate?.advertised || rig.advertised);
+          if (paid > 0 && rawAds > 0 && duration > 0) {
+            const calculatedRate = paid / (duration / 24) / rawAds;
             setMrrMarketRate(calculatedRate);
             setMrrUsedKey('calculated');
             setMrrRateError(null);
-            console.log(`✅ Using calculated MRR rate: ${calculatedRate}`);
-            setIsLoadingMrrRate(false);
-            return;
+            console.log(`✅ Using calculated MRR rate (rawAds): ${calculatedRate}`);
+          } else {
+            setMrrRateError("No rate available");
           }
         }
+      } else {
         setMrrRateError("No rate available");
-        setIsLoadingMrrRate(false);
-      } catch (error) {
-        console.error(`❌ MRR fetch failed:`, error);
-        // Final fallback to calculated
-        if (info?.price?.paid && info?.hashrate?.advertised) {
-          const paid = parseFloat(info.price.paid);
-          const advertised = parseFloat(info.hashrate.advertised);
-          const duration = parseFloat(info.duration || 0);
-          if (paid > 0 && advertised > 0 && duration > 0) {
-            const calculatedRate = paid / (duration / 24) / advertised;
-            setMrrMarketRate(calculatedRate);
-            setMrrUsedKey('calculated');
-            setMrrRateError(null);
-            console.log(`✅ Using calculated MRR rate: ${calculatedRate}`);
-            setIsLoadingMrrRate(false);
-            return;
-          }
-        }
-        setMrrRateError(error.message);
-        setIsLoadingMrrRate(false);
       }
-    };
+    }
+    setIsLoadingMrrRate(false);
+  };
 
-    fetchRate();
-  }, [info?.algo, info?.price?.paid, info?.hashrate?.advertised, info?.duration,
-  rig.algo, rig.algorithm, rig.type, algoName, mrrUnit]);
+  fetchRate();
+}, [info?.algo, info?.price?.paid, info?.hashrate?.advertised, info?.duration,
+    rig.algo, rig.algorithm, rig.type, algoName, mrrUnit, info?.rawAds, rig.hashrate?.advertised]);
 
   // ==========================================
   // 6. Computed values (useMemo)

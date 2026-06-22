@@ -1,37 +1,12 @@
-// This module acts as a singleton for the database connection.
-// The 'db' instance is initialized and exported from index.js
-// to ensure the entire application uses the same connection.
-// server/database/db.js
+// server/database/db.js – Unified database using stats.db
 import path from "path";
 import fs from "node:fs/promises";
 import sqlite3 from "sqlite3";
-import { DATA_DIR, TRENDS_DB_PATH } from "./config.js";
 
+const DATA_DIR = path.resolve(process.cwd(), 'data');
+const DB_PATH = path.join(DATA_DIR, 'stats.db'); 
 let opportunityDb = null;
 let dbInitPromise = null;
-
-async function updateMiningOpportunitiesTable() {
-  const db = await getTrendDb();
-  
-  // Check if profit_status column exists
-  const columns = await all(db, "PRAGMA table_info(mining_opportunities)");
-  const hasProfitStatus = columns.some(c => c.name === 'profit_status');
-  
-  if (!hasProfitStatus) {
-    console.log('[DB] Adding missing columns to mining_opportunities...');
-    
-    // Add all missing columns
-    await run(db, "ALTER TABLE mining_opportunities ADD COLUMN profit_status TEXT DEFAULT 'neutral'");
-    await run(db, "ALTER TABLE mining_opportunities ADD COLUMN trend_direction TEXT DEFAULT 'stable'");
-    await run(db, "ALTER TABLE mining_opportunities ADD COLUMN coin_name TEXT");
-    await run(db, "ALTER TABLE mining_opportunities ADD COLUMN coin_id TEXT");
-    await run(db, "ALTER TABLE mining_opportunities ADD COLUMN coin_prices_json TEXT");
-    await run(db, "ALTER TABLE mining_opportunities ADD COLUMN summary_json TEXT");
-    await run(db, "ALTER TABLE mining_opportunities ADD COLUMN spread_vs_mrr REAL DEFAULT 0");
-    
-    console.log('[DB] Columns added successfully');
-  }
-}
 
 export async function getTrendDb() {
   if (opportunityDb) return opportunityDb;
@@ -40,7 +15,7 @@ export async function getTrendDb() {
   dbInitPromise = (async () => {
     await fs.mkdir(DATA_DIR, { recursive: true });
     const db = await new Promise((resolve, reject) => {
-      const d = new sqlite3.Database(TRENDS_DB_PATH, (err) => {
+      const d = new sqlite3.Database(DB_PATH, (err) => {
         if (err) return reject(err);
         resolve(d);
       });
@@ -49,7 +24,8 @@ export async function getTrendDb() {
     await run(db, "PRAGMA journal_mode = WAL");
     await run(db, "PRAGMA synchronous = NORMAL");
     await run(db, "PRAGMA cache_size = 10000");
-    
+
+    // Create tables with all columns upfront
     await run(db, `CREATE TABLE IF NOT EXISTS mining_opportunities (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       algo TEXT NOT NULL,
@@ -68,7 +44,7 @@ export async function getTrendDb() {
       summary_json TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     )`);
-    
+
     await run(db, `CREATE TABLE IF NOT EXISTS coin_prices (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       coin_id TEXT NOT NULL,
@@ -83,7 +59,7 @@ export async function getTrendDb() {
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(coin_id, captured_at)
     )`);
-    
+
     await run(db, `CREATE TABLE IF NOT EXISTS coin_metadata (
       coin_id TEXT PRIMARY KEY,
       coin_name TEXT,
@@ -98,13 +74,38 @@ export async function getTrendDb() {
     await run(db, `CREATE INDEX IF NOT EXISTS idx_coin_prices_coin ON coin_prices(coin_id, captured_at)`);
     await run(db, `CREATE INDEX IF NOT EXISTS idx_coin_prices_time ON coin_prices(captured_at)`);
 
-    // Migrate old schema: add missing columns if table already existed
-    await updateMiningOpportunitiesTable();
+    // Ensure any missing columns (if table existed before this code)
+    await ensureMissingColumns(db);
 
     opportunityDb = db;
     return db;
   })();
   return dbInitPromise;
+}
+
+// Helper to add missing columns without recursion
+async function ensureMissingColumns(db) {
+  const columns = await all(db, "PRAGMA table_info(mining_opportunities)");
+  const existing = new Set(columns.map(c => c.name));
+
+  const toAdd = {
+    profit_status: "TEXT DEFAULT 'neutral'",
+    trend_direction: "TEXT DEFAULT 'stable'",
+    coin_name: "TEXT",
+    coin_id: "TEXT",
+    coin_prices_json: "TEXT",
+    summary_json: "TEXT",
+    spread_vs_mrr: "REAL DEFAULT 0"
+  };
+
+  let added = 0;
+  for (const [col, definition] of Object.entries(toAdd)) {
+    if (!existing.has(col)) {
+      await run(db, `ALTER TABLE mining_opportunities ADD COLUMN ${col} ${definition}`);
+      added++;
+    }
+  }
+  if (added > 0) console.log(`[DB] Added ${added} missing column(s) to mining_opportunities.`);
 }
 
 export function run(db, sql, params = []) {
@@ -124,8 +125,7 @@ export function all(db, sql, params = []) {
     });
   });
 }
-export let db = null;
 
-export function setDb(dbInstance) {
-  db = dbInstance;
-}
+// Legacy exports for backward compatibility
+export let db = null;
+export function setDb(dbInstance) { db = dbInstance; }

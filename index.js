@@ -1,4 +1,4 @@
-// index.js
+// index.js – corrected startup
 import 'dotenv/config';
 import express from 'express';
 import http from 'http';
@@ -17,18 +17,8 @@ import { migrateOldCsvToDb } from './server/migrate.js';
 import { initMiningTrainingDb } from './server/miningTrainingDb.js';
 import { setDb } from './server/db.js';
 import { fetchAndSaveCoinPrices } from './server/coinGecko/coinGeckoClient.js';
-
-// Initial fetch
-fetchAndSaveCoinPrices(true).then(() => {
-  console.log('[CoinGecko] Initial DB seed complete.');
-});
-
-// Refresh every 60 minutes
-setInterval(() => {
-  fetchAndSaveCoinPrices(true).catch(err => {
-    console.error('[CoinGecko] Scheduled update failed:', err.message);
-  });
-}, 60 * 60 * 1000);
+// ✅ CORRECT IMPORT – use the scripts folder
+import { mergeDatabases } from './data/merge.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -38,29 +28,23 @@ const DATA_DIR = path.join(__dirname, 'data');
 const STATS_DB_PATH = path.join(DATA_DIR, 'stats.db');
 
 // ============================================================
-// ✅ FIX: CREATE APP FIRST - BEFORE ANY ROUTES
+// CREATE APP
 // ============================================================
 const app = createApp({ distPath });
 const PORT = process.env.PORT || 3000;
 
 // ============================================================
-// MIDDLEWARE - Add after app is created
+// MIDDLEWARE
 // ============================================================
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // ============================================================
-// ✅ HEALTH CHECK ROUTES - AFTER app is defined
+// HEALTH CHECK ROUTES
 // ============================================================
 app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    pid: process.pid,
-    memory: process.memoryUsage ? process.memoryUsage() : undefined
-  });
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
 app.get('/', (req, res) => {
@@ -68,11 +52,7 @@ app.get('/', (req, res) => {
     service: 'NiceHash API Toolbox',
     status: 'running',
     version: '1.0.0',
-    endpoints: {
-      health: '/api/health',
-      time: '/api/v2/time',
-      mining: '/api/v2/mining-stats'
-    }
+    endpoints: { health: '/api/health', time: '/api/v2/time', mining: '/api/v2/mining-stats' }
   });
 });
 
@@ -85,43 +65,22 @@ function initDatabase() {
   return new Promise((resolve, reject) => {
     dbInstance = new sqlite3.Database(STATS_DB_PATH, (dbErr) => {
       if (dbErr) return reject(dbErr);
-
       dbInstance.run('PRAGMA journal_mode = WAL;', (err) => {
         if (err) console.warn('[db] Failed to enable WAL mode:', err.message);
       });
-
       dbInstance.run(`CREATE TABLE IF NOT EXISTS stats_cache (
-        key TEXT PRIMARY KEY,
-        data TEXT,
-        ts INTEGER
-      )`, (err) => {
-        if (err) reject(err);
-      });
-
+        key TEXT PRIMARY KEY, data TEXT, ts INTEGER
+      )`, (err) => { if (err) reject(err); });
       dbInstance.run(`CREATE TABLE IF NOT EXISTS api_errors (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        timestamp TEXT,
-        source TEXT,
-        content_type TEXT,
-        content TEXT
-      )`, (err) => {
-        if (err) console.error(`[db] Failed to create api_errors table: ${err.message}`);
-      });
-
+        timestamp TEXT, source TEXT, content_type TEXT, content TEXT
+      )`, (err) => { if (err) console.error(`[db] Failed to create api_errors table: ${err.message}`); });
       dbInstance.run(`CREATE TABLE IF NOT EXISTS mrr_nonces (
-        client TEXT PRIMARY KEY,
-        last_nonce TEXT
-      )`, (err) => {
-        if (err) reject(err);
-      });
-
+        client TEXT PRIMARY KEY, last_nonce TEXT
+      )`, (err) => { if (err) reject(err); });
       dbInstance.run(`CREATE TABLE IF NOT EXISTS settings (
-        key TEXT PRIMARY KEY,
-        value TEXT
-      )`, (err) => {
-        if (err) console.error(`[db] Failed to create settings table: ${err.message}`);
-      });
-
+        key TEXT PRIMARY KEY, value TEXT
+      )`, (err) => { if (err) console.error(`[db] Failed to create settings table: ${err.message}`); });
       setDb(dbInstance);
       resolve();
     });
@@ -143,9 +102,6 @@ async function cleanAllCache() {
   }
 }
 
-// ============================================================
-// LOAD STATS FUNCTION
-// ============================================================
 function loadStats() {
   return new Promise((resolve) => {
     if (!dbInstance) {
@@ -180,22 +136,32 @@ async function startServer() {
   try {
     console.log('[init] Initializing database...');
     await initDatabase();
-    
+
+    // ✅ RUN DATABASE MERGE AFTER DB IS OPEN
+    console.log('[init] Merging databases into stats.db...');
+    try {
+      await mergeDatabases();
+      console.log('[init] Database merge completed.');
+    } catch (mergeErr) {
+      console.error('[init] Database merge failed:', mergeErr.message);
+      // Continue anyway – the app might still work with just stats.db
+    }
+
     console.log('[init] Cleaning cache...');
     await cleanAllCache();
-    
+
     console.log('[init] Initializing mining training DB...');
     await initMiningTrainingDb();
-    
+
     console.log('[init] Loading stats...');
     await loadStats();
-    
+
     console.log('[init] Migrating old CSV files...');
     await migrateOldCsvToDb();
-    
+
     console.log('[init] Initializing MRR configs...');
     await initMrrConfigs(process.env);
-    
+
     console.log('[init] Initializing app...');
     await initializeApp(process.env);
 
@@ -215,7 +181,7 @@ async function startServer() {
       console.log('Environment: ' + (process.env.NICEHASH_ENVIRONMENT ? process.env.NICEHASH_ENVIRONMENT.toUpperCase() : 'production'));
       console.log(`Listening on http://localhost:${PORT}`);
       console.log(`WebSocket: ws://localhost:${PORT}/api/v2/mrr/fetch/ws`);
-      
+
       // Start mining scanner after a delay
       setTimeout(() => {
         console.log('[Mining Scanner] Initializing...');
@@ -235,7 +201,6 @@ async function startServer() {
         process.exit(0);
       });
     }
-
     process.on('SIGINT', () => shutdown('SIGINT'));
     process.on('SIGTERM', () => shutdown('SIGTERM'));
 
