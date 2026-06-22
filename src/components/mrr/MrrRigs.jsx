@@ -1,11 +1,11 @@
 import { useState, useEffect, useMemo, useContext } from "react";
-import { poolApi } from "../core/poolUtils";
-import { normalizeAlgoForNiceHash, getAlgoDisplayName } from "../core/mapping";
-import { getBtcPriceData as getBtcPriceDataUtils } from "../core/priceUtils";
-import { NiceHashOrderContext } from "./NiceHashContext";
+import { poolApi } from "../../core/poolUtils.js";
+import { normalizeAlgoForNiceHash, getAlgoDisplayName } from "../../core/mapping.js";
+import { getBtcPriceData as getBtcPriceDataUtils } from "../../core/priceUtils.js";
+import { NiceHashOrderContext } from "../../context/NiceHashContext.jsx";
 import MrrRigCard from "./MrrRigCard";
-import { TelegramTemplates } from "../core/telegram.js";
-import { calculateRemainingTime } from "../core/time";
+import { TelegramTemplates } from "../../core/telegram.js";
+import { calculateRemainingTime } from "../../core/time.js";
 import {
   findRigArray,
   getNiceHashPriceValue,
@@ -17,7 +17,7 @@ import {
   getRentalEfficiency,
   getStatusClass,
   parsePriceValueLocal,
-} from "../core/mrrUtils";
+} from "../../core/mrrUtils.js";
 
 export default function MrrRigs({
   onCall,

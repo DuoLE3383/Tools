@@ -67,18 +67,37 @@ function parseMiningDutchHtml(html) {
 }
 
 function normalizeMiningDutchRows(payload) {
+  if (!payload) return [];
+
   if (payload?.html) return parseMiningDutchHtml(payload.html);
 
-  const rows = Array.isArray(payload?.coinStats) ? payload.coinStats : [];
-  return rows
-    .map((row) => ({
-      algorithm: row.algorithm || row.algo || "N/A",
-      miners: row.miners || 0,
-      btcPerDay: row.btcPerDay || 0,
-      usdPerDay: row.usdPerDay || 0,
-      hashrate: row.hashrate || "N/A",
-    }))
-    .filter((item) => item.algorithm !== "N/A");
+  // Try direct coinStats array (from normalized fetchMiningStats response)
+  if (Array.isArray(payload.coinStats) && payload.coinStats.length > 0) {
+    return payload.coinStats
+      .map((row) => ({
+        algorithm: row.algorithm || row.algo || "N/A",
+        miners: row.miners || 0,
+        btcPerDay: row.btcPerDay || 0,
+        usdPerDay: row.usdPerDay || 0,
+        hashrate: row.hashrate || "N/A",
+      }))
+      .filter((item) => item.algorithm !== "N/A");
+  }
+
+  // Try nested miningpooldutch.coinStats
+  if (payload.miningpooldutch && Array.isArray(payload.miningpooldutch.coinStats)) {
+    return payload.miningpooldutch.coinStats
+      .map((row) => ({
+        algorithm: row.algorithm || row.algo || "N/A",
+        miners: row.miners || 0,
+        btcPerDay: row.btcPerDay || 0,
+        usdPerDay: row.usdPerDay || 0,
+        hashrate: row.hashrate || "N/A",
+      }))
+      .filter((item) => item.algorithm !== "N/A");
+  }
+
+  return [];
 }
 
 function StatsTable({ rows }) {
@@ -131,49 +150,45 @@ function StatsTable({ rows }) {
   );
 }
 
-export default function MiningDutch({ onCall }) {
+export default function MiningDutch() {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [lastFetchedAt, setLastFetchedAt] = useState("");
 
-  const loadData = useCallback(
-    async (force = false) => {
-      setLoading(true);
-      setError("");
-      try {
-        // Use REST mining-stats route which fetches from the public API
-        const response = await fetchMiningStats(
-          "miningpooldutch",
-          "BT",
-          null,
-          null,
-          20000,
-          force,
-        );
+  const loadData = useCallback(async (force = false) => {
+    setLoading(true);
+    setError("");
+    try {
+      const response = await fetchMiningStats(
+        "miningpooldutch",
+        "BT",
+        null,
+        null,
+        20000,
+        force,
+      );
 
-        if (response?.miningpooldutch) {
-          setStats(response);
-          setLastFetchedAt(
-            response.miningpooldutch.fetchedAt || new Date().toISOString(),
-          );
-        } else if (response?.success) {
-          setStats(response);
-          setLastFetchedAt(response.fetchedAt || new Date().toISOString());
-        } else {
-          throw new Error(
-            response?.error || "Failed to fetch Mining-Dutch stats",
-          );
-        }
-      } catch (err) {
-        setError(err.message || "Failed to fetch Mining-Dutch stats");
-        setStats(null);
-      } finally {
-        setLoading(false);
+      if (!response) {
+        throw new Error("Empty response from server");
       }
-    },
-    [onCall],
-  );
+
+      // Extract the nested miningpooldutch data if present
+      const effective = response.miningpooldutch || response;
+
+      if (effective.success !== false || Array.isArray(effective.coinStats)) {
+        setStats(effective);
+        setLastFetchedAt(effective.fetchedAt || new Date().toISOString());
+      } else {
+        throw new Error(effective.error || "Failed to fetch Mining-Dutch stats");
+      }
+    } catch (err) {
+      setError(err.message || "Failed to fetch Mining-Dutch stats");
+      setStats(null);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     queueMicrotask(() => {

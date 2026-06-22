@@ -4,12 +4,12 @@ import Modal from './src/components/Modal';
 import HashpowerBot from './src/components/HashpowerBot';
 import NiceHash from './src/components/NiceHash';
 import MiningRigRental from './src/components/MiningRigRental';
-import MiningRigSection from './src/components/MiningRigSection';
+import MiningRigSection from './src/components/mrr/MiningRigSection.jsx';
 import HashrateCalculator from './src/components/HashrateCalculator';
 import HashCompletionCalculator from './src/components/HashCompletionCalculator';
 import MrrPoolsManager from './src/components/MrrManager';
 import Login from './src/components/Login';
-import HeroMinersCard from './src/components/HeroMinersCard';
+import HeroMinersCard from './src/components/mining/HeroMinersCard.jsx';
 import MiningCoin from './src/components/MiningCoin.jsx';
 import { HASHRATE_SUFFIXES, normalizeAlgoForNiceHash, getAlgorithmUnit } from './src/core/mapping';
 import { RentedRigProvider } from './src/components/NiceHashContext';
@@ -335,7 +335,6 @@ export default function App() {
         alignItems: 'flex-end'
       }}>
         <div className="brand-block" style={{ flex: 1 }}>
-          {/* <h3>Ben Tre Mining Tool</h3> */}
           <div className="status-card" style={{ marginBottom: '2px' }}>
             <div className="status-item">
               <span style={{ opacity: 0.5, marginRight: '10px' }}>SYSTEM:</span>
@@ -409,6 +408,7 @@ export default function App() {
               mrrClient={mrrClient}
               setMrrClient={setMrrClient}
               onOpenMrrPools={handleOpenMrrPools}
+              onOpenCompletionCalculator={openCompletionCalculator}
             />
           </article>
           <article className="panel" style={{ maxHeight: '800px', overflowY: 'auto' }}>

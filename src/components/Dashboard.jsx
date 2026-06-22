@@ -1,8 +1,8 @@
 import Pools from "./Pools";
 import Modal from "./Modal";
-import NiceHash from "./NiceHash";
-import MiningRigSection from "./MiningRigSection";
-import { NiceHashOrderProvider } from "./NiceHashContext.jsx";
+import NiceHash from "./nicehash/NiceHash";
+import MiningRigSection from "./mrr/MiningRigSection.jsx";
+import { NiceHashOrderProvider } from "../context/NiceHashContext.jsx";
 import HashrateCalculator from "./HashrateCalculator";
 
 export default function Dashboard({
@@ -96,6 +96,8 @@ export default function Dashboard({
               </button>
               <button
                 className="btn-pro secondary"
+                target="_blank"
+                rel="noopener noreferrer"
                 onClick={() => {
                   window.history.pushState({}, "", "/mining");
                   window.dispatchEvent(new PopStateEvent("popstate"));

@@ -1,14 +1,37 @@
 // HeroMinersCard.jsx
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { fetchMiningStats } from "./miningStatsFetcher";
-import { useRentedRigs } from "./RentedRigContext.jsx";
-import MiningDutch from "./MiningDutch";
+import { fetchMiningStats } from "./miningStatsFetcher.js";
+import { useRentedRigs } from "../../context/RentedRigContext.jsx";
+import MiningDutch from "./MiningDutch.jsx";
 
 function formatNumber(value, digits = 0) {
   const num = Number(value);
   return Number.isFinite(num)
     ? num.toLocaleString(undefined, { maximumFractionDigits: digits })
     : "0";
+}
+
+function formatHashrateDisplay(value) {
+  if (value === undefined || value === null || value === "N/A" || value === "")
+    return "N/A";
+  const num = Number(value);
+  if (!Number.isFinite(num) || num <= 0) return "N/A";
+  const units = [
+    { suffix: "EH/s", div: 1e18 },
+    { suffix: "PH/s", div: 1e15 },
+    { suffix: "TH/s", div: 1e12 },
+    { suffix: "GH/s", div: 1e9 },
+    { suffix: "MH/s", div: 1e6 },
+    { suffix: "kH/s", div: 1e3 },
+    { suffix: "H/s", div: 1 },
+  ];
+  for (const u of units) {
+    if (num >= u.div) {
+      const val = num / u.div;
+      return `${val < 10 ? val.toFixed(2) : val < 100 ? val.toFixed(1) : val.toFixed(0)} ${u.suffix}`;
+    }
+  }
+  return `${num.toFixed(0)} H/s`;
 }
 
 function HeroMinersTable({
@@ -67,6 +90,7 @@ function HeroMinersTable({
           >
             Algorithm
           </th>
+          <th style={{ padding: "6px 4px", textAlign: "left" }}>Coin</th>
           <th
             style={{
               padding: "6px 4px",
@@ -77,6 +101,7 @@ function HeroMinersTable({
           >
             Miners
           </th>
+          <th style={{ padding: "6px 4px", textAlign: "right" }}>Hashrate</th>
           <th
             style={{
               padding: "6px 4px",
@@ -108,11 +133,27 @@ function HeroMinersTable({
             <td style={{ padding: "6px 4px", color: "#e2e8f0" }}>
               {coin.algorithm || "N/A"}
             </td>
+            <td style={{ padding: "6px 4px", color: "#94a3b8" }}>
+              {coin.coin || coin.subdomain || "N/A"}
+            </td>
             <td style={{ padding: "6px 4px", textAlign: "right" }}>
               {formatNumber(coin.miners, 0)}
             </td>
+            <td
+              style={{
+                padding: "6px 4px",
+                textAlign: "right",
+                color: "#94a3b8",
+              }}
+            >
+              {coin.hashrate ? formatHashrateDisplay(coin.hashrate) : "N/A"}
+            </td>
             <td style={{ padding: "6px 4px", textAlign: "right" }}>
-              ${parseFloat(coin.usdPerDay || 0).toFixed(2)}
+              $
+              {parseFloat(coin.usdPerDay || 0).toLocaleString(undefined, {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })}
             </td>
             <td style={{ padding: "6px 4px", textAlign: "right" }}>
               {parseFloat(coin.btcPerDay || 0).toFixed(8)}
@@ -328,8 +369,7 @@ export default function HeroMinersCard({ onCall, pollInterval = 30000 }) {
           />
         )}
       </div>
-
-      <MiningDutch onCall={onCall} />
+      <MiningDutch />
     </div>
   );
 }

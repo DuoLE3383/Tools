@@ -9,7 +9,7 @@ import { initMrrConfigs, mrrConfigs, initNonces, syncMrrClock, mrrApiCall } from
 import { registerRoutes } from './routes.js';
 import { corsMiddleware, logRequestMiddleware } from './utils.js';
 import { runRentalMonitor } from './monitor.js';
-import { startMiningOpportunityScanner } from './miningOpportunityNotifier.js';
+import { startMiningOpportunityScanner } from './opportunity.js';
 import { authMiddleware, generateToken } from './auth.js';
 import authRoutes from './auth.js';
 

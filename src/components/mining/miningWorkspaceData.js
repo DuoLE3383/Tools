@@ -3,8 +3,8 @@ import {
   getAlgorithmUnit,
   mapNiceHashToMRR,
   normalizeAlgoForNiceHash,
-} from "../core/mapping";
-import { getBtcPriceData, parsePriceValue } from "../core/priceUtils";
+} from "../../core/mapping";
+import { getBtcPriceData, parsePriceValue } from "../../core/priceUtils";
 
 export const numberValue = (value) => {
   if (value === null || value === undefined || value === "") return 0;
@@ -99,11 +99,15 @@ export function mergeMiningRoutes(
       miners: 0,
       workers: 0,
       poolHashrates: [],
+      btcPerDay: 0,
+      usdPerDay: 0,
     };
 
     current.coins.push(row.coin);
     current.miners += row.miners;
     current.workers += row.workers;
+    current.btcPerDay += row.btcPerDay;
+    current.usdPerDay += row.usdPerDay;
     if (row.poolHashrate && row.poolHashrate !== "N/A")
       current.poolHashrates.push(row.poolHashrate);
     heroByAlgo.set(row.nicehashAlgo, current);

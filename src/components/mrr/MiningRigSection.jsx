@@ -66,7 +66,7 @@ export default function MiningRigSection({ onCall, rigsData }) {
         onCall={onCall}
         mrrClient={mrrClient}
         setMrrClient={setMrrClient}
-        onOpenMrrPools={handleOpenMrrPools}
+        onOpenPool={handleOpenMrrPools}
       />
       {(mrrPoolData || mrrPoolRigId) && (
         <MrrPoolsManager

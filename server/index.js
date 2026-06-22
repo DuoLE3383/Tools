@@ -2,9 +2,9 @@
 import express from 'express';
 import http from 'http';
 import dotenv from 'dotenv';
-import { registerRoutes } from './server/routes.js';
+import { registerRoutes } from './routes.js';
 import { setupWebSocket } from './server/ws.js';
-import { startMiningOpportunityScanner } from './server/miningOpportunityNotifier.js';
+import { startMiningOpportunityScanner } from './server/opportunity.js';
 
 // Load environment variables
 dotenv.config();

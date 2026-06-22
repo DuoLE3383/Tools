@@ -21,6 +21,9 @@ const COMMON_HEADERS = {
 let lastNotifiedOpportunities = new Map();
 let opportunityDb = null;
 let dbInitPromise = null;
+let cachedBtcPrice = 60000;
+let btcPriceTimestamp = 0;
+const BTC_PRICE_TTL = 60000;
 
 // =========================
 //  DB
@@ -82,6 +85,26 @@ function all(db, sql, params = []) {
 }
 
 // =========================
+//  BTC Price helper (cached)
+// =========================
+async function getCachedBtcPrice() {
+  const now = Date.now();
+  if (now - btcPriceTimestamp < BTC_PRICE_TTL && cachedBtcPrice > 0) {
+    return cachedBtcPrice;
+  }
+  try {
+    const price = await getBtcPrice();
+    if (price > 0) {
+      cachedBtcPrice = price;
+      btcPriceTimestamp = now;
+    }
+  } catch (err) {
+    console.warn("[mine] BTC price fetch failed, using cached:", err.message);
+  }
+  return cachedBtcPrice;
+}
+
+// =========================
 //  Telegram send (TELEGRAM_MINE_BOT_TOKEN)
 // =========================
 async function sendMineTelegram(message) {
@@ -119,6 +142,7 @@ async function sendMineTelegram(message) {
 // =========================
 export async function scrapeHeroMinersGlobal(force = true) {
   try {
+    const btcPrice = await getCachedBtcPrice();
     const res = await fetch("https://herominers.com/sitemap.xml", {
       headers: COMMON_HEADERS, signal: AbortSignal.timeout(10000),
     });
@@ -154,6 +178,7 @@ export async function scrapeHeroMinersGlobal(force = true) {
         host, algorithm: algo,
         normalizedAlgo: normalizeAlgo(algo),
         miners, btcPerDay: priceBtc,
+        usdPerDay: priceBtc * btcPrice,
       });
     }
     return { success: true, coinStats };
@@ -168,6 +193,7 @@ export async function scrapeHeroMinersGlobal(force = true) {
 // =========================
 export async function scrapeMiningDutchGlobal(force = false) {
   try {
+    const btcPrice = await getCachedBtcPrice();
     const res = await fetch("https://www.mining-dutch.nl/", {
       headers: COMMON_HEADERS, signal: AbortSignal.timeout(10000),
     });
@@ -184,7 +210,7 @@ export async function scrapeMiningDutchGlobal(force = false) {
       const btcPerDay = parseFloat($(tds[2]).text().trim().split(" ")[0]) || 0;
       const existing = coinStats.find((c) => c.algorithm === algo);
       if (existing) { existing.btcPerDay = Math.max(existing.btcPerDay, btcPerDay); existing.miners += miners; }
-      else coinStats.push({ algorithm: algo, normalizedAlgo: normalizeAlgo(algo), miners, btcPerDay });
+      else coinStats.push({ algorithm: algo, normalizedAlgo: normalizeAlgo(algo), miners, btcPerDay, usdPerDay: btcPerDay * btcPrice });
     });
     return { success: true, coinStats };
   } catch (err) {

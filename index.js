@@ -7,7 +7,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { setupWebSocket } from './server/ws.js';
 import { registerRoutes } from './server/routes.js';
-import { startMiningOpportunityScanner } from './server/miningOpportunityNotifier.js';
+import { startMiningOpportunityScanner } from './server/opportunity.js';
 import { createApp, initializeApp } from './server/app.js';
 import { verifyToken } from './server/auth.js';
 import { resolveNhClient, getNiceHashApp } from './server/nh.js';

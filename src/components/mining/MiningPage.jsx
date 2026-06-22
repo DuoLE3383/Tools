@@ -1,11 +1,12 @@
 // MiningPage.jsx
-import HeroMinersCard from "./mining/HeroMinersCard.jsx";
+import HeroMinersCard from "./HeroMinersCard.jsx";
 import MiningCoin, { HeaderCell, BodyCell } from "./MiningCoin.jsx";
+import { RentedRigProvider } from "../../context/RentedRigContext.jsx";
 import {
   MiningWorkspaceProvider,
   useMiningWorkspace,
-} from "./MiningWorkspaceProvider";
-import { btcValue, compactNumber, percentValue } from "./miningWorkspaceData";
+} from "./MiningWorkspaceProvider.jsx";
+import { btcValue, compactNumber, percentValue } from "./miningWorkspaceData.js";
 import { useState, useEffect, useMemo, useCallback } from "react";
 
 function StatCard({ label, value, accent }) {

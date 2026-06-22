@@ -6,7 +6,7 @@ import HashpowerBot from "./components/HashpowerBot";
 import NiceHash from "./components/NiceHash";
 import MiningRigRental from "./components/MiningRigRental";
 import CryptoRatePage from "./components/CryptoRatePage";
-import MiningPage from "./components/MiningPage.jsx";
+import MiningPage from "./components/mining/MiningPage.jsx";
 import { createApiClient } from "./core/apiClient";
 import "./App.css";
 

@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState, useRef, useMemo, useReducer } from 'react';
 import Login from './src/components/Login';
-import Dashboard from './src/components/Dashboard';
-import MiningPage from './src/components/MiningPage.jsx';
-import { RentedRigProvider } from './src/components/RentedRigContext.jsx';
-import CryptoRatePage from './src/components/CryptoRatePage';
+import Dashboard from './src/components/Dashboard.jsx';
+import { RentedRigProvider } from './src/context/RentedRigContext.jsx';
+import CryptoRatePage from './src/components/CryptoRatePage.jsx';
 import './src/App.css';
+import MiningPage from './src/components/mining/MiningPage.jsx';
 
 // ============================================
 // REDUCER FOR STATE MANAGEMENT
