@@ -1,17 +1,13 @@
 // MiningPage.jsx
 import HeroMinersCard from "./HeroMinersCard.jsx";
 import MiningCoin, { HeaderCell, BodyCell } from "./MiningCoin.jsx";
-import { RentedRigProvider } from "../../context/RentedRigContext.jsx";
+import { RentedRigProvider } from "../mrr/RentedRigContext.jsx";
 import {
   MiningWorkspaceProvider,
   useMiningWorkspace,
-} from "./MiningWorkspaceProvider.jsx";
-import { btcValue, compactNumber, percentValue } from "./miningWorkspaceData.js";
-<<<<<<< Updated upstream
+} from "./MiningWorkspaceProvider";
+import { btcValue, compactNumber, percentValue } from "./miningWorkspaceData";
 import { useState, useEffect, useMemo, useCallback } from "react";
-=======
-import { useState, useMemo, useCallback, useEffect } from "react";
->>>>>>> Stashed changes
 
 function StatCard({ label, value, accent }) {
   return (
@@ -317,7 +313,7 @@ function MiningRouteHero() {
           >
             {routes.slice(0, 5).map((route) => (
               <div
-                key={`${route.nicehashAlgo}-${route.mrrAlgo}`}
+                key={route.nicehashAlgo}
                 style={{
                   display: "flex",
                   justifyContent: "space-between",
@@ -510,7 +506,7 @@ function MiningRouteHero() {
               >
                 <HeaderCell align="left">Algo</HeaderCell>
                 <HeaderCell align="left">Winner</HeaderCell>
-                <HeaderCell>Pool Revenue</HeaderCell>
+                <HeaderCell>Pool BTC/day</HeaderCell>
                 <HeaderCell>NH Buy/day</HeaderCell>
                 <HeaderCell>MRR Market/day</HeaderCell>
                 <HeaderCell>Spread NH</HeaderCell>
@@ -521,7 +517,7 @@ function MiningRouteHero() {
             <tbody>
               {opportunities.slice(0, 10).map((row) => (
                 <tr
-                  key={`${row.nicehashAlgo}-${row.mrrAlgo}`}
+                  key={row.nicehashAlgo}
                   style={{ borderBottom: "1px solid rgba(148,163,184,0.08)" }}
                 >
                   <BodyCell align="left">
@@ -618,13 +614,12 @@ function MiningRouteHero() {
 }
 
 // --- NEW: Stratum Connection Helper component ---
-function StratumConnectionHelper() {
+function StratumConnectionHelper({ onCall }) {
   const [heroAlgos, setHeroAlgos] = useState([]);
   const [dutchPoolStatus, setDutchPoolStatus] = useState(null);
   const [dutchMultiport, setDutchMultiport] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const { onCall } = useMiningWorkspace();
 
   // Fetch HeroMiners algorithms – we can reuse the existing fetchMiningStats
   // but for simplicity we call the same endpoint that HeroMinersCard uses.
@@ -635,18 +630,24 @@ function StratumConnectionHelper() {
         silent: true,
       });
       if (response?.success && Array.isArray(response.coinStats)) {
-        // Deduplicate by algorithm: use the subdomain from the API response (correct coin name)
-        const algoMap = new Map();
+        // Extract unique algorithms and map to subdomain
+        const algoSet = new Set();
         response.coinStats.forEach((coin) => {
-          const algo = coin.algorithm;
-          if (!algo) return;
-          // Use subdomain from API response (e.g. "ravvencoin", "monero", "ergo")
-          const subdomain = (coin.subdomain || coin.host || "").trim();
-          if (subdomain) {
-            algoMap.set(algo, { algorithm: algo, subdomain: subdomain + ".herominers.com" });
-          }
+          if (coin.algorithm) algoSet.add(coin.algorithm);
         });
-        const algoList = Array.from(algoMap.values());
+        const algoList = Array.from(algoSet)
+          .filter(Boolean)
+          .map((algo) => {
+            // Build subdomain: lowercased and remove spaces/dots? 
+            // Common pattern: algo.herominers.com
+            // For some like "Equihash 192/7" we need to map to "equihash" maybe? 
+            // We'll simplify: just lowercase and replace spaces with dash.
+            let subdomain = algo.toLowerCase().replace(/\s+/g, '-');
+            // Overrides for known mappings (optional)
+            // e.g., "ZelHash" -> "zelhash", "BeamV3" -> "beam"
+            // We'll keep it simple, but we can add a mapping if needed.
+            return { algorithm: algo, subdomain: subdomain + ".herominers.com" };
+          });
         setHeroAlgos(algoList);
       } else {
         throw new Error("Failed to fetch HeroMiners algorithms");
@@ -683,14 +684,7 @@ function StratumConnectionHelper() {
   }, [fetchHeroAlgos, fetchDutchData]);
 
   useEffect(() => {
-    const controller = new AbortController();
-    const signal = controller.signal;
-
-    fetchAll(signal);
-
-    return () => {
-      controller.abort();
-    };
+    queueMicrotask(() => void fetchAll());
   }, [fetchAll]);
 
   return (
@@ -824,7 +818,7 @@ function StratumConnectionHelper() {
   );
 }
 
-function MiningWorkspaceShell({ onNavigateHome }) {
+function MiningWorkspaceShell({ onNavigateHome, onCall, nhClient }) {
   return (
     <div
       className="app-shell mining-shell"
@@ -850,7 +844,7 @@ function MiningWorkspaceShell({ onNavigateHome }) {
         }}
       >
         <div style={{ flex: 1, minWidth: "260px" }}>
-          <h3
+          <div
             style={{
               color: "#38bdf8",
               fontSize: "11px",
@@ -859,8 +853,9 @@ function MiningWorkspaceShell({ onNavigateHome }) {
               marginBottom: "6px",
             }}
           >
-            Mining Workspace
-          </h3>
+            <h3>Mining Workspace</h3>
+          </div>
+
           <p
             className="subtitle"
             style={{ margin: "4px 0 0", maxWidth: "760px", fontSize: "12px" }}
@@ -869,6 +864,7 @@ function MiningWorkspaceShell({ onNavigateHome }) {
             current pool stats, and profitability comparison.
           </p>
         </div>
+
         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
           <button className="btn-pro secondary" onClick={onNavigateHome}>
             Back to Dashboard
@@ -881,8 +877,8 @@ function MiningWorkspaceShell({ onNavigateHome }) {
           </button>
         </div>
       </header>
+
       <MiningRouteHero />
-<<<<<<< Updated upstream
 
       <section
         style={{
@@ -923,9 +919,6 @@ function MiningWorkspaceShell({ onNavigateHome }) {
       {/* <section style={{ marginTop: '12px' }}>
         <TelegramManager onCall={onCall} mrrClient="VN" />
       </section> */}
-=======
-      <StratumConnectionHelper />
->>>>>>> Stashed changes
     </div>
   );
 }
@@ -936,7 +929,6 @@ export default function MiningPage({
   onNavigateHome,
 }) {
   return (
-<<<<<<< Updated upstream
     <RentedRigProvider callApi={onCall}>
       <MiningWorkspaceProvider onCall={onCall} nhClient={nhClient}>
         <MiningWorkspaceShell
@@ -946,13 +938,5 @@ export default function MiningPage({
         />
       </MiningWorkspaceProvider>
     </RentedRigProvider>
-=======
-    <MiningWorkspaceProvider onCall={onCall} nhClient={nhClient}>
-      <MiningWorkspaceShell
-        onNavigateHome={onNavigateHome}
-        nhClient={nhClient}
-      />
-    </MiningWorkspaceProvider>
->>>>>>> Stashed changes
   );
 }

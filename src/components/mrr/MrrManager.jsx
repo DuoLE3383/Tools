@@ -1,12 +1,7 @@
 import React, { useState, useEffect } from "react";
 import Modal from "../Modal";
 import CryptoRatePage from "../CryptoRatePage";
-
-<<<<<<< Updated upstream:src/components/MrrManager.jsx
-import { fetchMiningStats } from "./miningStatsFetcher";
-=======
 import { fetchMiningStats } from "../mining/miningStatsFetcher";
->>>>>>> Stashed changes:src/components/mrr/MrrManager.jsx
 
 /**
  * MrrPoolManager Component

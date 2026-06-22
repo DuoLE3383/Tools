@@ -64,8 +64,8 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "BT" }) {
         if (!hero && !dutch) {
           throw new Error(
             heroResult.reason?.message ||
-            dutchResult.reason?.message ||
-            "Failed to load mining workspace data",
+              dutchResult.reason?.message ||
+              "Failed to load mining workspace data",
           );
         }
 
@@ -204,7 +204,6 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "BT" }) {
       error,
       lastUpdated,
       refresh,
-      onCall,
     }),
     [
       dutchStats,
@@ -219,7 +218,6 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "BT" }) {
       opportunities,
       refresh,
       routes,
-      onCall,
     ],
   );
 

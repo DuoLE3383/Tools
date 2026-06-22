@@ -257,22 +257,6 @@ export default function CryptoRatePage({ onCall, onPriceUpdate }) {
         height: "500px"
       }}
     >
-<<<<<<< Updated upstream
-=======
-      <button
-        className="btn-pro secondary"
-        onClick={onNavigateHome}
-        style={{
-          position: "absolute",
-          top: "12px",
-          left: "12px",
-          zIndex: 10,
-        }}
-      >
-        ← Back
-      </button>
-
->>>>>>> Stashed changes
       {/* Header */}
       <div
         style={{

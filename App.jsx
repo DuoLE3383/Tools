@@ -1,16 +1,9 @@
 import { useCallback, useEffect, useState, useRef, useMemo, useReducer } from 'react';
-<<<<<<< Updated upstream
-import Login from './src/components/Login';
-import Dashboard from './src/components/Dashboard';
-import MiningPage from './src/components/MiningPage.jsx';
-import { RentedRigProvider } from './src/components/RentedRigContext.jsx';
-import CryptoRatePage from './src/components/CryptoRatePage';
-=======
 import Login from './src/components/Login.jsx';
 import Dashboard from './src/components/Dashboard.jsx';
+import MiningPage from './src/components/mining/MiningPage.jsx';
 import { RentedRigProvider } from './src/components/mrr/RentedRigContext.jsx';
 import CryptoRatePage from './src/components/CryptoRatePage.jsx';
->>>>>>> Stashed changes
 import './src/App.css';
 
 // ============================================
@@ -512,8 +505,8 @@ export default function App() {
     return (
       <div className="app-shell" style={{ background: '#0f172a', minHeight: '100vh' }}>
         <div style={{ padding: '16px 20px' }}>
-          <button 
-            className="btn-pro secondary" 
+          <button
+            className="btn-pro secondary"
             onClick={() => {
               window.history.pushState({}, '', '/');
               dispatch({ type: 'SET_VIEW', payload: 'dashboard' }); // Navigate home

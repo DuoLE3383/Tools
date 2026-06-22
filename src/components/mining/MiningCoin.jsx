@@ -14,10 +14,10 @@ const numberValue = (value) => {
     typeof value === "number"
       ? value
       : Number.parseFloat(
-          String(value)
-            .replace(/,/g, "")
-            .replace(/[^\d.-]/g, ""),
-        );
+        String(value)
+          .replace(/,/g, "")
+          .replace(/[^\d.-]/g, ""),
+      );
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
@@ -236,8 +236,8 @@ export default function MiningCoin({ onCall, nhClient = "BT" }) {
         if (!hero && !dutch) {
           throw new Error(
             heroResult.reason?.message ||
-              dutchResult.reason?.message ||
-              "Failed to load mining coin profitability",
+            dutchResult.reason?.message ||
+            "Failed to load mining coin profitability",
           );
         }
 
