@@ -15,7 +15,7 @@ function getNextSharedNonce(apiKey, forceJumpValue = null) {
   // If we were explicitly told to jump (e.g. after a Bad Nonce error)
   if (forceJumpValue) {
     const jumped = BigInt(forceJumpValue);
-    const final = jumped > lastNonce ? jumped : lastNonce + 1000000n;
+    const final = jumped > lastNonce ? jumped : lastNonce + 3000000n;
     mrrLastNonces.set(apiKey, final);
     return final.toString();
   }

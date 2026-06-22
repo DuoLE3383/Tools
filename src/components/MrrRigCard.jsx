@@ -467,13 +467,13 @@ const MrrRigCard = ({
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "5px", fontSize: "9px" }}>
             <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: "9px", padding: "6px" }}>
               <div style={{ opacity: 0.6, textTransform: "uppercase", fontSize: "8px" }}>MRR Rate</div>
-              <div style={{ color: "#fbbf24", fontWeight: 800, marginTop: "3px" }}>
+              <div style={{ color: "#fbbf24", fontWeight: 600, marginTop: "3px" }}>
                 {finalMrrRate > 0 ? (
                   <>
                     {finalMrrRate.toFixed(8)}
-                    <span style={{ opacity: 0.5, fontSize: "8px" }}> BTC/{mrrUnit}/Day</span>
+                    <span style={{ opacity: 0.5, fontSize: "7px" }}> BTC/{mrrUnit}/Day</span>
                     {mrrMarketRate > 0 && (
-                      <span style={{ marginLeft: "4px", fontSize: "6px", opacity: 0.4, fontFamily: "monospace" }}>
+                      <span style={{ marginLeft: "4px", fontSize: "7px", opacity: 0.4, fontFamily: "monospace" }}>
                         ({mrrUsedKey || mrrApiKey})
                       </span>
                     )}
@@ -483,11 +483,11 @@ const MrrRigCard = ({
             </div>
             <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: "9px", padding: "6px" }}>
               <div style={{ opacity: 0.6, textTransform: "uppercase", fontSize: "8px" }}>NiceHash</div>
-              <div style={{ color: "#60a5fa", fontWeight: 800, marginTop: "3px" }}>
+              <div style={{ color: "#60a5fa", fontWeight: 600, marginTop: "3px" }}>
                 {niceHashPriceInMrrUnit > 0 ? (
                   <>
                     {niceHashPriceInMrrUnit.toFixed(8)}
-                    <span style={{ opacity: 0.5, fontSize: "8px" }}> BTC/{mrrUnit}/Day</span>
+                    <span style={{ opacity: 0.5, fontSize: "7px" }}> BTC/{mrrUnit}/Day</span>
                   </>
                 ) : "N/A"}
               </div>
