@@ -208,6 +208,30 @@ export function registerNiceHashRoutes(app) {
         return { fixedPrice: price.toFixed(8), speedUnit: getAlgorithmUnit(algorithm), price, marketPrice: price, marketUnit: getAlgorithmUnit(algorithm), source: "active-order", nhClient: clientName, orderId: found.id };
       } catch { return null; }
     };
+    const matchMarketPrice = async (clientName, client) => {
+      try {
+        const orderBook = await getNiceHashApp(client).hashpower.getOrderBook({ algorithm, market: query.market || "USA" });
+        const buyOrders = orderBook?.buy || [];
+        if (Array.isArray(buyOrders) && buyOrders.length > 0) {
+          const prices = buyOrders
+            .map(o => parseFloat(o.price ?? o.fixedPrice ?? o.rate ?? 0))
+            .filter(p => p > 0);
+          if (prices.length > 0) {
+            const price = Math.max(...prices);
+            return {
+              fixedPrice: price.toFixed(8),
+              speedUnit: getAlgorithmUnit(algorithm),
+              price,
+              marketPrice: price,
+              marketUnit: getAlgorithmUnit(algorithm),
+              source: "order-book",
+              nhClient: clientName
+            };
+          }
+        }
+      } catch {}
+      return null;
+    };
     if (isAggregate(clientParam)) {
       const nhAccounts = Object.keys(nhConfigs).filter(k => nhConfigs[k].apiKey && nhConfigs[k].apiSecret && nhConfigs[k].orgId && !isAggregate(k));
       for (const acct of nhAccounts) {
@@ -218,15 +242,32 @@ export function registerNiceHashRoutes(app) {
           if (orderPrice) { res.set("X-NH-Client", clientName); return res.json(orderPrice); }
         } catch {}
       }
+      for (const acct of nhAccounts) {
+        const { client, clientName } = resolveNhClient(acct);
+        if (!client || (acct !== "BT" && clientName === "BT")) continue;
+        try {
+          const marketPrice = await matchMarketPrice(clientName, client);
+          if (marketPrice) { res.set("X-NH-Client", clientName); return res.json(marketPrice); }
+        } catch {}
+      }
     }
     if (clientParam !== "ALL" && clientParam !== "VN") {
       const { client, clientName } = resolveNhClient(clientParam);
       if (client) {
         const orderPrice = await matchActiveOrder(clientName, client);
         if (orderPrice) { res.set("X-NH-Client", clientName); return res.json(orderPrice); }
+        const marketPrice = await matchMarketPrice(clientName, client);
+        if (marketPrice) { res.set("X-NH-Client", clientName); return res.json(marketPrice); }
       }
     }
     return res.json({ success: false, error: `No active NiceHash order price found for ${algorithm || "unknown"}.`, algorithm: query.algorithm, market: query.market || "USA", source: "active-order" });
+  }));
+  app.get("/api/v2/hashpower/orderBook/:algo/:market", asyncHandler(async (req, res) => {
+    const { algo, market } = req.params;
+    const clientParam = String(req.query.client || "BT").toUpperCase();
+    const { client } = resolveNhClient(clientParam);
+    const app = getNiceHashApp(client);
+    res.json(await app.hashpower.getOrderBook({ algorithm: algo, market }));
   }));
   app.get("/api/v2/hashpower/order/:orderId", asyncHandler(async (req, res) => {
     const clientParam = String(req.query.client || "BT").toUpperCase();

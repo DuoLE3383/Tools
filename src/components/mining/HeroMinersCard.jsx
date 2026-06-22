@@ -1,8 +1,8 @@
 // HeroMinersCard.jsx
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { fetchMiningStats } from "./miningStatsFetcher";
-import { useRentedRigs } from "./RentedRigContext.jsx";
-import MiningDutch from "./MiningDutch";
+import { fetchMiningStats } from "./miningStatsFetcher.js";
+import { useRentedRigs } from "../mrr/RentedRigContext.jsx";
+import MiningDutch from "./MiningDutch.jsx";
 
 function formatNumber(value, digits = 0) {
   const num = Number(value);
@@ -22,8 +22,8 @@ function HeroMinersTable({
     const list = Array.isArray(stats) ? [...stats] : [];
     const filtered = filterMiningOnly
       ? list.filter((coin) =>
-          activeAlgos.has(String(coin.algorithm || "").toUpperCase()),
-        )
+        activeAlgos.has(String(coin.algorithm || "").toUpperCase()),
+      )
       : list;
 
     return filtered.sort((a, b) => {

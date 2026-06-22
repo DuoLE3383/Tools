@@ -5,8 +5,8 @@ import {
   getAlgorithmUnit,
   mapNiceHashToMRR,
   normalizeAlgoForNiceHash,
-} from "../core/mapping";
-import { getNiceHashPriceValue } from "../core/mrrUtils";
+} from "../../core/mapping";
+import { getNiceHashPriceValue } from "../../core/mrrUtils";
 
 const numberValue = (value) => {
   if (value === null || value === undefined || value === "") return 0;
@@ -14,10 +14,10 @@ const numberValue = (value) => {
     typeof value === "number"
       ? value
       : Number.parseFloat(
-          String(value)
-            .replace(/,/g, "")
-            .replace(/[^\d.-]/g, ""),
-        );
+        String(value)
+          .replace(/,/g, "")
+          .replace(/[^\d.-]/g, ""),
+      );
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
@@ -236,8 +236,8 @@ export default function MiningCoin({ onCall, nhClient = "BT" }) {
         if (!hero && !dutch) {
           throw new Error(
             heroResult.reason?.message ||
-              dutchResult.reason?.message ||
-              "Failed to load mining coin profitability",
+            dutchResult.reason?.message ||
+            "Failed to load mining coin profitability",
           );
         }
 

@@ -1,4 +1,4 @@
-// CryptoRatePage.jsx - Add callback to share prices
+// CryptoRatePage.jsx
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 
 const COINS = [
@@ -58,7 +58,7 @@ function Sparkline({ data, width = 180, height = 80, color = "#60a5fa" }) {
   );
 }
 
-export default function CryptoRatePage({ onCall, onPriceUpdate }) {
+export default function CryptoRatePage({ onCall, onPriceUpdate, onNavigateHome }) {
   const [prices, setPrices] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -80,7 +80,7 @@ export default function CryptoRatePage({ onCall, onPriceUpdate }) {
       // Find the matching COIN entry
       const coin = COINS.find(c => c.id === key);
       const symbol = coin?.symbol || key.toUpperCase();
-
+      
       formatted[symbol] = {
         usd: coinData?.usd || 0,
         btc: coinData?.btc || 0,
@@ -120,8 +120,8 @@ export default function CryptoRatePage({ onCall, onPriceUpdate }) {
               ? "Cloudflare Intercept"
               : `API Error: ${res.slice(0, 100)}`
             : res?.error ||
-            res?.message ||
-            `Format Mismatch (Keys: ${res ? Object.keys(res).join(",") : "null"})`;
+              res?.message ||
+              `Format Mismatch (Keys: ${res ? Object.keys(res).join(",") : "null"})`;
 
         if (isSystemConfig) setWsEnabled(false);
         if (!prices) setError(`Market data unavailable. ${detail}`);
@@ -257,6 +257,19 @@ export default function CryptoRatePage({ onCall, onPriceUpdate }) {
         height: "500px"
       }}
     >
+      <button
+        className="btn-pro secondary"
+        onClick={onNavigateHome}
+        style={{
+          position: "absolute",
+          top: "12px",
+          left: "12px",
+          zIndex: 10,
+        }}
+      >
+        ← Back
+      </button>
+
       {/* Header */}
       <div
         style={{

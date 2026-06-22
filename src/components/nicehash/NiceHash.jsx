@@ -1,9 +1,9 @@
 // NiceHash.jsx
 import React, { useEffect, useMemo, useState, useCallback } from "react";
-import Accounting from "./Accounting";
-import CryptoRatePage from "./CryptoRatePage";
+import Accounting from "../Accounting";
+import CryptoRatePage from "../CryptoRatePage";
 import NiceHashOrderCard from "./NiceHashOrdersCard.jsx";
-import { getAlgoDisplayName } from "../core/mapping.js";
+import { getAlgoDisplayName } from "../../core/mapping.js";
 import { useNiceHashOrders } from "./NiceHashContext";
 
 function NiceHashOrderManager({ onCall, nhClient, setNhClient }) {

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState, useRef, useMemo, useReducer } from 'react';
-import Login from './src/components/Login';
-import Dashboard from './src/components/Dashboard';
-import MiningPage from './src/components/MiningPage.jsx';
-import { RentedRigProvider } from './src/components/RentedRigContext.jsx';
-import CryptoRatePage from './src/components/CryptoRatePage';
+import Login from './src/components/Login.jsx';
+import Dashboard from './src/components/Dashboard.jsx';
+import MiningPage from './src/components/mining/MiningPage.jsx';
+import { RentedRigProvider } from './src/components/mrr/RentedRigContext.jsx';
+import CryptoRatePage from './src/components/CryptoRatePage.jsx';
 import './src/App.css';
 
 // ============================================
@@ -55,8 +55,8 @@ function appReducer(state, action) {
     case 'SET_DEBUG_MODAL':
       return { ...state, debugModalOpen: action.payload };
     case 'ADD_DEBUG_LOG':
-      return { 
-        ...state, 
+      return {
+        ...state,
         debugLogs: [`[${new Date().toLocaleTimeString()}] ${action.payload}`, ...state.debugLogs].slice(0, 50)
       };
     case 'CLEAR_DEBUG_LOGS':
@@ -303,7 +303,7 @@ export default function App() {
         }
 
         // Check for API errors
-        const isError = !res.ok || (data && typeof data === 'object' && 
+        const isError = !res.ok || (data && typeof data === 'object' &&
           (data.success === false || data.error || data.errors));
 
         if (isError) {
@@ -327,8 +327,8 @@ export default function App() {
         // Update section state
         const detectedSection = section || (
           path.includes('/pools') ? 'pools' :
-          path.includes('/mining') || path.includes('/hashpower') ? 'mining' :
-          path.includes('/rigs') ? 'rigs' : ''
+            path.includes('/mining') || path.includes('/hashpower') ? 'mining' :
+              path.includes('/rigs') ? 'rigs' : ''
         );
         updateSectionState(detectedSection, data);
 
@@ -433,7 +433,7 @@ export default function App() {
   // ============================================
   // EFFECTS
   // ============================================
-  
+
   // Route handling
   useEffect(() => {
     const handlePath = () => {
@@ -453,7 +453,7 @@ export default function App() {
     if (isAuthenticated) {
       addDebugLog('App initialized, fetching initial data', 'info');
       forceCheckStatus();
-      
+
       // Fetch pools and rigs in parallel
       Promise.all([
         callApi('/api/v2/pools', { silent: true, section: 'pools' }),
@@ -494,7 +494,7 @@ export default function App() {
   // ============================================
   // RENDER
   // ============================================
-  
+
   // Login screen
   if (!isAuthenticated) {
     return <Login onLoginSuccess={handleLoginSuccess} onCall={callApi} />;
@@ -505,8 +505,8 @@ export default function App() {
     return (
       <div className="app-shell" style={{ background: '#0f172a', minHeight: '100vh' }}>
         <div style={{ padding: '16px 20px' }}>
-          <button 
-            className="btn-pro secondary" 
+          <button
+            className="btn-pro secondary"
             onClick={() => {
               window.history.pushState({}, '', '/');
               dispatch({ type: 'SET_VIEW', payload: 'dashboard' }); // Navigate home

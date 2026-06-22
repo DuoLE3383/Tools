@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from "react";
-import Modal from "./Modal";
-import CryptoRatePage from "./CryptoRatePage";
+import Modal from "../Modal";
+import CryptoRatePage from "../CryptoRatePage";
 
-import { fetchMiningStats } from "./miningStatsFetcher";
+import { fetchMiningStats } from "../mining/miningStatsFetcher";
 
 /**
  * MrrPoolManager Component

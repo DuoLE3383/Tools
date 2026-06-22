@@ -1,7 +1,7 @@
 // MiningPage.jsx
-import HeroMinersCard from "./HeroMinersCard";
+import HeroMinersCard from "./HeroMinersCard.jsx";
 import MiningCoin, { HeaderCell, BodyCell } from "./MiningCoin.jsx";
-import { RentedRigProvider } from "./RentedRigContext.jsx";
+import { RentedRigProvider } from "../mrr/RentedRigContext.jsx";
 import {
   MiningWorkspaceProvider,
   useMiningWorkspace,
@@ -172,7 +172,7 @@ function MiningRouteHero() {
               <div
                 style={{ color: "#f8fafc", fontSize: "15px", fontWeight: 800 }}
               >
-                Best current route
+                Best route
               </div>
             </div>
             <button
