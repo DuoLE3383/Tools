@@ -1,12 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Pools from "./components/Pools";
 import Modal from "./components/Modal";
+<<<<<<< Updated upstream
 import HashCompletionCalculator from "./components/HashCompletionCalculator";
 import HashpowerBot from "./components/HashpowerBot";
 import NiceHash from "./components/NiceHash";
 import MiningRigRental from "./components/MiningRigRental";
+=======
+import HashCompletionCalculator from "./components/ProfitCompletion";
+import HashpowerBot from "./components/nicehash/HashpowerBot.jsx";
+import NiceHash from "./components/nicehash/NiceHash";
+import MiningRigRental from "./components/mrr/MiningRigRental.jsx";
+>>>>>>> Stashed changes
 import CryptoRatePage from "./components/CryptoRatePage";
-import MiningPage from "./components/MiningPage.jsx";
+import MiningPage from "./components/mining/MiningPage.jsx";
 import { createApiClient } from "./core/apiClient";
 import "./App.css";
 
@@ -298,7 +305,7 @@ export default function App() {
       {isMiningRoute ? (
         <MiningPage
           onCall={callApi}
-          nhClient="BT"
+          nhClient={mrrClient === "VN" ? "BT" : mrrClient}
           onNavigateHome={() => navigate("/")}
         />
       ) : (

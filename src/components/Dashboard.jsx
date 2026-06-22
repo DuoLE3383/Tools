@@ -1,8 +1,8 @@
 import Pools from "./Pools";
 import Modal from "./Modal";
-import NiceHash from "./NiceHash";
-import MiningRigSection from "./MiningRigSection";
-import { NiceHashOrderProvider } from "./NiceHashContext.jsx";
+import NiceHash from "./nicehash/NiceHash";
+import MiningRigSection from "./mrr/MiningRigSection";
+import { NiceHashOrderProvider } from "./nicehash/NiceHashContext.jsx";
 import HashrateCalculator from "./HashrateCalculator";
 
 export default function Dashboard({

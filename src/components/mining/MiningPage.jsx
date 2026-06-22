@@ -7,7 +7,11 @@ import {
   useMiningWorkspace,
 } from "./MiningWorkspaceProvider.jsx";
 import { btcValue, compactNumber, percentValue } from "./miningWorkspaceData.js";
+<<<<<<< Updated upstream
 import { useState, useEffect, useMemo, useCallback } from "react";
+=======
+import { useState, useMemo, useCallback, useEffect } from "react";
+>>>>>>> Stashed changes
 
 function StatCard({ label, value, accent }) {
   return (
@@ -313,7 +317,7 @@ function MiningRouteHero() {
           >
             {routes.slice(0, 5).map((route) => (
               <div
-                key={route.nicehashAlgo}
+                key={`${route.nicehashAlgo}-${route.mrrAlgo}`}
                 style={{
                   display: "flex",
                   justifyContent: "space-between",
@@ -517,7 +521,7 @@ function MiningRouteHero() {
             <tbody>
               {opportunities.slice(0, 10).map((row) => (
                 <tr
-                  key={row.nicehashAlgo}
+                  key={`${row.nicehashAlgo}-${row.mrrAlgo}`}
                   style={{ borderBottom: "1px solid rgba(148,163,184,0.08)" }}
                 >
                   <BodyCell align="left">
@@ -614,12 +618,13 @@ function MiningRouteHero() {
 }
 
 // --- NEW: Stratum Connection Helper component ---
-function StratumConnectionHelper({ onCall }) {
+function StratumConnectionHelper() {
   const [heroAlgos, setHeroAlgos] = useState([]);
   const [dutchPoolStatus, setDutchPoolStatus] = useState(null);
   const [dutchMultiport, setDutchMultiport] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const { onCall } = useMiningWorkspace();
 
   // Fetch HeroMiners algorithms – we can reuse the existing fetchMiningStats
   // but for simplicity we call the same endpoint that HeroMinersCard uses.
@@ -678,7 +683,14 @@ function StratumConnectionHelper({ onCall }) {
   }, [fetchHeroAlgos, fetchDutchData]);
 
   useEffect(() => {
-    queueMicrotask(() => void fetchAll());
+    const controller = new AbortController();
+    const signal = controller.signal;
+
+    fetchAll(signal);
+
+    return () => {
+      controller.abort();
+    };
   }, [fetchAll]);
 
   return (
@@ -812,7 +824,7 @@ function StratumConnectionHelper({ onCall }) {
   );
 }
 
-function MiningWorkspaceShell({ onNavigateHome, onCall, nhClient }) {
+function MiningWorkspaceShell({ onNavigateHome }) {
   return (
     <div
       className="app-shell mining-shell"
@@ -838,7 +850,7 @@ function MiningWorkspaceShell({ onNavigateHome, onCall, nhClient }) {
         }}
       >
         <div style={{ flex: 1, minWidth: "260px" }}>
-          <div
+          <h3
             style={{
               color: "#38bdf8",
               fontSize: "11px",
@@ -847,9 +859,8 @@ function MiningWorkspaceShell({ onNavigateHome, onCall, nhClient }) {
               marginBottom: "6px",
             }}
           >
-            <h3>Mining Workspace</h3>
-          </div>
-
+            Mining Workspace
+          </h3>
           <p
             className="subtitle"
             style={{ margin: "4px 0 0", maxWidth: "760px", fontSize: "12px" }}
@@ -858,7 +869,6 @@ function MiningWorkspaceShell({ onNavigateHome, onCall, nhClient }) {
             current pool stats, and profitability comparison.
           </p>
         </div>
-
         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
           <button className="btn-pro secondary" onClick={onNavigateHome}>
             Back to Dashboard
@@ -871,8 +881,8 @@ function MiningWorkspaceShell({ onNavigateHome, onCall, nhClient }) {
           </button>
         </div>
       </header>
-
       <MiningRouteHero />
+<<<<<<< Updated upstream
 
       <section
         style={{
@@ -913,6 +923,9 @@ function MiningWorkspaceShell({ onNavigateHome, onCall, nhClient }) {
       {/* <section style={{ marginTop: '12px' }}>
         <TelegramManager onCall={onCall} mrrClient="VN" />
       </section> */}
+=======
+      <StratumConnectionHelper />
+>>>>>>> Stashed changes
     </div>
   );
 }
@@ -923,6 +936,7 @@ export default function MiningPage({
   onNavigateHome,
 }) {
   return (
+<<<<<<< Updated upstream
     <RentedRigProvider callApi={onCall}>
       <MiningWorkspaceProvider onCall={onCall} nhClient={nhClient}>
         <MiningWorkspaceShell
@@ -932,5 +946,13 @@ export default function MiningPage({
         />
       </MiningWorkspaceProvider>
     </RentedRigProvider>
+=======
+    <MiningWorkspaceProvider onCall={onCall} nhClient={nhClient}>
+      <MiningWorkspaceShell
+        onNavigateHome={onNavigateHome}
+        nhClient={nhClient}
+      />
+    </MiningWorkspaceProvider>
+>>>>>>> Stashed changes
   );
 }

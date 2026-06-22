@@ -1,9 +1,9 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import MrrRigs from "./MrrRigs";
-import Modal from "./Modal";
-import TelegramManager, { useTelegram } from "./TelegramManager";
-import { calculateRemainingTime, toUtcTimestamp } from "../core/time";
-import ErrorBoundary from "./ErrorBoundary";
+import Modal from "../Modal";
+import TelegramManager, { useTelegram } from "../TelegramManager";
+import { calculateRemainingTime, toUtcTimestamp } from "../../core/time";
+import ErrorBoundary from "../ErrorBoundary";
 
 /** Safely extracts an array from various MRR API response shapes */
 function extractArray(

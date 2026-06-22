@@ -1,7 +1,12 @@
 // HeroMinersCard.jsx
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+<<<<<<< Updated upstream:src/components/HeroMinersCard.jsx
 import { fetchMiningStats } from "./miningStatsFetcher";
 import { useRentedRigs } from "./RentedRigContext.jsx";
+=======
+import { fetchMiningStats } from "./miningStatsFetcher.js";
+import { useRentedRigs } from "../mrr/RentedRigContext.jsx";
+>>>>>>> Stashed changes:src/components/mining/HeroMinersCard.jsx
 import MiningDutch from "./MiningDutch";
 
 function formatNumber(value, digits = 0) {

@@ -11,8 +11,8 @@ import {
   normalizeAlgoForNiceHash,
   calculatePriceComparison,
   getAlgorithmUnit,
-} from "../core/mapping.js";
-import { fetchMarketPrice } from "../core/marketApi.js";
+} from "../../core/mapping.js";
+import { fetchMarketPrice } from "../../core/marketApi.js";
 export const NiceHashOrderContext = createContext();
 
 export function NiceHashOrderProvider({ children, nhClient, callApi }) {

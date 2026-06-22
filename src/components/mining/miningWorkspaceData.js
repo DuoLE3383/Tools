@@ -3,8 +3,8 @@ import {
   getAlgorithmUnit,
   mapNiceHashToMRR,
   normalizeAlgoForNiceHash,
-} from "../core/mapping";
-import { getBtcPriceData, parsePriceValue } from "../core/priceUtils";
+} from "../../core/mapping";
+import { getBtcPriceData, parsePriceValue } from "../../core/priceUtils";
 
 export const numberValue = (value) => {
   if (value === null || value === undefined || value === "") return 0;
@@ -12,10 +12,10 @@ export const numberValue = (value) => {
     typeof value === "number"
       ? value
       : Number.parseFloat(
-          String(value)
-            .replace(/,/g, "")
-            .replace(/[^\d.-]/g, ""),
-        );
+        String(value)
+          .replace(/,/g, "")
+          .replace(/[^\d.-]/g, ""),
+      );
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
@@ -188,35 +188,35 @@ export function normalizeMrrMarketRows(payload) {
         );
       const durationHours = numberValue(
         rental?.hours ||
-          rental?.length ||
-          rental?.duration ||
-          rental?.rig?.hours,
+        rental?.length ||
+        rental?.duration ||
+        rental?.rig?.hours,
       );
       const algo = String(
         rental?.algo ||
-          rental?.algorithm ||
-          rental?.rig?.algo ||
-          rental?.rig?.algorithm ||
-          rental?.rig?.type ||
-          "N/A",
+        rental?.algorithm ||
+        rental?.rig?.algo ||
+        rental?.rig?.algorithm ||
+        rental?.rig?.type ||
+        "N/A",
       );
       const nicehashAlgo = normalizeAlgoForNiceHash(algo);
       const advertised = numberValue(
         rental?.hashrate?.advertised?.hash ??
-          rental?.hashrate?.advertised ??
-          rental?.rig?.hashrate?.advertised?.hash ??
-          rental?.rig?.hashrate?.advertised ??
-          rental?.rig?.hashrate?.hash ??
-          rental?.rig?.hashrate,
+        rental?.hashrate?.advertised ??
+        rental?.rig?.hashrate?.advertised?.hash ??
+        rental?.rig?.hashrate?.advertised ??
+        rental?.rig?.hashrate?.hash ??
+        rental?.rig?.hashrate,
       );
       const unit = String(
         rental?.hashrate?.advertised?.type ||
-          rental?.hashrate?.suffix ||
-          rental?.rig?.hashrate?.advertised?.type ||
-          rental?.rig?.hashrate?.suffix ||
-          rental?.price_unit ||
-          rental?.currency ||
-          getAlgorithmUnit(nicehashAlgo),
+        rental?.hashrate?.suffix ||
+        rental?.rig?.hashrate?.advertised?.type ||
+        rental?.rig?.hashrate?.suffix ||
+        rental?.price_unit ||
+        rental?.currency ||
+        getAlgorithmUnit(nicehashAlgo),
       ).toUpperCase();
       const perUnitPerDay =
         paidValue > 0 && durationHours > 0 && advertised > 0
@@ -235,9 +235,9 @@ export function normalizeMrrMarketRows(payload) {
         advertised,
         currency: String(
           rawPrice?.currency ||
-            rawPrice?.price_unit ||
-            rental?.currency ||
-            "BTC",
+          rawPrice?.price_unit ||
+          rental?.currency ||
+          "BTC",
         ).toUpperCase(),
         mrrClient: rental?.mrrClient || rental?.client || "",
       };

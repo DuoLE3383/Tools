@@ -5,8 +5,8 @@ import {
   getAlgorithmUnit,
   mapNiceHashToMRR,
   normalizeAlgoForNiceHash,
-} from "../core/mapping";
-import { getNiceHashPriceValue } from "../core/mrrUtils";
+} from "../../core/mapping";
+import { getNiceHashPriceValue } from "../../core/mrrUtils";
 
 const numberValue = (value) => {
   if (value === null || value === undefined || value === "") return 0;

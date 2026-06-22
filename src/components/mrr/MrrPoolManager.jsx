@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import Modal from './Modal';
-import PoolEditorPopup from './PoolEditorPopup';
+import Modal from '../Modal';
+import PoolEditorPopup from '../PoolEditorPopup';
 
 /**
  * MrrPoolManager Component
