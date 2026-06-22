@@ -172,7 +172,7 @@ function MiningRouteHero() {
               <div
                 style={{ color: "#f8fafc", fontSize: "15px", fontWeight: 800 }}
               >
-                Best current route
+                Best route
               </div>
             </div>
             <button
