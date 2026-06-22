@@ -1,34 +1,25 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { fetchMiningStats } from "./miningStatsFetcher";
+import { useMemo, useState } from "react";
+import { getNiceHashPriceValue } from "../../core/mrrUtils";
 import {
+  normalizeMiningDutchRows,
+  normalizeHeroRows,
+  mergeMiningRoutes,
   btcValue,
   compactNumber,
-  mergeMiningRoutes,
-  normalizeHeroRows,
-  normalizeMiningDutchRows,
   percentValue,
 } from "./miningWorkspaceData";
-import { getNiceHashPriceValue } from "../../core/mrrUtils";
+import { useMiningWorkspace } from "./MiningWorkspaceProvider";
 
 export default function MiningCoin({ onCall, nhClient = "BT" }) {
-  const [heroStats, setHeroStats] = useState(null);
-  const [dutchStats, setDutchStats] = useState(null);
-  const [niceHashPrices, setNiceHashPrices] = useState({});
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const {
+    routes: combinedRows,
+    loading,
+    error,
+    lastUpdated,
+    refresh,
+  } = useMiningWorkspace();
   const [query, setQuery] = useState("");
   const [onlyProfitable, setOnlyProfitable] = useState(true);
-  const [lastUpdated, setLastUpdated] = useState("");
-
-  const miningDutchRows = useMemo(
-    () => normalizeMiningDutchRows(dutchStats),
-    [dutchStats],
-  );
-  const heroRows = useMemo(() => normalizeHeroRows(heroStats), [heroStats]);
-  const combinedRows = useMemo(
-    () => mergeMiningRoutes(miningDutchRows, heroRows, niceHashPrices),
-    [miningDutchRows, heroRows, niceHashPrices],
-  );
 
   const visibleRows = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -60,78 +51,6 @@ export default function MiningCoin({ onCall, nhClient = "BT" }) {
 
   const bestRow = visibleRows[0] || null;
   const profitableCount = combinedRows.filter((row) => row.spread > 0).length;
-
-  const loadData = useCallback(
-    async (force = false) => {
-      setLoading(true);
-      setError("");
-
-      try {
-        const [heroResult, dutchResult] = await Promise.allSettled([
-          fetchMiningStats("herominers_global", "BT", null, null, 20000, force),
-          fetchMiningStats("miningpooldutch", "BT", null, null, 20000, force),
-        ]);
-
-        const hero =
-          heroResult.status === "fulfilled" ? heroResult.value : null;
-        const dutch =
-          dutchResult.status === "fulfilled" ? dutchResult.value : null;
-        const nextHero = hero || heroStats;
-        const nextDutch = dutch || dutchStats;
-
-        if (hero) setHeroStats(hero);
-        if (dutch) setDutchStats(dutch);
-
-        if (!hero && !dutch) {
-          throw new Error(
-            heroResult.reason?.message ||
-              dutchResult.reason?.message ||
-              "Failed to load mining coin profitability",
-          );
-        }
-
-        setLastUpdated(new Date().toISOString());
-
-        const algos = Array.from(
-          new Set([
-            ...normalizeHeroRows(nextHero).map((row) => row.nicehashAlgo),
-            ...normalizeMiningDutchRows(nextDutch).map(
-              (row) => row.nicehashAlgo,
-            ),
-          ]),
-        ).filter((algo) => algo && algo !== "UNKNOWN");
-
-        if (typeof onCall === "function") {
-          const pricePairs = await Promise.all(
-            algos.map(async (algo) => {
-              try {
-                const data = await onCall("/api/v2/hashpower/order/price", {
-                  query: { algorithm: algo, market: "USA", client: nhClient },
-                  silent: true,
-                });
-                return [algo, getNiceHashPriceValue(data)];
-              } catch {
-                return [algo, 0];
-              }
-            }),
-          );
-
-          setNiceHashPrices(Object.fromEntries(pricePairs));
-        }
-      } catch (err) {
-        setError(err.message || "Failed to load mining coin profitability");
-      } finally {
-        setLoading(false);
-      }
-    },
-    [heroStats, dutchStats, nhClient, onCall],
-  );
-
-  useEffect(() => {
-    queueMicrotask(() => {
-      void loadData();
-    });
-  }, [loadData]);
 
   return (
     <section
@@ -179,7 +98,7 @@ export default function MiningCoin({ onCall, nhClient = "BT" }) {
           </label>
           <button
             className="btn-pro secondary"
-            onClick={() => void loadData(true)}
+            onClick={() => void refresh(true)}
             disabled={loading}
           >
             {loading ? "Refreshing..." : "Refresh"}
@@ -363,7 +282,7 @@ export default function MiningCoin({ onCall, nhClient = "BT" }) {
                     <div
                       style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}
                     >
-                      {row.heroCoins.slice(0, 8).map((coin) => (
+                      {row.heroCoins.map((coin) => (
                         <span
                           key={coin}
                           style={{
@@ -378,11 +297,6 @@ export default function MiningCoin({ onCall, nhClient = "BT" }) {
                           {coin}
                         </span>
                       ))}
-                      {row.heroCoins.length > 8 && (
-                        <span style={{ color: "#64748b" }}>
-                          +{row.heroCoins.length - 8}
-                        </span>
-                      )}
                     </div>
                   </BodyCell>
                 </tr>

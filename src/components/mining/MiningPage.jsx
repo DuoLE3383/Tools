@@ -586,7 +586,7 @@ function MiningRouteHero() {
                     <div
                       style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}
                     >
-                      {row.heroCoins.slice(0, 4).map((coin) => (
+                      {row.heroCoins.map((coin) => (
                         <span
                           key={coin}
                           style={{
