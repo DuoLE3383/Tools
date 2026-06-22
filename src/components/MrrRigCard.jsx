@@ -393,13 +393,13 @@ const MrrRigCard = ({
   const sectionStyle = {
     background: "rgba(255,255,255,0.035)",
     border: "1px solid rgba(255,255,255,0.06)",
-    borderRadius: "10px",
-    padding: "6px",
+    borderRadius: "8px",
+    padding: "2px",
   };
 
   const asicBoostBadge = isAsicBoostAlgo ? (
     <span style={{ background: "rgba(245, 158, 11, 0.2)", color: "#fbbf24", fontSize: "7px", padding: "1px 6px", borderRadius: "999px", fontWeight: "700", marginLeft: "4px", border: "1px solid rgba(245, 158, 11, 0.3)" }}>
-      AB
+
     </span>
   ) : null;
 
@@ -494,9 +494,8 @@ const MrrRigCard = ({
               </div>
             </div>
           </div>
-
           {/* Time */}
-          <span style={{ alignItems: "flex-end", marginTop: "8px", display: "flex", justifyContent: "space-between", fontSize: "10px", color: "#94a3b8", padding: "4px 0", borderTop: "1px solid rgba(255,255,255,0.05)" }}>🕐 Started: {formatRentalStartTime(rentalStartTime)}</span>
+          <span style={{ alignItems: "flex-end", marginTop: "5px", display: "flex", justifyContent: "space-between", fontSize: "10px", color: "#94a3b8", padding: "3px 0" }}>🕐 Started: {formatRentalStartTime(rentalStartTime)}</span>
         </section>
 
         {/* ─── Right Column: Efficiency & Hashrates ─── */}
@@ -512,7 +511,6 @@ const MrrRigCard = ({
                 <div style={{ width: `${Math.min(100, Math.max(0, effNum || 0))}%`, height: "100%", background: getRoiColor(effNum), borderRadius: "999px" }} />
               </div>
             </div>
-
             {/* Progress Bar */}
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: "8px", marginBottom: "2px" }}>
@@ -523,7 +521,6 @@ const MrrRigCard = ({
                 <div style={{ width: `${Math.min(100, Math.max(0, timeProgress || 0))}%`, height: "100%", background: "linear-gradient(90deg, #3b82f6, #8b5cf6)", borderRadius: "999px" }} />
               </div>
             </div>
-
             {/* Hashrates Grid: Current, Average, Advertised, Target */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px", marginTop: "4px" }}>
               <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: "6px", padding: "4px 6px" }}>
@@ -536,9 +533,9 @@ const MrrRigCard = ({
                 <div style={{ opacity: 0.55, textTransform: "uppercase", fontSize: "7px" }}>Average</div>
                 <div style={{ color: "#e2e8f0", fontWeight: 700, fontSize: "10px" }}>{info?.average || "0 N/A"}</div>
               </div>
-              <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: "6px", padding: "4px 6px" }}>
+              <div style={{ background: "rgba(63, 82, 255, 0.34)", borderRadius: "6px", padding: "4px 6px" }}>
                 <div style={{ opacity: 0.55, textTransform: "uppercase", fontSize: "7px" }}>Advertised</div>
-                <div style={{ color: "#e2e8f0", fontWeight: 700, fontSize: "10px" }}>{info?.advertised || "0 N/A"}</div>
+                <div style={{ color: "#ffca1d", fontWeight: 700, fontSize: "11px" }}>{info?.advertised || "0 N/A"}</div>
               </div>
               <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: "6px", padding: "4px 6px" }}>
                 <div style={{ opacity: 0.55, textTransform: "uppercase", fontSize: "7px" }}>Target</div>
@@ -546,12 +543,10 @@ const MrrRigCard = ({
                   {Math.max(0, targetHashrate).toFixed(2)} <small style={{ opacity: 0.5, fontSize: "8px" }}>{String(hSuffix).toUpperCase()}</small>
                 </div>
               </div>
-
             </div>
-
           </div>
-          <span style={{ alignItems: "flex-end", marginTop: "19px", display: "flex", justifyContent: "space-between", fontSize: "10px", color: "#94a3b8", padding: "4px 0", borderTop: "1px solid rgba(255,255,255,0.05)" }}>⏳ Ends in: <CountdownTimer endTime={info?.endTime || rig.end} /></span>
-
+          {/* Time */}
+          <span style={{ alignItems: "flex-end", marginTop: "5px", display: "flex", justifyContent: "space-between", fontSize: "10px", color: "#94a3b8", padding: "3px 0" }}>⏳ Ends in: <CountdownTimer endTime={info?.endTime || rig.end} /></span>
         </section>
       </div>
 
