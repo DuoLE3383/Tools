@@ -59,7 +59,8 @@ export const TelegramTemplates = {
     return (
       `${perfEmoji} <b>${escapeHtml(algo)}</b> 🔀 <code>${escapeHtml(client)}</code> | ${escapeHtml(name)}\n` +
       `⏱ Remaining: <code> ${escapeHtml(remaining)}</code>\n` +
-      `📡 Cur: <code>${cur}</code> | ` + `📈 Avg: <code>${avg}</code>\n` + 
+      `📡 Cur: <code>${cur}</code> | ` +
+      `📈 Avg: <code>${avg}</code>\n` +
       `📊 Eff: <b>${typeof efficiency === "number" ? efficiency.toFixed(2) : efficiency}%</b> | Adv: <code>${ads}</code>\n` +
       `💰 Paid: <b><code>${escapeHtml(info.price?.paid)}</code> ${escapeHtml(info.price?.currency)}</b>\n` +
       `${extra}${divider}\n`
@@ -149,7 +150,7 @@ export const TelegramTemplates = {
   ) => {
     return (
       `✅ <b>[RENTAL SUCCESS]</b>\n` +
-      `<b>Account:</b> <code>${escapeHtml(formatAccount(acct))}</code>\n` +
+      `<b>Account:</b> ${escapeHtml(formatAccount(acct))}\n` +
       `${divider}\n` +
       `<b>Rig:</b> ${escapeHtml(formatRig(r))}\n` +
       `<b>Algo:</b> <code>${escapeHtml(algo)}</code>\n` +
@@ -198,8 +199,9 @@ export const TelegramTemplates = {
     rented24h,
     algos,
   ) => {
-    const rentedCount = typeof rented === 'number' ? rented : parseInt(rented) || 0;
-    
+    const rentedCount =
+      typeof rented === "number" ? rented : parseInt(rented) || 0;
+
     let summary = `📊 <b>SUMMARY</b> [${time || new Date().toLocaleTimeString()}]\n`;
     summary += `${divider}\n`;
     summary += `🟢 Online: <b>${online || 0}</b> / Renting: <b>${rentedCount}</b>\n`;
@@ -207,12 +209,12 @@ export const TelegramTemplates = {
     summary += `📦 Total Rigs: <b>${total || 0}</b>\n`;
     summary += `🆕 Rented (24h): <b>${rented24h || 0}</b>\n`;
     summary += `${divider}\n`;
-    
+
     if (algos && algos.length > 0) {
       summary += `<b>Algorithms Online:</b>\n${algos.join("\n")}\n`;
       summary += `${divider}\n`;
     }
-    
+
     if (lines && lines.length > 0) {
       summary += `<b>Active Rentals Detail:</b>\n\n`;
       summary += lines.join("");
@@ -220,13 +222,13 @@ export const TelegramTemplates = {
       summary += `<b>Active Rentals Detail:</b>\n\n`;
       summary += `<i>No active rentals</i>\n`;
     }
-    
+
     return summary;
   },
 
   rigStatusWarning: (acct, rig, algo) =>
     `⚠️ <b>[RIG WARNING]</b>\n<b>MRR:</b> ${formatAccount(acct)}\n<b>Rig:</b> ${formatRig(rig)}\n<b>Algo:</b> <code>${escapeHtml(algo)}</code>\n<b>Status:</b> <code>${rig.status?.status || rig.status}</code>`,
-    
+
   highWarningCount: (acct, count) =>
     `⚠️ <b>[SYSTEM ALERT]</b>\n<b>MRR:</b> ${formatAccount(acct)}\n<b>High Warning Count:</b> <b>${count}</b> rigs in warning state.`,
 };

@@ -93,6 +93,7 @@ function MiningRouteHero() {
     error,
     lastUpdated,
     refresh,
+    priceFetchStatus, 
   } = useMiningWorkspace();
   const bestRoute = routes[0] || null;
   const activeRouteCount = routes.filter(
@@ -488,7 +489,40 @@ function MiningRouteHero() {
             No opportunity rows yet.
           </div>
         )}
-
+        {priceFetchStatus && Object.keys(priceFetchStatus).length > 0 && (
+          <div
+            style={{
+              marginTop: "12px",
+              padding: "10px",
+              borderRadius: "8px",
+              background: "rgba(15,23,42,0.5)",
+              border: "1px solid rgba(148,163,184,0.12)",
+            }}
+          >
+            <details>
+              <summary
+                style={{
+                  color: "#94a3b8",
+                  fontSize: "11px",
+                  cursor: "pointer",
+                }}
+              >
+                Price Fetch Status ({Object.keys(priceFetchStatus).length}{" "}
+                algos)
+              </summary>
+              <div style={{ marginTop: "8px", fontSize: "10px" }}>
+                {Object.entries(priceFetchStatus).map(([algo, status]) => (
+                  <div
+                    key={algo}
+                    style={{ color: "#64748b", padding: "2px 0" }}
+                  >
+                    <span style={{ color: "#e2e8f0" }}>{algo}:</span> {status}
+                  </div>
+                ))}
+              </div>
+            </details>
+          </div>
+        )}
         <div style={{ overflowX: "auto" }}>
           <table
             style={{

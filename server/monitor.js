@@ -181,43 +181,44 @@ function isLiveRigCurrentlyRented(rig) {
  * Checks if a rental is actually mining (has real data)
  * Filters out ghost rentals that are "rented" but not mining
  */
-function isRealRental(rental, info) {
+function isRealRental(rental, info, now = Date.now()) {
   if (!rental || !info) return false;
 
   // Check for actual hashrate data
   const currentHash = parseFloat(info.hashrate?.current || 0);
   const averageHash = parseFloat(info.hashrate?.average || 0);
-  const advertisedHash = parseFloat(info.hashrate?.advertised || 0);
   const paidAmount = parseFloat(info.price?.paid || 0);
-  const efficiency = parseFloat(info.percent || 0);
 
   // Check if the rental has a valid ID
   const hasValidId = rental.id || rental.rentalid || rental.rental_id;
   if (!hasValidId) return false;
 
-  // 🔧 FIX: Get start time and check if it's a new rental
-  const startTime = new Date(
-    rental.start_time || rental.startTime || rental.created_at || 0,
-  ).getTime();
-  const age = Date.now() - startTime;
-  const isNew = startTime > 0 && age < 5 * 60 * 1000; // 5 minutes grace period for new rentals
-
-  // 🔧 FIX: For rentals older than 5 minutes, they MUST have data
-  if (!isNew) {
-    // Must have at least one of these to be considered real
-    const hasData =
-      currentHash > 0 ||
-      averageHash > 0 ||
-      advertisedHash > 0 ||
-      paidAmount > 0 ||
-      efficiency > 0;
-    if (!hasData) {
-      return false; // This is a dummy/ghost rental
-    }
+  // A rental is real if it has a positive paid amount or hashrate.
+  if (paidAmount > 0 || currentHash > 0 || averageHash > 0) {
+    return true;
   }
 
-  // New rentals get a grace period even without data
-  return true;
+  // For new rentals without data yet, give them a grace period.
+  const rawStart =
+    info.startTime ||
+    rental.start_time ||
+    rental.startTime ||
+    rental.created_at ||
+    0;
+  if (!rawStart) return false; // Cannot determine age, assume not real if no data.
+
+  const startT = new Date(
+    String(rawStart).endsWith("UTC") ? rawStart : `${rawStart} UTC`,
+  ).getTime();
+  const ageMs = now - startT;
+
+  // If it started in the last 5 minutes, consider it real even without data.
+  if (ageMs > 0 && ageMs < 5 * 60 * 1000) {
+    return true;
+  }
+
+  // Older than 5 minutes and no data, it's a ghost.
+  return false;
 }
 
 /**
@@ -984,7 +985,7 @@ export async function runRentalMonitor(
             // ============================================================
             // FIXED: Check if this is a real rental
             // ============================================================
-            const isValidRental = isRealRental(r, info);
+            const isValidRental = isRealRental(r, info, now);
             if (isValidRental) {
               realRentalCount++;
               validRentalsForDisplay.push({
@@ -1698,7 +1699,7 @@ export async function runRentalMonitor(
           .filter((r) => {
             const rentalDetail = globalRentalsMap.get(String(r.id));
             if (!rentalDetail) return false;
-            const info = extractRentalInfo(rentalDetail);
+            const info = extractRentalInfo(rentalDetail, r);
             const result = isRealRental(rentalDetail, info);
             if (!result) {
               logger.debug(
