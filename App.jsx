@@ -1,17 +1,9 @@
 import { useCallback, useEffect, useState, useRef, useMemo, useReducer } from 'react';
-<<<<<<< Updated upstream
 import Login from './src/components/Login.jsx';
 import Dashboard from './src/components/Dashboard.jsx';
 import MiningPage from './src/components/mining/MiningPage.jsx';
 import { RentedRigProvider } from './src/components/mrr/RentedRigContext.jsx';
 import CryptoRatePage from './src/components/CryptoRatePage.jsx';
-=======
-import Login from './src/components/Login';
-import Dashboard from './src/components/Dashboard';
-import MiningPage from './src/components/mining/MiningPage.jsx';
-import { RentedRigProvider } from './src/components/mrr/RentedRigContext.jsx';
-import CryptoRatePage from './src/components/CryptoRatePage';
->>>>>>> Stashed changes
 import './src/App.css';
 
 // ============================================

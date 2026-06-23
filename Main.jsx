@@ -1,28 +1,14 @@
 import { useCallback, useEffect, useState, useRef } from 'react';
 import Pools from './src/components/Pools';
 import Modal from './src/components/Modal';
-<<<<<<< Updated upstream
 import HashpowerBot from './src/components/HashpowerBot';
 import NiceHash from './src/components/nicehash/NiceHash.jsx';
 import MiningRigRental from './src/components/mrr/MiningRigRental.jsx';
 import MiningRigSection from './src/components/MiningRigSection';
-<<<<<<< Updated upstream
-=======
-import HashpowerBot from './src/components/nicehash/HashpowerBot.jsx';
-import NiceHash from './src/components/nicehash/NiceHash';
-import MiningRigRental from './src/components/mrr/MiningRigRental';
-import MiningRigSection from './src/components/mrr/MiningRigSection';
->>>>>>> Stashed changes
-import HashrateCalculator from './src/components/HashrateCalculator';
-import HashCompletionCalculator from './src/components/ProfitCompletion';
-import MrrPoolsManager from './src/components/mrr/MrrManager';
-import Login from './src/components/Login';
-=======
 import HashrateCalculator from './src/components/utils/HashrateCalculator.jsx';
 import HashCompletionCalculator from './src/components/HashCompletionCalculator';
 import MrrPoolsManager from './src/components/MrrManager';
-import Login from './src/components/utils/Login.jsx';
->>>>>>> Stashed changes
+import Login from './src/components/Login.jsx';
 import HeroMinersCard from './src/components/HeroMinersCard';
 import MiningCoin from './src/components/MiningCoin.jsx';
 import { HASHRATE_SUFFIXES, normalizeAlgoForNiceHash, getAlgorithmUnit } from './src/core/mapping';
@@ -372,7 +358,7 @@ export default function App() {
           border: '1px solid rgba(255, 255, 255, 0.05)',
           borderRadius: '16px',
           padding: '24px',
-          height: '12800px',
+          height: '1280px',
           minHeight: '700px'
         }}
       >

@@ -1,10 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Modal from '../Modal';
-<<<<<<< Updated upstream
 import PoolEditorPopup from '../PoolEditorPopup';
-=======
-import PoolEditorPopup from '../utils/PoolEditorPopup';
->>>>>>> Stashed changes
 
 /**
  * MrrPoolManager Component

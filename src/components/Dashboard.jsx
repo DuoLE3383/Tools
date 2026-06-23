@@ -1,16 +1,9 @@
 import Pools from "./Pools";
 import Modal from "./Modal";
-<<<<<<< Updated upstream
 import NiceHash from "./nicehash/NiceHash";
 import MiningRigSection from "./mrr/MiningRigSection";
 import { NiceHashOrderProvider } from "./nicehash/NiceHashContext.jsx";
-import HashrateCalculator from "./HashrateCalculator";
-=======
-import NiceHash from "./nicehash/NiceHash.jsx";
-import MiningRigSection from "./mrr/MiningRigSection";
-import { NiceHashOrderProvider } from "./nicehash/NiceHashContext.jsx";
-import HashrateCalculator from "./utils/HashrateCalculator.jsx";
->>>>>>> Stashed changes
+import HashrateCalculator from "./utils/HashrateCalculator";
 
 export default function Dashboard({
   state,
