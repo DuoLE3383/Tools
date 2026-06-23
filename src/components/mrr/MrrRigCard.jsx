@@ -305,7 +305,7 @@ const MrrRigCard = ({
   const mrrDailyRateSource = mrrMarketRate > 0
     ? `MRR API (${mrrUsedKey || mrrApiKey})`
     : calculatedMrrRate > 0
-      ? "Calculated from MRR sold rental"
+      ? ""
       : infoMrrRate > 0
         ? "From rental info"
         : isLoadingMrrRate
@@ -359,7 +359,7 @@ const MrrRigCard = ({
     ? (adsVal * (totalMs / 1000) - avgVal * (elapsedMs / 1000)) / ((totalMs - elapsedMs) / 1000)
     : 0;
   const isBehind = targetHashrate > adsVal;
-  const hSuffix = rig.hashrate?.suffix || rig.hashrate?.advertised?.type || "";
+  const hSuffix = info?.hashrate?.suffix || rig.hashrate?.advertised?.type || info?.hashrate_unit || info?.unit || mrrUnit || "";
 
   const getEfficiencyAccent = (efficiency) => {
     if (!Number.isFinite(efficiency)) return "rgba(148, 163, 184, 0.18)";
@@ -494,7 +494,7 @@ const MrrRigCard = ({
               </div>
             </div>
           </div>
-          {/* Time */}
+          {/* Time Start*/}
           <span style={{ alignItems: "flex-end", marginTop: "5px", display: "flex", justifyContent: "space-between", fontSize: "10px", color: "#94a3b8", padding: "3px 0" }}>🕐 Started: {formatRentalStartTime(rentalStartTime)}</span>
         </section>
 
@@ -516,7 +516,10 @@ const MrrRigCard = ({
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: "8px", marginBottom: "2px" }}>
                 <span style={{ opacity: 0.55, textTransform: "uppercase" }}>Progress</span>
                 <span style={{ fontSize: "16px", fontWeight: 800, color: timeProgress > 90 ? "#f87171" : "#8b5cf6" }}>{timeProgress.toFixed(2)}%</span>
-              </div>
+                </div>
+                {/* Time End */}
+          <span style={{ alignItems: "flex-end", marginTop: "5px", display: "flex", justifyContent: "end", fontSize: "10px", color: "#94a3b8", padding: "3px 0" }}><CountdownTimer endTime={info?.endTime || rig.end} /></span>
+              
               <div style={{ width: "100%", height: "4px", background: "rgba(255,255,255,0.08)", borderRadius: "999px", overflow: "hidden" }}>
                 <div style={{ width: `${Math.min(100, Math.max(0, timeProgress || 0))}%`, height: "100%", background: "linear-gradient(90deg, #3b82f6, #8b5cf6)", borderRadius: "999px" }} />
               </div>
@@ -526,16 +529,16 @@ const MrrRigCard = ({
               <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: "6px", padding: "4px 6px" }}>
                 <div style={{ opacity: 0.55, textTransform: "uppercase", fontSize: "7px" }}>Current</div>
                 <div style={{ color: "#e2e8f0", fontWeight: 700, fontSize: "10px" }}>
-                  {cur > 0 ? formatHashrateWithUnit(cur, rig.hashrate?.suffix || rig.hashrate?.current?.type || 'H') : "0 H/s"}
+                  {info?.current || (cur > 0 ? formatHashrateWithUnit(cur, rig.hashrate?.suffix || rig.hashrate?.current?.type || 'H') : "0 H/s")}
                 </div>
               </div>
               <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: "6px", padding: "4px 6px" }}>
                 <div style={{ opacity: 0.55, textTransform: "uppercase", fontSize: "7px" }}>Average</div>
-                <div style={{ color: "#e2e8f0", fontWeight: 700, fontSize: "10px" }}>{info?.average || "0 N/A"}</div>
+                <div style={{ color: "#e2e8f0", fontWeight: 700, fontSize: "10px" }}>{info?.average || (avgVal > 0 ? formatHashrateWithUnit(avgVal, rig.hashrate?.suffix || rig.hashrate?.average?.type || 'H') : "0 N/A")}</div>
               </div>
               <div style={{ background: "rgba(63, 82, 255, 0.34)", borderRadius: "6px", padding: "4px 6px" }}>
                 <div style={{ opacity: 0.55, textTransform: "uppercase", fontSize: "7px" }}>Advertised</div>
-                <div style={{ color: "#ffca1d", fontWeight: 700, fontSize: "11px" }}>{info?.advertised || "0 N/A"}</div>
+                <div style={{ color: "#ffca1d", fontWeight: 700, fontSize: "11px" }}>{info?.advertised || (adsVal > 0 ? formatHashrateWithUnit(adsVal, rig.hashrate?.suffix || rig.hashrate?.advertised?.type || 'H') : "0 N/A")}</div>
               </div>
               <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: "6px", padding: "4px 6px" }}>
                 <div style={{ opacity: 0.55, textTransform: "uppercase", fontSize: "7px" }}>Target</div>
@@ -545,8 +548,7 @@ const MrrRigCard = ({
               </div>
             </div>
           </div>
-          {/* Time */}
-          <span style={{ alignItems: "flex-end", marginTop: "5px", display: "flex", justifyContent: "space-between", fontSize: "10px", color: "#94a3b8", padding: "3px 0" }}>⏳ Ends in: <CountdownTimer endTime={info?.endTime || rig.end} /></span>
+          
         </section>
       </div>
 
