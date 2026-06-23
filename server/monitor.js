@@ -115,8 +115,23 @@ function isLiveRigCurrentlyRented(rig) {
 function isRealRental(rental, info) {
   if (!rental || !info) return false;
 
+  // Check for actual hashrate data
+  const currentHash = parseFloat(info.hashrate?.current || 0);
+  const averageHash = parseFloat(info.hashrate?.average || 0);
+  const advertisedHash = parseFloat(info.hashrate?.advertised || 0);
   const paidAmount = parseFloat(info.price?.paid || 0);
-  return paidAmount > 0;
+  const efficiency = parseFloat(info.percent || 0);
+
+  // A real rental must have at least one of these:
+  const hasHashrate = currentHash > 0 || averageHash > 0 || advertisedHash > 0;
+  const hasPaid = paidAmount > 0;
+  const hasEfficiency = efficiency > 0; // don't need
+
+  // Check if the rental has a valid ID
+  const hasValidId = rental.id || rental.rentalid || rental.rental_id;
+
+  // Return true if the rental is actually doing something
+  return (hasEfficiency || hasPaid) && hasValidId;
 }
 
 /**
