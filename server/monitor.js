@@ -1232,6 +1232,7 @@ export async function runRentalMonitor(
                   const msg = TelegramTemplates.startup(
                     acct,
                     r,
+                    ads,
                     info,
                     efficiency,
                     displayTarget,
@@ -1411,6 +1412,7 @@ export async function runRentalMonitor(
                 r,
                 info,
                 acct,
+                ads,
                 orderDiff,
                 remStr,
                 resolveRentalAlgo(r, info),

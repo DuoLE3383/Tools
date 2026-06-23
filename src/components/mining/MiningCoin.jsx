@@ -289,45 +289,59 @@ export default function MiningCoin({ onCall, nhClient = "BT" }) {
                     </div>
                   </BodyCell>
                   <BodyCell align="left">
-  <div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
-    {row.heroCoins && row.heroCoins.length > 0 ? (
-      row.heroCoins.map((coin) => (
-        <button
-          key={coin}
-          onClick={() => handleCoinClick(coin)}
-          style={{
-            border: "1px solid rgba(96,165,250,0.22)",
-            color: "#bfdbfe",
-            background: "rgba(37,99,235,0.12)",
-            borderRadius: "999px",
-            padding: "2px 8px",
-            fontSize: "10px",
-            cursor: "pointer",
-            transition: "all 0.2s",
-          }}
-          onMouseEnter={(e) => {
-            e.target.style.background = "rgba(37,99,235,0.25)";
-            e.target.style.borderColor = "rgba(96,165,250,0.5)";
-          }}
-          onMouseLeave={(e) => {
-            e.target.style.background = "rgba(37,99,235,0.12)";
-            e.target.style.borderColor = "rgba(96,165,250,0.22)";
-          }}
-        >
-          {coin} 💰
-        </button>
-      ))
-    ) : (
-      <span style={{ color: "#64748b", fontSize: "10px" }}>No coins</span>
-    )}
-    {/* Show count if many coins */}
-    {row.heroCoins && row.heroCoins.length > 10 && (
-      <span style={{ color: "#64748b", fontSize: "9px", padding: "2px 4px" }}>
-        +{row.heroCoins.length - 10} more
-      </span>
-    )}
-  </div>
-</BodyCell>
+                    <div
+                      style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}
+                    >
+                      {row.heroCoins && row.heroCoins.length > 0 ? (
+                        row.heroCoins.map((coin) => (
+                          <button
+                            key={coin}
+                            onClick={() => handleCoinClick(coin)}
+                            style={{
+                              border: "1px solid rgba(96,165,250,0.22)",
+                              color: "#bfdbfe",
+                              background: "rgba(37,99,235,0.12)",
+                              borderRadius: "999px",
+                              padding: "2px 8px",
+                              fontSize: "10px",
+                              cursor: "pointer",
+                              transition: "all 0.2s",
+                            }}
+                            onMouseEnter={(e) => {
+                              e.target.style.background =
+                                "rgba(37,99,235,0.25)";
+                              e.target.style.borderColor =
+                                "rgba(96,165,250,0.5)";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.target.style.background =
+                                "rgba(37,99,235,0.12)";
+                              e.target.style.borderColor =
+                                "rgba(96,165,250,0.22)";
+                            }}
+                          >
+                            {coin} 💰
+                          </button>
+                        ))
+                      ) : (
+                        <span style={{ color: "#64748b", fontSize: "10px" }}>
+                          No coins
+                        </span>
+                      )}
+                      {/* Show count if many coins */}
+                      {row.heroCoins && row.heroCoins.length > 10 && (
+                        <span
+                          style={{
+                            color: "#64748b",
+                            fontSize: "9px",
+                            padding: "2px 4px",
+                          }}
+                        >
+                          +{row.heroCoins.length - 10} more
+                        </span>
+                      )}
+                    </div>
+                  </BodyCell>
                 </tr>
               ))
             )}
