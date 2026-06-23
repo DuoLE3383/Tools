@@ -59,9 +59,8 @@ export const TelegramTemplates = {
     return (
       `${perfEmoji} <b>${escapeHtml(algo)}</b> 🔀 <code>${escapeHtml(client)}</code> | ${escapeHtml(name)}\n` +
       `⏱ Remaining: <code> ${escapeHtml(remaining)}</code>\n` +
-      `📡 Cur: <b>${cur}</b> | ` +
-      `📊 Eff: <code>${typeof efficiency === "number" ? efficiency.toFixed(2) : efficiency}%</code>\n` +
-      `📈 Avg: <code>${avg}</code> | Adv: <code>${ads}</code>\n` +
+      `📡 Cur: <code>${cur}</code> | ` + `📈 Avg: <code>${avg}</code>\n` + 
+      `📊 Eff: <b>${typeof efficiency === "number" ? efficiency.toFixed(2) : efficiency}%</b> | Adv: <code>${ads}</code>\n` +
       `💰 Paid: <b><code>${escapeHtml(info.price?.paid)}</code> ${escapeHtml(info.price?.currency)}</b>\n` +
       `${extra}${divider}\n`
     );
