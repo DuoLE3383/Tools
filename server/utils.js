@@ -117,7 +117,13 @@ export function sanitizeMrrEndpoint(rawEndpoint) {
   return normalized.replace(/\/+$|\/+$/, '') || '/';
 }
 
-export function extractRentalInfo(rental) {
+export function extractRentalInfo(rental, liveRig = null) {
+  // If a live rig is passed, merge its properties into the rental object
+  // This ensures that live data from the rig (like current hashrate) is prioritized
+  if (liveRig) {
+    rental = { ...rental, rig: { ...rental.rig, ...liveRig } };
+  }
+
   const algo = rental.algo || rental.algorithm || rental.miningAlgorithm || rental.rig?.algo || rental.rig?.algorithm || rental.rig?.type || 'Unknown';
   const type = rental.price_type || rental.price?.type || rental.type || 'Day';
   const duration = rental.length || rental.hours || rental.rig?.hours || '0';

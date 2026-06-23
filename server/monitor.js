@@ -1,41 +1,22 @@
 import { db } from "./db.js";
 import { mrrApiCall, mrrConfigs } from "./mrr.js";
-import {
-  resolveNhClient,
-  getNiceHashApp,
-  isAggregate,
-  nhConfigs,
-} from "./nh.js";
+import { isAggregate } from "./nh.js";
 import { extractRentalInfo, extractRigInfo } from "./utils.js";
 import { logger } from "./logger.js";
 import { TELEGRAM_CONFIG, TelegramTemplates } from "../src/core/telegram.js";
-import {
-  ALGO_DISPLAY_NAMES,
-  HASHRATE_SUFFIXES,
-  normalizeAlgoForNiceHash,
-  getMrrAlgorithmUnit,
-  calculatePriceComparison,
-} from "../src/core/mapping.js";
-import { getBtcPriceData } from "../src/core/priceUtils.js";
+import { ALGO_DISPLAY_NAMES, getAlgoDisplayName } from "../src/core/mapping.js";
+import { dbGetAsync, dbRunAsync, dbAllAsync } from "./monitor/dbHelpers.js";
+import { extractArray, sendTelegramInternal, getTelegramStatus, setTelegramStatus } from "./monitor/helpers.js";
+import { processRental, isRealRental } from "./monitor/rentalProcessor.js";
 
-const getAlgoDisplayName = (code) => {
-  if (!code) return "N/A";
-  const uc = String(code).toUpperCase();
-  return ALGO_DISPLAY_NAMES[uc] || code;
-};
+// const getAlgoDisplayName = (code) => {
+//   if (!code) return "N/A";
+//   const uc = String(code).toUpperCase();
+//   return ALGO_DISPLAY_NAMES[uc] || code;
+// };
 
-const cleanHashrateUnit = (unit) => {
-  const match = String(unit || "")
-    .toUpperCase()
-    .match(/GSOL|MSOL|KSOL|SOL|EH|PH|TH|GH|MH|KH|H/);
-  return match?.[0] || "H";
-};
-
-const convertHashrateValue = (value, fromUnit, toUnit) => {
-  const fromMultiplier = HASHRATE_SUFFIXES[cleanHashrateUnit(fromUnit)] || 1;
-  const toMultiplier = HASHRATE_SUFFIXES[cleanHashrateUnit(toUnit)] || 1;
-  return (value * fromMultiplier) / toMultiplier;
-};
+// Re-export for backward compatibility with other modules
+export { sendTelegramInternal, getTelegramStatus, setTelegramStatus };
 
 const resolveRentalAlgo = (r, info) =>
   info?.algo ||
@@ -174,56 +155,6 @@ function isLiveRigCurrentlyRented(rig) {
 }
 
 // ==========================
-//  FIXED: Rental Validation Functions
-// ==========================
-
-/**
- * Checks if a rental is actually mining (has real data)
- * Filters out ghost rentals that are "rented" but not mining
- */
-function isRealRental(rental, info, now = Date.now()) {
-  if (!rental || !info) return false;
-
-  // Check for actual hashrate data
-  const currentHash = parseFloat(info.hashrate?.current || 0);
-  const averageHash = parseFloat(info.hashrate?.average || 0);
-  const paidAmount = parseFloat(info.price?.paid || 0);
-
-  // Check if the rental has a valid ID
-  const hasValidId = rental.id || rental.rentalid || rental.rental_id;
-  if (!hasValidId) return false;
-
-  // A rental is real if it has a positive paid amount or hashrate.
-  if (paidAmount > 0 || currentHash > 0 || averageHash > 0) {
-    return true;
-  }
-
-  // For new rentals without data yet, give them a grace period.
-  const rawStart =
-    info.startTime ||
-    rental.start_time ||
-    rental.startTime ||
-    rental.created_at ||
-    0;
-  if (!rawStart) return false; // Cannot determine age, assume not real if no data.
-
-  const startT = new Date(
-    String(rawStart).endsWith("UTC") ? rawStart : `${rawStart} UTC`,
-  ).getTime();
-  const ageMs = now - startT;
-
-  // If it started in the last 5 minutes, consider it real even without data.
-  if (ageMs > 0 && ageMs < 5 * 60 * 1000) {
-    return true;
-  }
-
-  // Older than 5 minutes and no data, it's a ghost.
-  return false;
-}
-
-/**
- * Gets the real rental count from a list of rentals
- */
 function getRealRentalCount(rentals) {
   if (!Array.isArray(rentals)) return 0;
 
@@ -235,6 +166,56 @@ function getRealRentalCount(rentals) {
     }
   }
   return count;
+}
+
+/**
+ * Processes rig status changes and sends alerts if necessary.
+ * @param {object} rig - The rig object from MRR.
+ * @param {string} acct - The account name.
+ * @param {number} now - The current timestamp.
+ */
+function handleRigStatusChanges(rig, acct, now) {
+  const statusRaw = rig.status;
+  const status = String(
+    typeof statusRaw === "object" ? statusRaw.status : statusRaw || "",
+  ).toLowerCase();
+  const onlineFlag =
+    typeof rig?.status?.online === "boolean"
+      ? rig.status.online
+      : Boolean(rig?.online);
+
+  const isOffline = status.includes("offline") || !onlineFlag;
+  const isDisabled = status.includes("disabled");
+  const isWarning = status.includes("warning");
+
+  const currentStatus = isOffline
+    ? "OFFLINE"
+    : isDisabled
+      ? "DISABLED"
+      : isWarning
+        ? "WARNING"
+        : "OK";
+
+  const rigIdKey = `rig_state_${acct}_${rig.id}`;
+  const prevStatus = lastRigStates.get(rigIdKey);
+  const isStatusChanged = prevStatus !== undefined && prevStatus !== currentStatus;
+  const isCriticalChange = currentStatus === "WARNING";
+
+  if (isStatusChanged && isCriticalChange) {
+    const rigAlertKey = `alert_${rigIdKey}_${currentStatus}`;
+    const lastRigAlert = lastAlertTimes.get(rigAlertKey) || 0;
+
+    if (now - lastRigAlert > ALERT_COOLDOWN_MS) {
+      const rigMsg = TelegramTemplates.rigStatusWarning(
+        acct,
+        rig,
+        resolveRentalAlgo(rig),
+      );
+      sendTelegramInternal(rigMsg, { label: `Rig warning ${acct}`, type: "RIG WARNING" });
+      lastAlertTimes.set(rigAlertKey, now);
+    }
+  }
+  lastRigStates.set(rigIdKey, currentStatus);
 }
 
 // ==========================
@@ -251,35 +232,6 @@ async function maybeDelay(key) {
   }
 }
 
-/** Retrieves the global telegram notification status from the DB */
-export async function getTelegramStatus() {
-  try {
-    await dbRunAsync(
-      "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)",
-    );
-    const row = await dbGetAsync(
-      "SELECT value FROM settings WHERE key = 'telegram_enabled'",
-    );
-    return { enabled: row ? row.value === "true" : true };
-  } catch (err) {
-    logger.warn("[monitor:db] Failed to fetch telegram status:", err.message);
-    return { enabled: true };
-  }
-}
-
-/** Updates the global telegram notification status in the DB */
-export async function setTelegramStatus(enabled) {
-  const val = enabled ? "true" : "false";
-  await dbRunAsync(
-    "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)",
-  );
-  await dbRunAsync(
-    "INSERT INTO settings (key, value) VALUES ('telegram_enabled', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-    [val],
-  );
-  return { enabled: !!enabled };
-}
-
 // ==========================
 //  Constants
 // ==========================
@@ -288,168 +240,12 @@ const { ALERT_COOLDOWN_MS, WARNING_RIG_THRESHOLD } = TELEGRAM_CONFIG;
 
 const RENTED_HEARTBEAT_MS = 15 * 60 * 1000;
 
-const lastAlertTimes = new Map([["global_summary", Date.now()]]);
+const lastAlertTimes = new Map([["global_summary", 0]]);
 const lastRigStates = new Map();
-const monitorNhPriceCache = new Map();
-const monitorNhPriceErrorCache = new Map();
-const monitorNhOrdersCache = new Map();
-const MONITOR_NH_ORDERS_TTL = 60 * 1000;
 
 // ==========================
 //  Helper: HTML escaping
 // ==========================
-function escapeHtml(text) {
-  return String(text || "")
-    .replace(/&/g, "&")
-    .replace(/</g, "<")
-    .replace(/>/g, ">");
-}
-
-function getMonitorNhAlgoPriceUnit(order, fallbackAlgo) {
-  const algo = normalizeAlgoForNiceHash(
-    order?.algorithm || order?.algo || order?.type || fallbackAlgo,
-  );
-  return getMrrAlgorithmUnit(algo);
-}
-
-async function getMonitorNhActiveOrders(clientName) {
-  const cacheKey = String(clientName || "BT").toUpperCase();
-  const cached = monitorNhOrdersCache.get(cacheKey);
-  if (cached && Date.now() - cached.ts < MONITOR_NH_ORDERS_TTL) {
-    return cached.orders;
-  }
-
-  const cfg = nhConfigs[cacheKey];
-  if (!cfg?.apiKey || !cfg?.apiSecret || !cfg?.orgId) return [];
-
-  const { client } = resolveNhClient(cacheKey);
-  if (!client) return [];
-
-  const result = await getNiceHashApp(client).hashpower.getMyOrders({
-    op: "LE",
-    limit: 100,
-  });
-  const rawList =
-    result?.list || result?.myOrders || (Array.isArray(result) ? result : []);
-  const activeOrders = rawList.filter(
-    (o) =>
-      String(o?.status?.code || o?.status || "").toUpperCase() === "ACTIVE",
-  );
-  monitorNhOrdersCache.set(cacheKey, { orders: activeOrders, ts: Date.now() });
-  return activeOrders;
-}
-
-// ==========================
-//  Helper: Extract array (iterative, safe)
-// ==========================
-function extractArray(
-  payload,
-  keys = ["rentals", "rigs", "list", "result", "items", "data"],
-) {
-  if (Array.isArray(payload)) return payload;
-  if (!payload || typeof payload !== "object") return [];
-
-  for (const key of keys) {
-    if (Array.isArray(payload[key])) return payload[key];
-    if (payload.data && Array.isArray(payload.data[key]))
-      return payload.data[key];
-  }
-
-  if (Array.isArray(payload.data)) return payload.data;
-  if (payload.rentals && Array.isArray(payload.rentals)) return payload.rentals;
-
-  if (payload.data && typeof payload.data === "object") {
-    return extractArray(payload.data, keys);
-  }
-
-  return [];
-}
-
-// ==========================
-//  Telegram sender (with retries)
-// ==========================
-export async function sendTelegramInternal(message) {
-  await maybeDelay("sendTelegram");
-  const status = await getTelegramStatus();
-  if (!status.enabled) {
-    logger.info(
-      "[telegram] Notifications are globally disabled, skipping message.",
-    );
-    return { ok: true, description: "Notifications disabled" };
-  }
-
-  const botToken = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_CHAT_ID;
-  if (!botToken || !chatId) {
-    logger.warn("[telegram] Credentials missing");
-    throw new Error("Telegram credentials missing");
-  }
-
-  const text = String(message || "").trim();
-  if (!text) throw new Error("Message empty");
-
-  const maxAttempts = 3;
-  let lastError = null;
-
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      const res = await fetch(
-        `https://api.telegram.org/bot${botToken}/sendMessage`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML" }),
-        },
-      );
-
-      const data = await res.json();
-      if (res.ok && data?.ok) {
-        return data;
-      }
-      throw new Error(data?.description || `HTTP ${res.status}`);
-    } catch (err) {
-      lastError = err;
-      if (attempt < maxAttempts) {
-        await new Promise((resolve) => setTimeout(resolve, attempt * 300));
-      }
-    }
-  }
-
-  logger.error(
-    `[telegram] Failed after ${maxAttempts} attempts: ${lastError.message}`,
-  );
-  throw lastError;
-}
-
-// ==========================
-//  Database helpers (promisified with error handling)
-// ==========================
-function dbGetAsync(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    db.get(sql, params, (err, row) => {
-      if (err) reject(err);
-      else resolve(row);
-    });
-  });
-}
-
-function dbRunAsync(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    db.run(sql, params, function (err) {
-      if (err) reject(err);
-      else resolve(this);
-    });
-  });
-}
-
-function dbAllAsync(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    db.all(sql, params, (err, rows) => {
-      if (err) reject(err);
-      else resolve(rows);
-    });
-  });
-}
 
 // ==========================
 //  Main monitoring function
@@ -493,7 +289,6 @@ export async function runRentalMonitor(
     const currentActiveRentalIds = new Set();
     const globalRentalsMap = new Map();
     const notifiedRentalIdsThisRun = new Set();
-    const queuedTelegramMessages = []; // Added missing declaration
 
     const queueTelegramMessage = (message, options = {}) => {
       const text = String(message || "").trim();
@@ -506,65 +301,6 @@ export async function runRentalMonitor(
         onSuccess: options.onSuccess,
         onFailure: options.onFailure,
       });
-    };
-
-    const buildGroupedTelegramMessages = (
-      items,
-      typeLabel = "Grouped Monitor",
-    ) => {
-      if (typeLabel === "RENTAL FINISHED") {
-        const title =
-          `📦 [${new Date().toLocaleTimeString()}]\n` +
-          `━━━━━━━━━━━━━━\n` +
-          `<b>Type:</b> ${escapeHtml(typeLabel)}\n` +
-          `<b>Total:</b> ${items.length}\n\n`;
-        const chunks = [];
-        let current = title;
-
-        items.forEach((item, index) => {
-          const s = item.summary || {};
-          const line1 =
-            `${index + 1}. ${escapeHtml(item.label)}\n` +
-            `🏁 ${escapeHtml(s.account || "N/A")} | ${escapeHtml(s.rig || "N/A")}\n` +
-            `Algo: <code>${escapeHtml(s.algo || "N/A")}</code> | Paid: <b>${escapeHtml(s.paid || "0.00000000 BTC")}</b>\n` +
-            `Avg: <code>${escapeHtml(s.avg || "0.00")}</code> | Adv: <code>${escapeHtml(s.ads || "N/A")}</code> | Eff: <b>${escapeHtml(s.eff || "0%")}</b>\n\n` +
-            `━━━━━━━━━━━━━━\n`;
-          if (
-            current.length > title.length &&
-            current.length + line1.length > 3500
-          ) {
-            chunks.push(current);
-            current = title;
-          }
-          current += line1;
-        });
-
-        if (current.length > title.length) chunks.push(current);
-        return chunks;
-      }
-
-      const title =
-        `📦 [${new Date().toLocaleTimeString()}]\n` +
-        `━━━━━━━━━━━━━━\n` +
-        `<b>Type:</b> ${escapeHtml(typeLabel)}\n` +
-        `<b>Total:</b> ${items.length}\n\n`;
-      const chunks = [];
-      let current = title;
-
-      items.forEach((item, index) => {
-        const block = `<b>${index + 1}. ${escapeHtml(item.label)}</b>\n${item.message}\n\n━━━━━━━━━━━━━━\n`;
-        if (
-          current.length > title.length &&
-          current.length + block.length > 3500
-        ) {
-          chunks.push(current);
-          current = title;
-        }
-        current += block;
-      });
-
-      if (current.length > title.length) chunks.push(current);
-      return chunks;
     };
 
     await new Promise((resolve) => {
@@ -623,17 +359,6 @@ export async function runRentalMonitor(
     // ------------------------------------------------------------------
     //  Process each MRR account
     // ------------------------------------------------------------------
-    const sendTelegramNotification = async (message, options = {}) => {
-      const text = String(message || "").trim();
-      if (!text) return;
-
-      try {
-        await sendTelegramInternal(text);
-        if (options.onSuccess) await options.onSuccess();
-      } catch (err) {
-        if (options.onFailure) await options.onFailure(err);
-      }
-    };
 
     let totalAll = 0;
     let availableAll = 0;
@@ -650,7 +375,6 @@ export async function runRentalMonitor(
       mrrAccts.map(async (acct) => {
         const harvestedRentalIds = new Set();
         const rigLookupByRentalId = new Map();
-        let accountRentedActive = 0;
 
         const metric = {
           name: acct,
@@ -717,42 +441,7 @@ export async function runRentalMonitor(
                   status.includes("online") ||
                   status === "");
 
-              const currentStatus = isOffline
-                ? "OFFLINE"
-                : isDisabled
-                  ? "DISABLED"
-                  : isWarning
-                    ? "WARNING"
-                    : "OK";
-
-              const rigIdKey = `rig_state_${acct}_${rig.id}`;
-              const prevStatus = lastRigStates.get(rigIdKey);
-              const isStatusChanged =
-                prevStatus !== undefined && prevStatus !== currentStatus;
-              const isCriticalChange = currentStatus === "WARNING";
-
-              if (
-                isStatusChanged &&
-                isCriticalChange &&
-                rigsRes.statusCode === 200
-              ) {
-                const rigAlertKey = `alert_${rigIdKey}_${currentStatus}`;
-                const lastRigAlert = lastAlertTimes.get(rigAlertKey) || 0;
-
-                if (now - lastRigAlert > ALERT_COOLDOWN_MS) {
-                  const rigMsg = TelegramTemplates.rigStatusWarning(
-                    acct,
-                    rig,
-                    resolveRentalAlgo(rig),
-                  );
-                  sendTelegramNotification(rigMsg, {
-                    label: `Rig warning ${acct}`,
-                    type: "RIG WARNING",
-                  });
-                  lastAlertTimes.set(rigAlertKey, now);
-                }
-              }
-              lastRigStates.set(rigIdKey, currentStatus);
+              handleRigStatusChanges(rig, acct, now);
 
               if (isRented) {
                 rentedRigs.push(rig);
@@ -784,7 +473,7 @@ export async function runRentalMonitor(
                   acct,
                   warningCount,
                 );
-                sendTelegramNotification(warnMsg, {
+                sendTelegramInternal(warnMsg, {
                   type: "SYSTEM ALERT",
                   label: `High warning count ${acct}`,
                   onFailure: (e) =>
@@ -894,571 +583,34 @@ export async function runRentalMonitor(
             ).values(),
           ).filter((r) => r && (r.id || r.rentalid || r.rental_id));
 
-          // ============================================================
-          // UPGRADED: Count real rentals for this account
-          // ============================================================
           let realRentalCount = 0;
-          const validRentalsForDisplay = [];
-
-          for (const r of rentals) {
-            const liveRig = getRigLookupKeys(r)
-              .map((key) => rigLookupByRentalId.get(key))
-              .find(Boolean);
-            if (liveRig) {
-              r.name = liveRig.name || r.name;
-              if (!r.hashrate || typeof r.hashrate !== "object")
-                r.hashrate = {};
-              const liveVal = parseFloat(
-                liveRig.hashrate || liveRig.status?.hashrate || 0,
-              );
-              if (liveVal > 0) {
-                r.hashrate.current = liveVal;
-                if (!r.hashrate.last_15min) {
-                  r.hashrate.last_15min = {
-                    hash: liveVal,
-                    nice: `${liveVal.toFixed(2)} ${liveRig.hashrate_suffix || ""}`,
-                  };
-                }
-              }
-              if ((!r.algo || r.algo === "Unknown") && liveRig.algo) {
-                r.algo = liveRig.algo;
-              }
-            }
-
-            const info = extractRentalInfo(r);
-            const rawStart = info.startTime;
-            const rawEnd = info.endTime;
-
-            if (!info.price) {
-              info.price = { paid: 0, currency: "BTC" };
-            }
+          for (const rental of rentals) {
+            const liveRig = getRigLookupKeys(rental).map((key) => rigLookupByRentalId.get(key)).find(Boolean);
+            const info = extractRentalInfo(rental);
             const parseUtc = (d) => {
-              if (!d) return 0;
-              const s = String(d);
-              const hasSuffix =
-                s.endsWith("UTC") || s.endsWith("Z") || s.includes("+");
-              return new Date(hasSuffix ? s : s + " UTC").getTime();
+                if (!d) return 0;
+                const s = String(d);
+                return new Date(s.endsWith("UTC") || s.endsWith("Z") || s.includes("+") ? s : s + " UTC").getTime();
             };
-
-            const startT = parseUtc(rawStart);
-            const endT = parseUtc(rawEnd);
-
-            const totalDurationMs = startT > 0 && endT > 0 ? endT - startT : 0;
-            const elapsedMs =
-              startT > 0
-                ? Math.max(0, Math.min(now - startT, totalDurationMs))
-                : 0;
-            const remainingMs = endT > 0 ? Math.max(0, endT - now) : 0;
-            const isCurrentRental =
-              isLiveRigCurrentlyRented(liveRig) &&
-              isRentalActive(now, endT, liveRig, r);
-
-            if (!isCurrentRental) {
-              await dbRunAsync(`DELETE FROM rentals WHERE id = ?`, [
-                String(r.id),
-              ]).catch(() => {});
-              continue;
+            const endT = parseUtc(info.endTime);
+            if (!isRentalActive(now, endT, liveRig, rental)) {
+                await dbRunAsync(`DELETE FROM rentals WHERE id = ?`, [String(rental.id)]).catch(() => {});
+                continue;
             }
 
-            const activeRentalId = String(
-              r.id || r.rentalid || r.rental_id || "",
-            ).trim();
+            const activeRentalId = String(rental.id || rental.rentalid || rental.rental_id || "").trim();
             if (activeRentalId) currentActiveRentalIds.add(activeRentalId);
 
-            const advertised = parseFloat(info.hashrate.advertised);
-            const average = parseFloat(info.hashrate.average);
-            const totalExpectedHashes = advertised * (totalDurationMs / 1000);
-            const actualHashesDone = average * (elapsedMs / 1000);
-            const remainingHashesNeeded =
-              totalExpectedHashes - actualHashesDone;
-            const requiredHashrate =
-              remainingMs > 0
-                ? remainingHashesNeeded / (remainingMs / 1000)
-                : 0;
-            const displayTarget =
-              Number.isFinite(requiredHashrate) && requiredHashrate > 0
-                ? requiredHashrate
-                : 0;
-            const efficiency = parseFloat(info.percent || 0);
-            const currentHash = info.hashrate.current;
+            const result = await processRental(rental, acct, now, forceNotify, notifiedRentalIdsThisRun, notifications, liveRig);
 
-            // ============================================================
-            // FIXED: Check if this is a real rental
-            // ============================================================
-            const isValidRental = isRealRental(r, info, now);
-            if (isValidRental) {
-              realRentalCount++;
-              validRentalsForDisplay.push({
-                rental: r,
-                info,
-                startT,
-                endT,
-                totalDurationMs,
-                elapsedMs,
-                remainingMs,
-              });
-            }
-
-            // Calculate Price ROI
-            let priceRoi = null;
-            try {
-              const nhAlgo = normalizeAlgoForNiceHash(info.algo);
-              if (!nhAlgo || nhAlgo === "UNKNOWN" || nhAlgo === "N/A")
-                throw new Error("Unsupported algorithm");
-
-              const cacheKey = `${nhAlgo}:${acct}`;
-              const cachedError = monitorNhPriceErrorCache.get(cacheKey);
-              if (cachedError && now - cachedError.ts < 10 * 60 * 1000) {
-                throw new Error(cachedError.message);
-              }
-
-              let nhP = monitorNhPriceCache.get(cacheKey);
-
-              if (!nhP) {
-                const cfg = nhConfigs[acct];
-                if (!cfg?.apiKey || !cfg?.apiSecret || !cfg?.orgId) {
-                  throw new Error(
-                    `NiceHash client "${acct}" is not configured`,
-                  );
+            if (result.isValid) {
+                realRentalCount++;
+                if (result.activeRentalLine) {
+                    activeRentalLines.push(result.activeRentalLine);
                 }
-
-                const activeOrders = await getMonitorNhActiveOrders(acct);
-                const matchedOrder = activeOrders.find(
-                  (order) =>
-                    normalizeAlgoForNiceHash(
-                      order?.algorithm || order?.algo || order?.type,
-                    ) === nhAlgo,
-                );
-                if (!matchedOrder) {
-                  throw new Error(
-                    `No active NiceHash order found for ${nhAlgo}`,
-                  );
-                }
-
-                nhP = {
-                  price:
-                    parseFloat(
-                      matchedOrder?.price ??
-                        matchedOrder?.marketPrice ??
-                        matchedOrder?.fixedPrice ??
-                        0,
-                    ) || 0,
-                  unit: getMonitorNhAlgoPriceUnit(matchedOrder, nhAlgo),
-                };
-                if (nhP.price <= 0)
-                  throw new Error("NiceHash price unavailable");
-                monitorNhPriceCache.set(cacheKey, nhP);
-                monitorNhPriceErrorCache.delete(cacheKey);
-              }
-
-              const mrrBtcData = getBtcPriceData(r.price || info.price);
-              const mrrUnit = getMrrAlgorithmUnit(info.algo);
-              const advertisedInMrrUnit = convertHashrateValue(
-                advertised,
-                info.hashrate.suffix || mrrUnit,
-                mrrUnit,
-              );
-              const durationHours = Number.parseFloat(info.duration) || 0;
-              const mrrPriceNorm =
-                Number.isFinite(advertisedInMrrUnit) &&
-                advertisedInMrrUnit > 0 &&
-                Number.isFinite(durationHours) &&
-                durationHours > 0
-                  ? mrrBtcData.value /
-                    (durationHours / 24) /
-                    advertisedInMrrUnit
-                  : mrrBtcData.value;
-
-              if (nhP.price > 0 && mrrPriceNorm > 0) {
-                priceRoi = calculatePriceComparison(
-                  mrrPriceNorm,
-                  mrrUnit,
-                  nhP.price,
-                  nhP.unit,
-                );
-              }
-            } catch (err) {
-              const nhAlgoForLog = normalizeAlgoForNiceHash(info.algo);
-              const cacheKey = `${nhAlgoForLog}:${acct}`;
-              const cachedError = monitorNhPriceErrorCache.get(cacheKey);
-              if (
-                !cachedError ||
-                cachedError.message !== err.message ||
-                now - cachedError.ts >= 10 * 60 * 1000
-              ) {
-                monitorNhPriceErrorCache.set(cacheKey, {
-                  message: err.message,
-                  ts: now,
-                });
-                logger.warn(
-                  `[monitor] ROI price skipped for ${cacheKey}: ${err.message}`,
-                );
-              }
-            }
-
-            const orderDiff =
-              priceRoi !== null && !isNaN(priceRoi)
-                ? priceRoi
-                : (100 - (parseFloat(efficiency) || 0)).toFixed(1);
-
-            let row;
-            try {
-              row = await dbGetAsync(
-                `SELECT last_notified, low_hashrate_start, zero_hashrate_start FROM rentals WHERE id = ?`,
-                [String(r.id)],
-              );
-            } catch (err) {
-              logger.error(
-                `[monitor:db] Failed to fetch rental ${r.id}: ${err.message}`,
-              );
-              row = null;
-            }
-
-            let lowHashStart = row?.low_hashrate_start || 0;
-            let zeroHashStart = row?.zero_hashrate_start || 0;
-            let lastNotified = row?.last_notified || 0;
-
-            await new Promise((resolve) => {
-              db.serialize(() => {
-                db.run(
-                  `INSERT INTO rentals (
-                 id, name, client, start_time, end_time, algo, 
-                 target_100, order_diff, last_updated, low_hashrate_start, zero_hashrate_start,
-                 current_hashrate, average_hashrate, advertised_hashrate, price_paid, last_notified
-               ) 
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-               ON CONFLICT(id) DO UPDATE SET 
-                 name=excluded.name, client=excluded.client, algo=excluded.algo, order_diff=excluded.order_diff,
-                 start_time=excluded.start_time, end_time=excluded.end_time, target_100=excluded.target_100, last_updated=excluded.last_updated,
-                 low_hashrate_start=excluded.low_hashrate_start, zero_hashrate_start=excluded.zero_hashrate_start,
-                 current_hashrate=excluded.current_hashrate, average_hashrate=excluded.average_hashrate,
-                 advertised_hashrate=excluded.advertised_hashrate, price_paid=excluded.price_paid`,
-                  [
-                    String(r.id),
-                    r.name || r.id,
-                    acct,
-                    startT,
-                    endT,
-                    info.algo,
-                    displayTarget,
-                    orderDiff,
-                    now,
-                    lowHashStart,
-                    zeroHashStart,
-                    currentHash,
-                    average,
-                    advertised,
-                    info.price.paid,
-                    lastNotified,
-                  ],
-                  (err) => {
-                    if (err)
-                      logger.error(
-                        `[${new Date().toLocaleTimeString()}] [monitor:db] Upsert error for ${r.id}: ${err.message}`,
-                      );
-                  },
-                );
-                if (startT > 0)
-                  db.run(
-                    "INSERT OR IGNORE INTO rental_history (id, start_time) VALUES (?, ?)",
-                    [String(r.id), startT],
-                  );
-                resolve();
-              });
-            });
-
-            // Alerts (only for real rentals)
-            if (isValidRental) {
-              if (efficiency < 50) {
-                if (lowHashStart === 0) lowHashStart = now;
-                if (now - lowHashStart >= 900000) {
-                  const alertKey = `${r.id}_low_50`;
-                  const lastAlert = lastAlertTimes.get(alertKey) || 0;
-                  if (now - lastAlert > ALERT_COOLDOWN_MS) {
-                    const msg = TelegramTemplates.efficiency(
-                      acct,
-                      r,
-                      info,
-                      efficiency,
-                      displayTarget,
-                      resolveRentalAlgo(r, info),
-                    );
-                    sendTelegramNotification(msg, {
-                      type: "LOW EFFICIENCY",
-                      label: `Low efficiency ${acct} ${r.id}`,
-                      onFailure: (e) =>
-                        logger.error(
-                          `[monitor] Low hashrate alert failed: ${e.message}`,
-                        ),
-                    });
-                    lastAlertTimes.set(alertKey, now);
-                  }
-                }
-              } else {
-                lowHashStart = 0;
-              }
-
-              if (currentHash === 0) {
-                if (zeroHashStart === 0) zeroHashStart = now;
-                if (now - zeroHashStart >= 600000) {
-                  const alertKey = `${r.id}_zero_10m`;
-                  const lastAlert = lastAlertTimes.get(alertKey) || 0;
-                  if (now - lastAlert > ALERT_COOLDOWN_MS) {
-                    const msg = TelegramTemplates.zeroHashrate(
-                      acct,
-                      r,
-                      info,
-                      resolveRentalAlgo(r, info),
-                    );
-                    sendTelegramNotification(msg, {
-                      type: "ZERO HASHRATE",
-                      label: `Zero hashrate ${acct} ${r.id}`,
-                      onFailure: (e) =>
-                        logger.error(
-                          `[monitor] Zero hashrate alert failed: ${e.message}`,
-                        ),
-                    });
-                    lastAlertTimes.set(alertKey, now);
-                  }
-                }
-              } else {
-                zeroHashStart = 0;
-              }
-
-              if (elapsedMs > 0 && elapsedMs < 3600000 && efficiency < 50) {
-                const startupKey = `${r.id}_startup_50`;
-                const lastAlert = lastAlertTimes.get(startupKey) || 0;
-                if (now - lastAlert > ALERT_COOLDOWN_MS) {
-                  const msg = TelegramTemplates.startup(
-                    acct,
-                    r,
-                    ads,
-                    info,
-                    efficiency,
-                    displayTarget,
-                    resolveRentalAlgo(r, info),
-                  );
-                  sendTelegramNotification(msg, {
-                    type: "STARTUP ALERT",
-                    label: `Startup alert ${acct} ${r.id}`,
-                    onFailure: (e) =>
-                      logger.error(
-                        `[monitor] Startup alert failed: ${e.message}`,
-                      ),
-                  });
-                  lastAlertTimes.set(startupKey, now);
-                }
-              }
-
-              if (remainingMs > 0 && remainingMs < 3600000 && efficiency < 70) {
-                const completionKey = `${r.id}_completion_70`;
-                const lastAlert = lastAlertTimes.get(completionKey) || 0;
-                if (now - lastAlert > ALERT_COOLDOWN_MS) {
-                  const msg = TelegramTemplates.completionAlert(
-                    acct,
-                    r,
-                    info,
-                    efficiency,
-                    displayTarget,
-                    resolveRentalAlgo(r, info),
-                  );
-                  sendTelegramNotification(msg, {
-                    type: "ALMOST COMPLETE",
-                    label: `Completion alert ${acct} ${r.id}`,
-                    onFailure: (e) =>
-                      logger.error(
-                        `[monitor] Completion alert failed: ${e.message}`,
-                      ),
-                  });
-                  lastAlertTimes.set(completionKey, now);
-                }
-              }
-
-              if (remainingMs > 0 && remainingMs < 600000 && efficiency >= 95) {
-                const successKey = `${r.id}_success_95`;
-                const lastAlert = lastAlertTimes.get(successKey) || 0;
-                if (now - lastAlert > ALERT_COOLDOWN_MS) {
-                  const msg = TelegramTemplates.completionSuccess(
-                    acct,
-                    r,
-                    info,
-                    efficiency,
-                    info.niceAdvertisedHashrate,
-                    info.niceAverageHashrate,
-                    info.hashrate.suffix,
-                    resolveRentalAlgo(r, info),
-                  );
-                  sendTelegramNotification(msg, {
-                    type: "RENTAL SUCCESS",
-                    label: `Completion success ${acct} ${r.id}`,
-                    onFailure: (e) =>
-                      logger.error(
-                        `[monitor] Success alert failed: ${e.message}`,
-                      ),
-                  });
-                  lastAlertTimes.set(successKey, now);
-                }
-              }
-
-              if (efficiency >= 100) {
-                const perfectKey = `perfect_100_${r.id}`;
-                const lastPerfect = lastAlertTimes.get(perfectKey) || 0;
-                if (now - lastPerfect >= 3600000) {
-                  const msg = TelegramTemplates.perfectEfficiency(
-                    acct,
-                    r,
-                    efficiency,
-                    `${info.price.paid} ${info.price.currency}`,
-                    remainingMs,
-                    resolveRentalAlgo(r, info),
-                  );
-                  sendTelegramNotification(msg, {
-                    type: "PERFECT 100%",
-                    label: `Perfect efficiency ${acct} ${r.id}`,
-                    onFailure: (e) =>
-                      logger.error(
-                        `[monitor] Perfect efficiency alert failed: ${e.message}`,
-                      ),
-                  });
-                  lastAlertTimes.set(perfectKey, now);
-                }
-              }
-            }
-
-            // Build line for summary heartbeat (ONLY for real rentals)
-            if (isValidRental) {
-              const hasEndTime = endT > 0;
-              const isFinished_s =
-                !isLiveRigCurrentlyRented(liveRig) ||
-                !isRentalActive(now, endT, liveRig, r);
-              const remD_s = Math.floor(remainingMs / 86400000);
-              const remH_s = Math.floor((remainingMs % 86400000) / 3600000);
-              const remM_s = Math.floor((remainingMs % 3600000) / 60000);
-
-              const remStr_s = isFinished_s
-                ? "Finished"
-                : hasEndTime
-                  ? remD_s > 0
-                    ? `${remD_s}d ${remH_s}h`
-                    : `${remH_s}h ${remM_s}m`
-                  : "Active";
-              const perfEmoji =
-                efficiency >= 100
-                  ? "🎊"
-                  : efficiency >= 90
-                    ? "🟢"
-                    : efficiency >= 70
-                      ? "🔵"
-                      : efficiency >= 50
-                        ? "🟡"
-                        : "🔴";
-              const divider = "━━━━━━━━━━━━━━━━━";
-
-              const currentSpeedVal = parseFloat(info.hashrate.current || 0);
-              const speedStatus =
-                currentSpeedVal > 0
-                  ? `<b>${info.niceHashrate}H</b>`
-                  : "⚠️ <b>0 H/s</b>";
-              const algo = resolveRentalAlgo(r, info);
-
-              activeRentalLines.push(
-                TelegramTemplates.activeRentalLine(
-                  perfEmoji,
-                  getAlgoDisplayName(algo),
-                  r.name || r.id,
-                  remStr_s,
-                  info.percent,
-                  orderDiff,
-                  info.niceAverageHashrate,
-                  info.niceAdvertisedHashrate,
-                  speedStatus,
-                  displayTarget,
-                  "",
-                  acct,
-                  info,
-                ),
-              );
-            }
-
-            // Send "rented" notification if new rental (first sighting)
-            const isNewToMonitor = lastNotified === 0;
-            const withinReasonableStart =
-              startT > 0 && elapsedMs < 10 * 60 * 1000;
-            const alreadyNotifiedThisRun = notifiedRentalIdsThisRun.has(
-              String(r.id),
-            );
-            const shouldNotify =
-              !alreadyNotifiedThisRun &&
-              isValidRental &&
-              (forceNotify || (isNewToMonitor && withinReasonableStart));
-
-            if (shouldNotify) {
-              notifiedRentalIdsThisRun.add(String(r.id));
-              const hbType = forceNotify ? "MONITOR" : "RENTING";
-
-              const displayRemN = Math.max(0, remainingMs);
-              const remD = Math.floor(displayRemN / 86400000);
-              const remH = Math.floor((displayRemN % 86400000) / 3600000);
-              const remM = Math.floor((displayRemN % 3600000) / 60000);
-              const remStr =
-                displayRemN <= 0
-                  ? "Finished"
-                  : remD > 0
-                    ? `${remD}d ${remH}h`
-                    : `${remH}h ${remM}m`;
-
-              const msg = TelegramTemplates.rentedNotice(
-                hbType,
-                r,
-                info,
-                acct,
-                ads,
-                orderDiff,
-                remStr,
-                resolveRentalAlgo(r, info),
-              );
-
-              sendTelegramNotification(msg, {
-                type: hbType,
-                label: `${hbType} ${acct} ${r.id}`,
-                onSuccess: async () => {
-                  await dbRunAsync(
-                    `UPDATE rentals SET last_notified = ? WHERE id = ?`,
-                    [now, String(r.id)],
-                  );
-                  notifications.push({
-                    id: r.id,
-                    client: acct,
-                    status: "Sent",
-                    telegram: "ok",
-                  });
-                },
-                onFailure: (tgErr) => {
-                  notifications.push({
-                    id: r.id,
-                    client: acct,
-                    status: "Failed",
-                    error: tgErr.message,
-                  });
-                },
-              });
-            } else {
-              if (!alreadyNotifiedThisRun) {
-                notifications.push({
-                  id: r.id,
-                  client: acct,
-                  status: "Skipped",
-                  reason: isValidRental
-                    ? "Already notified"
-                    : "Not a real rental",
-                });
-              }
             }
           }
 
-          // ============================================================
-          // UPGRADED: Set rented count to real rental count only
-          // ============================================================
           metric.rented = realRentalCount;
           accountMetrics.push(metric);
           if (!metric.error) successfulAccts.push(acct);
@@ -1550,7 +702,7 @@ export async function runRentalMonitor(
           info.hashrate?.suffix ||
           "N/A";
         const finishMsg = TelegramTemplates.finished(
-          enriched,
+          { ...enriched, client: fr.client },
           info,
           resolveRentalAlgo(enriched, info),
           finishAds,
@@ -1558,7 +710,7 @@ export async function runRentalMonitor(
         sendTelegramNotification(finishMsg, {
           type: "RENTAL FINISHED",
           label: `Finished ${fr.client} ${fr.id}`,
-          summary: {
+          summary: { // This summary object seems unused, but keeping it for now
             account: fr.client,
             rig: enriched.name || enriched.id,
             algo: resolveRentalAlgo(enriched, info),
@@ -1594,20 +746,15 @@ export async function runRentalMonitor(
       }
     }
 
-    // ============================================================
-    // FIXED: Send combined summary heartbeat with real rental count
-    // ============================================================
     const shouldSendCombinedSummary =
       forceNotify ||
       now - (lastAlertTimes.get("global_summary") || 0) >= RENTED_HEARTBEAT_MS;
 
-    // 🔧 FIX: Calculate real rental count from account metrics
     const totalRealRentals = accountMetrics.reduce(
       (sum, metric) => sum + (Number(metric.rented) || 0),
       0,
     );
 
-    // 🔧 FIX: Use real rental count, fallback to line count
     rentedAll =
       totalRealRentals > 0 ? totalRealRentals : activeRentalLines.length;
 
@@ -1644,7 +791,7 @@ export async function runRentalMonitor(
         const summaryBase = (linesSubset) =>
           TelegramTemplates.heartbeatSummary(
             barChart,
-            onlineAll,
+            onlineAll, 
             rentedAll, // ✅ Using real rental count
             offlineAll,
             disabledAll,
@@ -1690,7 +837,7 @@ export async function runRentalMonitor(
         totals: {
           rigs: totalAll,
           available: availableAll,
-          rented: rentedAll, // ✅ Using real rental count
+          rented: rentedAll,
           offline: offlineAll,
           disabled: disabledAll,
           warning: warningAll,
