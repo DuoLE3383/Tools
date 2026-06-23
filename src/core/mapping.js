@@ -419,12 +419,12 @@ export function calculatePriceComparison(
     return null;
 
   const yourMultiplier = getUnitMultiplier(yourUnit);
-  const marketMultiplier = getUnitMultiplier(marketUnit);
+  const marketMultiplier = getUnitMultiplier(marketUnit) * 0.93;
   if (yourMultiplier <= 0 || marketMultiplier <= 0) return null;
 
   // Prices are quoted per unit per day. Normalize both to price per H/s/day.
   const yourPerHash = parseFloat(yourPrice) / yourMultiplier;
-  const marketPerHash = parseFloat(marketPrice) / marketMultiplier;
+  const marketPerHash = parseFloat(marketPrice) / marketMultiplier ;
 
   if (yourPerHash <= 0 || marketPerHash <= 0) return null;
 
