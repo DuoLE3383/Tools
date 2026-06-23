@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useContext } from "react";
+<<<<<<< Updated upstream
 import { poolApi } from "../../core/poolUtils.js";
 import { normalizeAlgoForNiceHash, getAlgoDisplayName } from "../../core/mapping.js";
 import { getBtcPriceData as getBtcPriceDataUtils } from "../../core/priceUtils.js";
@@ -6,6 +7,15 @@ import { NiceHashOrderContext } from "../nicehash/NiceHashContext.jsx";
 import MrrRigCard from "./MrrRigCard.jsx";
 import { TelegramTemplates } from "../../core/telegram.js";
 import { calculateRemainingTime } from "../../core/time.js";
+=======
+import { poolApi } from "../../core/poolUtils";
+import { normalizeAlgoForNiceHash, getAlgoDisplayName } from "../../core/mapping";
+import { getBtcPriceData as getBtcPriceDataUtils } from "../../core/priceUtils";
+import { NiceHashOrderContext } from "../nicehash/NiceHashContext";
+import MrrRigCard from "./MrrRigCard.jsx";
+import { TelegramTemplates } from "../../core/telegram.js";
+import { calculateRemainingTime } from "../../core/time";
+>>>>>>> Stashed changes
 import {
   findRigArray,
   getNiceHashPriceValue,
@@ -17,7 +27,11 @@ import {
   getRentalEfficiency,
   getStatusClass,
   parsePriceValueLocal,
+<<<<<<< Updated upstream
 } from "../../core/mrrUtils.js";
+=======
+} from "../../core/mrrUtils";
+>>>>>>> Stashed changes
 
 export default function MrrRigs({
   onCall,

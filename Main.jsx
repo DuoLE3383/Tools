@@ -3,9 +3,10 @@ import Pools from './src/components/Pools';
 import Modal from './src/components/Modal';
 <<<<<<< Updated upstream
 import HashpowerBot from './src/components/HashpowerBot';
-import NiceHash from './src/components/NiceHash';
-import MiningRigRental from './src/components/MiningRigRental';
+import NiceHash from './src/components/nicehash/NiceHash.jsx';
+import MiningRigRental from './src/components/mrr/MiningRigRental.jsx';
 import MiningRigSection from './src/components/MiningRigSection';
+<<<<<<< Updated upstream
 =======
 import HashpowerBot from './src/components/nicehash/HashpowerBot.jsx';
 import NiceHash from './src/components/nicehash/NiceHash';
@@ -16,6 +17,12 @@ import HashrateCalculator from './src/components/HashrateCalculator';
 import HashCompletionCalculator from './src/components/ProfitCompletion';
 import MrrPoolsManager from './src/components/mrr/MrrManager';
 import Login from './src/components/Login';
+=======
+import HashrateCalculator from './src/components/utils/HashrateCalculator.jsx';
+import HashCompletionCalculator from './src/components/HashCompletionCalculator';
+import MrrPoolsManager from './src/components/MrrManager';
+import Login from './src/components/utils/Login.jsx';
+>>>>>>> Stashed changes
 import HeroMinersCard from './src/components/HeroMinersCard';
 import MiningCoin from './src/components/MiningCoin.jsx';
 import { HASHRATE_SUFFIXES, normalizeAlgoForNiceHash, getAlgorithmUnit } from './src/core/mapping';

@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState, useEffect } from "react";
-import MonitorDbEditor from "./MonitorDbEditor";
-import { TelegramTemplates } from "../core/telegram.js";
+import MonitorDbEditor from "./MonitorDbEditor.jsx";
+import { TelegramTemplates } from "../../core/telegram.js";
 
 function decodeHtmlEntities(text) {
   if (typeof text !== "string") return text;

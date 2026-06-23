@@ -3,8 +3,8 @@ import {
   getPriceData,
   getBtcPriceData,
   parsePriceValue,
-} from "../core/priceUtils.js";
-import { HASHRATE_SUFFIXES, getAlgorithmUnit } from "../core/mapping.js";
+} from "../../core/priceUtils.js";
+import { HASHRATE_SUFFIXES, getAlgorithmUnit } from "../../core/mapping.js";
 
 function resolveUnit(value) {
   if (typeof value === "number" && Number.isFinite(value)) return value; // Already a numeric factor

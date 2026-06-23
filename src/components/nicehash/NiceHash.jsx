@@ -1,10 +1,18 @@
 // NiceHash.jsx
 import React, { useEffect, useMemo, useState, useCallback } from "react";
+<<<<<<< Updated upstream
 import Accounting from "../Accounting";
 import CryptoRatePage from "../CryptoRatePage";
 import NiceHashOrderCard from "./NiceHashOrdersCard.jsx";
 import { getAlgoDisplayName } from "../../core/mapping.js";
 import { useNiceHashOrders } from "./NiceHashContext";
+=======
+import Accounting from "../Accounting.jsx";
+import CryptoRatePage from "../CryptoRatePage.jsx";
+import NiceHashOrderCard from "./NiceHashOrdersCard.jsx";
+import { getAlgoDisplayName } from "../../core/mapping.js";
+import { useNiceHashOrders } from "./NiceHashContext.jsx";
+>>>>>>> Stashed changes
 
 function NiceHashOrderManager({ onCall, nhClient, setNhClient }) {
   // Get ALL data from context including price data

@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
+<<<<<<< Updated upstream
 import { CountdownTimer } from "./MiningRigRental";
+=======
+import { CountdownTimer } from "./MiningRigRental.jsx";
+>>>>>>> Stashed changes
 import {
   getClientBadgeStyle,
   getRawHashrate,
@@ -21,6 +25,26 @@ import {
   isAsicBoost,
 } from "../../core/mapping.js";
 
+<<<<<<< Updated upstream
+=======
+// ─── Helper: Format hashrate with unit ──────────────────────────────────
+function formatHashrateWithUnit(value, unit) {
+  if (!value || value <= 0) return "0H";
+  const cleanUnit = cleanHashrateUnit(unit || 'H');
+  const multiplier = HASHRATE_SUFFIXES[cleanUnit] || 1;
+  const rawH = value * multiplier;
+  const units = ["H", "K", "M", "G", "T", "P", "E"];
+  const mults = [1, 1e3, 1e6, 1e9, 1e12, 1e15, 1e18];
+  let idx = 0;
+  for (let i = mults.length - 1; i >= 0; i--) {
+    if (rawH >= mults[i]) { idx = i; break; }
+  }
+  const val = rawH / mults[idx];
+  return `${val.toFixed(2)}${units[idx]}`;
+}
+
+// ─── Other helpers ──────────────────────────────────────────────────────
+>>>>>>> Stashed changes
 const formatPercent = (value) => {
   const num = Number(value);
   if (!Number.isFinite(num)) return "N/A";
@@ -35,7 +59,10 @@ const normalizeOrderAlgo = (order) => {
       return value.algorithm || value.displayName || value.name || "";
     return value;
   };
+<<<<<<< Updated upstream
 
+=======
+>>>>>>> Stashed changes
   return normalizeAlgoForNiceHash(
     order?.algo ||
     pick(order?.algorithm) ||
@@ -53,6 +80,7 @@ const COINGECKO_BY_CURRENCY = {
   ETH: "ethereum",
   ETC: "ethereum-classic",
 };
+<<<<<<< Updated upstream
 
 const PRICE_CURRENCIES = ["BTC", "ETH", "LTC", "DOGE", "BCH"];
 
@@ -74,11 +102,20 @@ const resolvePaidPrice = (priceSource, convertedSource) => {
     };
   }
 
+=======
+const PRICE_CURRENCIES = ["BTC", "ETH", "LTC", "DOGE", "BCH"];
+const FALLBACK_BTC_RATES = { ETH: 0.052, LTC: 0.00078, DOGE: 0.0000018, BCH: 0.00042, ETC: 0.00042 };
+
+const resolvePaidPrice = (priceSource, convertedSource) => {
+  const primary = getPriceDataLocal(priceSource);
+  if (primary.value > 0) return { amount: primary.value, currency: String(primary.currency || "BTC").toUpperCase() };
+>>>>>>> Stashed changes
   if (priceSource && typeof priceSource === "object") {
     for (const currency of PRICE_CURRENCIES) {
       const nested = priceSource[currency];
       if (!nested || typeof nested !== "object") continue;
       const nestedPrice = getPriceDataLocal(nested);
+<<<<<<< Updated upstream
       if (nestedPrice.value > 0) {
         return {
           amount: nestedPrice.value,
@@ -118,13 +155,36 @@ const convertPaidToBtc = (
   const fallbackRate = FALLBACK_BTC_RATES[upperCurrency];
   if (fallbackRate !== undefined) return amount * fallbackRate;
 
+=======
+      if (nestedPrice.value > 0) return { amount: nestedPrice.value, currency };
+    }
+  }
+  const converted = getPriceDataLocal(convertedSource);
+  if (converted.value > 0) return { amount: converted.value, currency: String(converted.currency || "BTC").toUpperCase() };
+  return { amount: 0, currency: "BTC" };
+};
+
+const convertPaidToBtc = (amount, currency, coinPrices = {}, fallbackBtc = 0) => {
+  const upperCurrency = String(currency || "BTC").toUpperCase();
+  if (!amount || amount <= 0) return 0;
+  if (upperCurrency === "BTC") return amount;
+  const coinId = COINGECKO_BY_CURRENCY[upperCurrency];
+  const apiBtcRate = coinId ? Number.parseFloat(coinPrices?.[coinId]?.btc || 0) : 0;
+  if (apiBtcRate > 0) return amount * apiBtcRate;
+  const fallbackRate = FALLBACK_BTC_RATES[upperCurrency];
+  if (fallbackRate !== undefined) return amount * fallbackRate;
+>>>>>>> Stashed changes
   return Number.isFinite(fallbackBtc) && fallbackBtc > 0 ? fallbackBtc : 0;
 };
 
 const cleanHashrateUnit = (unit) => {
+<<<<<<< Updated upstream
   const match = String(unit || "")
     .toUpperCase()
     .match(/GSOL|MSOL|KSOL|SOL|EH|PH|TH|GH|MH|KH|H/);
+=======
+  const match = String(unit || "").toUpperCase().match(/GSOL|MSOL|KSOL|SOL|E|P|T|G|M|K|H/);
+>>>>>>> Stashed changes
   return match?.[0] || "H";
 };
 
@@ -134,6 +194,7 @@ const convertHashrateValue = (value, fromUnit, toUnit) => {
   return (value * fromMultiplier) / toMultiplier;
 };
 
+<<<<<<< Updated upstream
 const MrrRigCard = ({
   rig,
   algoName,
@@ -160,21 +221,39 @@ const MrrRigCard = ({
   const statusStr = String(
     typeof rig.status === "object" ? rig.status.status : rig.status || "",
   ).toLowerCase();
+=======
+// ─── Main Component ──────────────────────────────────────────────────────
+const MrrRigCard = ({
+  rig, algoName, info, isMine, nhOrders, coinPrices, cryptoPrices, algoMarketPrices,
+  onOpenPool, onOpenCompletionCalculator, fetchRigDetailInfo, loadingInfoIds,
+  handleRigStatus, handlePriceChange, expandedPools, togglePoolInfo, setEnrichedInfo, mrrClient,
+}) => {
+  // ── Basic state ──
+  const statusStr = String(typeof rig.status === "object" ? rig.status.status : rig.status || "").toLowerCase();
+>>>>>>> Stashed changes
   const rentalId = rig.rentalid || rig.current_rental_id || rig.rental_id;
   const isRented = statusStr.includes("rented") || statusStr.includes("active") || Boolean(rentalId);
   const displayId = isRented && rentalId ? rentalId : rig.id;
   const idLabel = isRented && rentalId ? "Rental" : "Rig";
   const [nowMs, setNowMs] = useState(0);
+<<<<<<< Updated upstream
 
   // ==========================================
   // 2. Algorithm and unit definitions (defined ONCE)
   // ==========================================
+=======
+  const rawCur = info?.rawCur || rig.hashrate?.current || 0;
+  const cur = Number.isFinite(parseFloat(rawCur)) ? parseFloat(rawCur) : 0;
+
+  // ── Algorithm & units ──
+>>>>>>> Stashed changes
   const rawAlgo = info?.algo || rig.algo || rig.algorithm || rig.type || algoName;
   const normalizedAlgo = normalizeAlgoForNiceHash(rawAlgo || algoName);
   const mrrUnit = getMrrAlgorithmUnit(normalizedAlgo || rawAlgo);
   const mrrApiKey = getMrrAlgoKey(normalizedAlgo);
   const isAsicBoostAlgo = isAsicBoost(normalizedAlgo);
 
+<<<<<<< Updated upstream
   // ==========================================
   // 3. State for MRR rate
   // ==========================================
@@ -194,13 +273,28 @@ const MrrRigCard = ({
       'DOGE': 'dogecoin',
       'BCH': 'bitcoin-cash',
     };
+=======
+  // ── MRR rate state ──
+  const [mrrMarketRate, setMrrMarketRate] = useState(0);
+  const [isLoadingMrrRate, setIsLoadingMrrRate] = useState(false);
+  const [mrrRateError, setMrrRateError] = useState(null);
+  const [mrrUsedKey, setMrrUsedKey] = useState('');
+
+  // ── USD price helper ──
+  const getUsdPrice = useCallback((currency) => {
+    const map = { BTC: "bitcoin", ETH: "ethereum", LTC: "litecoin", DOGE: "dogecoin", BCH: "bitcoin-cash" };
+>>>>>>> Stashed changes
     const id = map[String(currency).toUpperCase()];
     return coinPrices?.[id]?.usd || 0;
   }, [coinPrices]);
 
+<<<<<<< Updated upstream
   // ==========================================
   // 5. useEffect hooks (mrrUnit is already defined)
   // ==========================================
+=======
+  // ── Timer ──
+>>>>>>> Stashed changes
   useEffect(() => {
     if (!isRented) return undefined;
     const updateNow = () => setNowMs(Date.now());
@@ -209,6 +303,7 @@ const MrrRigCard = ({
     return () => clearInterval(timer);
   }, [isRented]);
 
+<<<<<<< Updated upstream
   const effectiveMrrClient = mrrClient || rig?.mrrClient || null;
 
   useEffect(() => {
@@ -289,6 +384,14 @@ const MrrRigCard = ({
     } else {
       // 🔄 Fallback: calculate from rental data (more robust)
       console.warn(`⚠️ No API rate, trying calculated fallback`);
+=======
+  // ── MRR rate fetch ──
+  useEffect(() => {
+    const rawAlgo = info?.algo || rig.algo || rig.algorithm || rig.type || algoName;
+    const normalizedAlgo = normalizeAlgoForNiceHash(rawAlgo || algoName);
+
+    if (!normalizedAlgo || normalizedAlgo === "UNKNOWN") {
+>>>>>>> Stashed changes
       if (info?.price?.paid && info?.hashrate?.advertised) {
         const paid = parseFloat(info.price.paid);
         const advertised = parseFloat(info.hashrate.advertised);
@@ -297,6 +400,7 @@ const MrrRigCard = ({
           const calculatedRate = paid / (duration / 24) / advertised;
           setMrrMarketRate(calculatedRate);
           setMrrUsedKey('calculated');
+<<<<<<< Updated upstream
           setMrrRateError(null);
           console.log(`✅ Using calculated MRR rate: ${calculatedRate}`);
         } else {
@@ -398,13 +502,111 @@ const MrrRigCard = ({
   );
 
   // ✅ Calculate USD value directly using CoinGecko
+=======
+        }
+      }
+      return;
+    }
+
+    const fetchRate = async () => {
+      setIsLoadingMrrRate(true);
+      setMrrRateError(null);
+
+      const primaryKey = getMrrAlgoKey(normalizedAlgo);
+      const keysToTry = [primaryKey];
+      if (normalizedAlgo === "SHA256ASICBOOST" || normalizedAlgo === "SHA256AB") {
+        if (primaryKey !== "sha256") keysToTry.push("sha256");
+      }
+
+      let rate = 0;
+      let usedKey = '';
+
+      for (const key of keysToTry) {
+        try {
+          const url = `/api/v2/mrr/market/algos/${key}`;
+          const response = await fetch(url);
+          if (!response.ok) throw new Error(`Proxy returned ${response.status}`);
+          const data = await response.json();
+
+          let foundRate = 0;
+          if (data.success && data.data) {
+            if (data.data.suggested_price?.amount) foundRate = parseFloat(data.data.suggested_price.amount);
+            else if (data.data.stats?.prices?.lowest?.price) foundRate = parseFloat(data.data.stats.prices.lowest.price);
+            else if (data.data.price) foundRate = parseFloat(data.data.price);
+            else if (data.data.BTC) foundRate = parseFloat(data.data.BTC);
+          } else if (data.price) foundRate = parseFloat(data.price);
+          else if (data.BTC) foundRate = parseFloat(data.BTC);
+
+          if (foundRate > 0) { rate = foundRate; usedKey = key; break; }
+        } catch (err) { console.warn(`⚠️ Failed to fetch MRR rate for ${key}:`, err.message); }
+      }
+
+      if (rate > 0) {
+        setMrrMarketRate(rate);
+        setMrrUsedKey(usedKey);
+        setMrrRateError(null);
+      } else {
+        // Fallback to calculated
+        if (info?.price?.paid && info?.hashrate?.advertised) {
+          const paid = parseFloat(info.price.paid);
+          const advertised = parseFloat(info.hashrate.advertised);
+          const duration = parseFloat(info.duration || 0);
+          if (paid > 0 && advertised > 0 && duration > 0) {
+            const calculatedRate = paid / (duration / 24) / advertised;
+            setMrrMarketRate(calculatedRate);
+            setMrrUsedKey('calculated');
+            setMrrRateError(null);
+          } else {
+            setMrrRateError("No rate available");
+          }
+        } else {
+          setMrrRateError("No rate available");
+        }
+      }
+      setIsLoadingMrrRate(false);
+    };
+
+    fetchRate();
+  }, [info?.algo, info?.price?.paid, info?.hashrate?.advertised, info?.duration,
+  rig.algo, rig.algorithm, rig.type, algoName, mrrUnit, info?.rawAds, rig.hashrate?.advertised]);
+
+  // ── Computed values ──
+  const adsVal = useMemo(() => info?.rawAds || getRawHashrate(rig.hashrate?.advertised || rig.advertised) || 0,
+    [info?.rawAds, rig.hashrate?.advertised, rig.advertised]);
+  const avgVal = useMemo(() => info?.rawAvg || getRawHashrate(rig.hashrate?.average || rig.average || rig.hash) || 0,
+    [info?.rawAvg, rig.hashrate?.average, rig.average, rig.hash]);
+
+  const rentalStartTime = info?.startTime || rig.start;
+  const rentalEndTime = info?.endTime || rig.end || (typeof rig.status === "object" ? rig.status.end : null);
+  const startT = new Date(rentalStartTime + (String(rentalStartTime || "").endsWith("UTC") ? "" : " UTC")).getTime();
+  const endT = new Date(rentalEndTime + (String(rentalEndTime || "").endsWith("UTC") ? "" : " UTC")).getTime();
+  const totalMs = Number.isNaN(startT) || Number.isNaN(endT) ? 0 : Math.max(0, endT - startT);
+  const durationHoursFromDates = totalMs > 0 ? totalMs / 3600000 : 0;
+  const durationHoursExplicit = parseFloat(info?.duration ?? info?.hours ?? rig.duration ?? rig.hours ?? rig.length ?? 0);
+  const durationHours = durationHoursExplicit > 0 ? durationHoursExplicit : durationHoursFromDates;
+
+  const rawEffValue = info?.percent ?? rig.hashrate?.average?.percent ?? rig.percent ?? (adsVal > 0 ? (avgVal / adsVal) * 100 : 0);
+  const effNum = Number.parseFloat(rawEffValue);
+  const eff = Number.isFinite(effNum) ? effNum.toFixed(2) : "0.00";
+
+  const paidPrice = resolvePaidPrice(info?.normalized?.price || info?.price || rig.price, info?.price_converted || rig.price_converted);
+  const paidAmount = paidPrice.amount;
+  const paidCurrency = paidPrice.currency || info?.currency || rig.currency || "BTC";
+  const paidLabel = paidAmount > 0 && paidCurrency ? `${paidAmount.toFixed(8)} ${String(paidCurrency).toUpperCase()}` : null;
+  const fallbackBtc = parsePriceValueLocal(info?.price_converted?.price ?? rig.price_converted?.price ?? 0);
+  const paidBtcAmount = convertPaidToBtc(paidAmount, paidCurrency, coinPrices, fallbackBtc);
+
+>>>>>>> Stashed changes
   const usdValue = useMemo(() => {
     if (!paidAmount || paidAmount <= 0) return 0;
     const price = getUsdPrice(paidCurrency);
     return paidAmount * price;
   }, [paidAmount, paidCurrency, getUsdPrice]);
 
+<<<<<<< Updated upstream
   // Direct USDT conversion
+=======
+>>>>>>> Stashed changes
   const getUsdtAmountDirect = (amount, currency, coinPrices) => {
     const upperCurrency = String(currency || "").toUpperCase();
     if (upperCurrency === "USDT") return 0;
@@ -414,6 +616,7 @@ const MrrRigCard = ({
     if (typeof usdPrice !== "number" || usdPrice <= 0) return 0;
     return amount * usdPrice;
   };
+<<<<<<< Updated upstream
 
   const paidUsdtAmount = useMemo(
     () => getUsdtAmountDirect(paidAmount, paidCurrency, coinPrices),
@@ -435,6 +638,16 @@ const MrrRigCard = ({
   const mrrDailyRate = mrrMarketRate > 0 ? mrrMarketRate : 0;
 
   // 2. Try calculated rate from rental data
+=======
+  const paidUsdtAmount = useMemo(() => getUsdtAmountDirect(paidAmount, paidCurrency, coinPrices), [paidAmount, paidCurrency, coinPrices]);
+
+  const advertisedUnit = rig.hashrate?.suffix || rig.hashrate?.advertised?.type || info?.hashrate?.suffix || info?.hashrate_unit || info?.unit || mrrUnit;
+  const adsInMrrUnit = adsVal > 0 ? convertHashrateValue(adsVal, advertisedUnit, mrrUnit) : 0;
+  const durationDays = durationHours > 0 ? durationHours / 24 : 0;
+
+  const mrrDailyRate = mrrMarketRate > 0 ? mrrMarketRate : 0;
+
+>>>>>>> Stashed changes
   const calculatedMrrRate = useMemo(() => {
     if (paidBtcAmount > 0 && adsInMrrUnit > 0 && durationDays > 0) {
       return paidBtcAmount / durationDays / adsInMrrUnit;
@@ -442,6 +655,7 @@ const MrrRigCard = ({
     return 0;
   }, [paidBtcAmount, adsInMrrUnit, durationDays]);
 
+<<<<<<< Updated upstream
   // 3. Try to get rate from info object
   const infoMrrRate = useMemo(() => {
     if (info?.mrrRate) return info.mrrRate;
@@ -450,6 +664,10 @@ const MrrRigCard = ({
   }, [info]);
 
   // Use the best available rate
+=======
+  const infoMrrRate = useMemo(() => info?.mrrRate || info?.price?.rate || 0, [info]);
+
+>>>>>>> Stashed changes
   const finalMrrRate = useMemo(() => {
     if (mrrMarketRate > 0) return mrrMarketRate;
     if (calculatedMrrRate > 0) return calculatedMrrRate;
@@ -457,11 +675,18 @@ const MrrRigCard = ({
     return 0;
   }, [mrrMarketRate, calculatedMrrRate, infoMrrRate]);
 
+<<<<<<< Updated upstream
   // ✅ FIXED: Show the actual key that was used (mrrUsedKey) or fallback to mrrApiKey
   const mrrDailyRateSource = mrrMarketRate > 0
     ? `MRR API (${mrrUsedKey || mrrApiKey})`
     : calculatedMrrRate > 0
       ? "Calculated from MRR sold rental"
+=======
+  const mrrDailyRateSource = mrrMarketRate > 0
+    ? `MRR API (${mrrUsedKey || mrrApiKey})`
+    : calculatedMrrRate > 0
+      ? ""
+>>>>>>> Stashed changes
       : infoMrrRate > 0
         ? "From rental info"
         : isLoadingMrrRate
@@ -470,6 +695,7 @@ const MrrRigCard = ({
 
   const normalizedCardAlgo = normalizeAlgoForNiceHash(algoName || rawAlgo);
   const nhOrder = [...(nhOrders || [])]
+<<<<<<< Updated upstream
     .sort(
       (a, b) =>
         Number(
@@ -502,11 +728,26 @@ const MrrRigCard = ({
   const myNhUnit = getAlgorithmUnit(
     normalizeAlgoForNiceHash(algoName || rawAlgo),
   );
+=======
+    .sort((a, b) => Number(b?.isActive || b?.rawOrder?.status?.code === "ACTIVE" || b?.rawOrder?.status === "ACTIVE") -
+      Number(a?.isActive || a?.rawOrder?.status?.code === "ACTIVE" || a?.rawOrder?.status === "ACTIVE"))
+    .find((order) => normalizeOrderAlgo(order) === normalizedCardAlgo);
+
+  const orderNhPrice = getNiceHashPriceValue(nhOrder?.price ?? nhOrder?.rawOrder?.price ?? nhOrder);
+  const buyNhPrice = nhOrder && orderNhPrice > 0 ? orderNhPrice : 0;
+  const buyNhPriceWithFee = buyNhPrice > 0
+    ? Number.parseFloat(nhOrder?.add_fee ?? nhOrder?.priceWithFee ?? 0) > 0
+      ? Number.parseFloat(nhOrder.add_fee ?? nhOrder.priceWithFee)
+      : buyNhPrice
+    : 0;
+  const myNhUnit = getAlgorithmUnit(normalizeAlgoForNiceHash(algoName || rawAlgo));
+>>>>>>> Stashed changes
 
   const marketPriceData = algoMarketPrices?.[algoName];
   const marketPriceValue = marketPriceData ? getNiceHashPriceValue(marketPriceData) : 0;
   const niceHashSourcePrice = marketPriceValue > 0 ? marketPriceValue : buyNhPriceWithFee;
 
+<<<<<<< Updated upstream
   // Convert to MRR unit
   const fromMultiplier = HASHRATE_SUFFIXES[cleanHashrateUnit(myNhUnit)] || 1;
   const toMultiplier = HASHRATE_SUFFIXES[cleanHashrateUnit(mrrUnit)] || 1;
@@ -526,11 +767,21 @@ const MrrRigCard = ({
         myNhUnit,
       );
       return result;
+=======
+  const fromMultiplier = HASHRATE_SUFFIXES[cleanHashrateUnit(myNhUnit)] || 1;
+  const toMultiplier = HASHRATE_SUFFIXES[cleanHashrateUnit(mrrUnit)] || 1;
+  const niceHashPriceInMrrUnit = niceHashSourcePrice > 0 ? niceHashSourcePrice * (toMultiplier / fromMultiplier) : 0;
+
+  const roiPercent = useMemo(() => {
+    if (niceHashSourcePrice > 0 && finalMrrRate > 0) {
+      return calculatePriceComparison(finalMrrRate, mrrUnit, niceHashSourcePrice, myNhUnit);
+>>>>>>> Stashed changes
     }
     return null;
   }, [finalMrrRate, mrrUnit, niceHashSourcePrice, myNhUnit]);
 
   const roiLabel = useMemo(() => {
+<<<<<<< Updated upstream
     if (roiPercent !== null) {
       return formatPercent(roiPercent);
     }
@@ -538,6 +789,11 @@ const MrrRigCard = ({
       if (finalMrrRate <= 0) {
         return isLoadingMrrRate ? "Loading..." : "No MRR rate";
       }
+=======
+    if (roiPercent !== null) return formatPercent(roiPercent);
+    if (niceHashSourcePrice > 0) {
+      if (finalMrrRate <= 0) return isLoadingMrrRate ? "Loading..." : "No MRR rate";
+>>>>>>> Stashed changes
       return "Waiting for data";
     }
     return "No NH price";
@@ -545,6 +801,7 @@ const MrrRigCard = ({
 
   const displayAlgo = getAlgoDisplayName(normalizedAlgo || rawAlgo);
 
+<<<<<<< Updated upstream
   const elapsedMs =
     nowMs > 0 && totalMs > 0
       ? Math.max(0, Math.min(nowMs - startT, totalMs))
@@ -555,6 +812,13 @@ const MrrRigCard = ({
       ? (adsVal * (totalMs / 1000) - avgVal * (elapsedMs / 1000)) /
       ((totalMs - elapsedMs) / 1000)
       : 0;
+=======
+  const elapsedMs = nowMs > 0 && totalMs > 0 ? Math.max(0, Math.min(nowMs - startT, totalMs)) : 0;
+  const timeProgress = totalMs > 0 ? (elapsedMs / totalMs) * 100 : 0;
+  const targetHashrate = totalMs - elapsedMs > 0
+    ? (adsVal * (totalMs / 1000) - avgVal * (elapsedMs / 1000)) / ((totalMs - elapsedMs) / 1000)
+    : 0;
+>>>>>>> Stashed changes
   const isBehind = targetHashrate > adsVal;
   const hSuffix = rig.hashrate?.suffix || rig.hashrate?.advertised?.type || "";
 
@@ -569,6 +833,10 @@ const MrrRigCard = ({
 
   const accent = getEfficiencyAccent(effNum);
 
+<<<<<<< Updated upstream
+=======
+  // ── Styles ──
+>>>>>>> Stashed changes
   const shellStyle = {
     background: `radial-gradient(circle at top right, ${accent} 0%, transparent 88%)`,
     border: `1.5px solid ${accent}`,
@@ -589,6 +857,7 @@ const MrrRigCard = ({
   const sectionStyle = {
     background: "rgba(255,255,255,0.035)",
     border: "1px solid rgba(255,255,255,0.06)",
+<<<<<<< Updated upstream
     borderRadius: "10px",
     padding: "6px",
   };
@@ -607,11 +876,20 @@ const MrrRigCard = ({
       }}
     >
       AB
+=======
+    borderRadius: "8px",
+    padding: "2px",
+  };
+
+  const asicBoostBadge = isAsicBoostAlgo ? (
+    <span style={{ background: "rgba(245, 158, 11, 0.2)", color: "#fbbf24", fontSize: "7px", padding: "1px 6px", borderRadius: "999px", fontWeight: "700", marginLeft: "4px", border: "1px solid rgba(245, 158, 11, 0.3)" }}>
+>>>>>>> Stashed changes
     </span>
   ) : null;
 
   return (
     <article className="rig-card" style={shellStyle}>
+<<<<<<< Updated upstream
       <div
         style={{
           display: "flex",
@@ -786,10 +1064,47 @@ const MrrRigCard = ({
             >
               {roiLabel}
             </div>
+=======
+      {/* ─── Header ─── */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "4px", minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "5px", flexWrap: "wrap" }}>
+            <span style={{ background: isMine ? "rgba(37, 99, 235, 0.18)" : "rgba(255,255,255,0.08)", color: "white", fontSize: "8px", padding: "2px 6px", borderRadius: "999px", fontWeight: "700", letterSpacing: "0.04em", textTransform: "uppercase" }}>
+              {idLabel}: #{displayId}
+            </span>
+            {rig.mrrClient && (
+              <span style={{ ...getClientBadgeStyle(rig.mrrClient), fontSize: "8px", padding: "2px 6px", borderRadius: "999px", fontWeight: "700" }}>
+                {rig.mrrClient.toUpperCase()}
+              </span>
+            )}
+            <span style={{ fontSize: "8px", padding: "2px 6px", borderRadius: "999px", fontWeight: "700", ...getStatusClass(rig.status) }}>
+              {String(typeof rig.status === "object" ? rig.status.status : rig.status || "").toUpperCase()}
+            </span>
+          </div>
+          <strong title={rig.name} style={{ fontSize: "13px", lineHeight: 1.15, color: "#f8fafc", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {rig.name}
+          </strong>
+          <div style={{ display: "flex", alignItems: "center", gap: "5px", flexWrap: "wrap", color: "#94a3b8", fontSize: "9px" }}>
+            <span style={{ fontSize: "14px", fontWeight: 900, color: "#38bdf8", textShadow: "0 0 18px rgba(56, 189, 248, 0.22)" }}>
+              {displayAlgo}
+            </span>
+            |
+            {paidLabel && <span style={{ color: "#fbbf24", fontWeight: 900, fontSize: "11px" }}>Paid {paidLabel}</span>}
+          </div>
+          {/* ❌ Removed the error message block */}
+        </div>
+
+        {/* ROI Badge */}
+        <div style={{ display: "flex", gap: "4px", minWidth: "142px", textAlign: "right", marginLeft: "auto", flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <div style={{ padding: "6px 8px", borderRadius: "10px", background: roiPercent === null ? "rgba(255,255,255,0.04)" : roiPercent >= 0 ? "rgba(16,185,129,0.10)" : "rgba(239,68,68,0.10)", border: `1px solid ${roiPercent === null ? "rgba(255,255,255,0.08)" : roiPercent >= 0 ? "rgba(16,185,129,0.22)" : "rgba(239,68,68,0.22)"}` }}>
+            <div style={{ fontSize: "8px", opacity: 0.7, textTransform: "uppercase", letterSpacing: "0.06em" }}>ROI</div>
+            <div style={{ fontSize: "18px", lineHeight: 1, fontWeight: 900, color: getRoiColor(roiPercent ?? 0) }}>{roiLabel}</div>
+>>>>>>> Stashed changes
           </div>
         </div>
       </div>
 
+<<<<<<< Updated upstream
       <div
         style={{
           display: "grid",
@@ -939,10 +1254,45 @@ const MrrRigCard = ({
                           fontFamily: "monospace",
                         }}
                       >
+=======
+      {/* ─── Main Grid ─── */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 0.85fr", gap: "6px" }}>
+        {/* ─── Left Column: Price & Rates ─── */}
+        <section style={sectionStyle}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: "6px", marginBottom: "4px" }}>
+            <div style={{ fontSize: "8px", color: "#94a3b8" }}>{mrrDailyRateSource}</div>
+            {isLoadingMrrRate && <span style={{ fontSize: "7px", color: "#60a5fa" }}>loading...</span>}
+          </div>
+
+          {/* Rental Paid */}
+          <div style={{ marginBottom: "6px", padding: "7px", borderRadius: "10px", background: "linear-gradient(135deg, rgba(245, 158, 11, 0.16), rgba(16, 185, 129, 0.10))", border: "1px solid rgba(251, 191, 36, 0.20)" }}>
+            <div style={{ opacity: 0.72, textTransform: "uppercase", fontSize: "8px", letterSpacing: "0.08em" }}>Rental Paid</div>
+            <div style={{ color: "#fbbf24", fontWeight: 900, fontSize: "11px", lineHeight: 1.1, marginTop: "3px" }}>{paidLabel || "N/A"}</div>
+            {paidBtcAmount > 0 && String(paidCurrency || "").toUpperCase() !== "BTC" && (
+              <div style={{ color: "#86efac", fontWeight: 700, fontSize: "9px", marginTop: "3px" }}>~ {paidBtcAmount.toFixed(8)} BTC</div>
+            )}
+            {usdValue > 0 && String(paidCurrency || "").toUpperCase() !== "USD" && (
+              <div style={{ color: "#86efac", fontWeight: 700, fontSize: "9px", marginTop: "3px" }}>~ ${usdValue.toFixed(2)} USD</div>
+            )}
+          </div>
+
+          {/* MRR & NiceHash Rates */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "5px", fontSize: "9px" }}>
+            <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: "9px", padding: "6px" }}>
+              <div style={{ opacity: 0.6, textTransform: "uppercase", fontSize: "8px" }}>MRR Rate</div>
+              <div style={{ color: "#fbbf24", fontWeight: 600, marginTop: "3px" }}>
+                {finalMrrRate > 0 ? (
+                  <>
+                    {finalMrrRate.toFixed(8)}
+                    <span style={{ opacity: 0.5, fontSize: "7px" }}> BTC/{mrrUnit}/Day</span>
+                    {mrrMarketRate > 0 && (
+                      <span style={{ marginLeft: "4px", fontSize: "7px", opacity: 0.4, fontFamily: "monospace" }}>
+>>>>>>> Stashed changes
                         ({mrrUsedKey || mrrApiKey})
                       </span>
                     )}
                   </>
+<<<<<<< Updated upstream
                 ) : isLoadingMrrRate ? (
                   "Loading..."
                 ) : (
@@ -1253,10 +1603,97 @@ const MrrRigCard = ({
               <span style={{ opacity: 0.65 }}>User:</span>{" "}
               {rig.user || info?.username || "N/A"}
             </div>
+=======
+                ) : isLoadingMrrRate ? "Loading..." : "N/A"}
+              </div>
+            </div>
+            <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: "9px", padding: "6px" }}>
+              <div style={{ opacity: 0.6, textTransform: "uppercase", fontSize: "8px" }}>NiceHash</div>
+              <div style={{ color: "#60a5fa", fontWeight: 600, marginTop: "3px" }}>
+                {niceHashPriceInMrrUnit > 0 ? (
+                  <>
+                    {niceHashPriceInMrrUnit.toFixed(8)}
+                    <span style={{ opacity: 0.5, fontSize: "7px" }}> BTC/{mrrUnit}/Day</span>
+                  </>
+                ) : "N/A"}
+              </div>
+            </div>
+          </div>
+          {/* Time */}
+          <span style={{ alignItems: "flex-end", marginTop: "5px", display: "flex", justifyContent: "space-between", fontSize: "10px", color: "#94a3b8", padding: "3px 0" }}>🕐 Started: {formatRentalStartTime(rentalStartTime)}</span>
+        </section>
+
+        {/* ─── Right Column: Efficiency & Hashrates ─── */}
+        <section style={sectionStyle}>
+          <div style={{ display: "grid", gap: "4px" }}>
+            {/* Efficiency Bar */}
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "8px", marginBottom: "2px" }}>
+                <span style={{ opacity: 0.55, textTransform: "uppercase" }}>Efficiency</span>
+                <span style={{ fontSize: "16px", fontWeight: 800, color: effNum >= 100 ? "#22d3ee" : effNum > 90 ? "#10b981" : effNum > 50 ? "#fbbf24" : "#ef4444" }}>{eff}%</span>
+              </div>
+              <div style={{ width: "100%", height: "4px", background: "rgba(255,255,255,0.08)", borderRadius: "999px", overflow: "hidden" }}>
+                <div style={{ width: `${Math.min(100, Math.max(0, effNum || 0))}%`, height: "100%", background: getRoiColor(effNum), borderRadius: "999px" }} />
+              </div>
+            </div>
+            {/* Progress Bar */}
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "8px", marginBottom: "2px" }}>
+                <span style={{ opacity: 0.55, textTransform: "uppercase" }}>Progress</span>
+                <span style={{ fontSize: "16px", fontWeight: 800, color: timeProgress > 90 ? "#f87171" : "#8b5cf6" }}>{timeProgress.toFixed(2)}%</span>
+              </div>
+              <div style={{ width: "100%", height: "4px", background: "rgba(255,255,255,0.08)", borderRadius: "999px", overflow: "hidden" }}>
+                <div style={{ width: `${Math.min(100, Math.max(0, timeProgress || 0))}%`, height: "100%", background: "linear-gradient(90deg, #3b82f6, #8b5cf6)", borderRadius: "999px" }} />
+              </div>
+              {/* Time End*/}
+              <span style={{ alignItems: "flex-end", marginTop: "3px", display: "flex", justifyContent: "end", fontSize: "11px", color: "#94a3b8", padding: "3px 0" }}><CountdownTimer endTime={info?.endTime || rig.end} /></span>
+
+            </div>
+            {/* Hashrates Grid: Current, Average, Advertised, Target */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px", marginTop: "4px" }}>
+              <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: "6px", padding: "4px 6px" }}>
+                <div style={{ opacity: 0.55, textTransform: "uppercase", fontSize: "7px" }}>Current</div>
+                <div style={{ color: "#e2e8f0", fontWeight: 700, fontSize: "10px" }}>
+                  {cur > 0 ? formatHashrateWithUnit(cur, rig.hashrate?.suffix || rig.hashrate?.current?.type || 'H') : "0 H/s"}
+                </div>
+              </div>
+              <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: "6px", padding: "4px 6px" }}>
+                <div style={{ opacity: 0.55, textTransform: "uppercase", fontSize: "7px" }}>Average</div>
+                <div style={{ color: "#e2e8f0", fontWeight: 700, fontSize: "10px" }}>{info?.average || "0 N/A"}</div>
+              </div>
+              <div style={{ background: "rgba(63, 82, 255, 0.34)", borderRadius: "6px", padding: "4px 6px" }}>
+                <div style={{ opacity: 0.55, textTransform: "uppercase", fontSize: "7px" }}>Advertised</div>
+                <div style={{ color: "#ffca1d", fontWeight: 700, fontSize: "11px" }}>{info?.advertised || "0 N/A"}</div>
+              </div>
+              <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: "6px", padding: "4px 6px" }}>
+                <div style={{ opacity: 0.55, textTransform: "uppercase", fontSize: "7px" }}>Target</div>
+                <div style={{ color: isBehind ? "#f87171" : "#34d399", fontWeight: 700, fontSize: "10px" }}>
+                  {Math.max(0, targetHashrate).toFixed(2)} <small style={{ opacity: 0.5, fontSize: "8px" }}>{String(hSuffix).toUpperCase()}</small>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </section>
+      </div>
+
+      {/* ─── Pools (unchanged) ─── */}
+      {expandedPools.has(rig.id) && (info || rig.host) && (
+        <div className="rig-pool-summary" style={{ background: "rgba(255,255,255,0.04)", padding: "10px", borderRadius: "12px", fontSize: "10px", border: "1px solid rgba(255,255,255,0.06)" }}>
+          <div style={{ marginBottom: "8px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ opacity: 0.55, textTransform: "uppercase", letterSpacing: "0.05em" }}>Current Pool</div>
+            <button className="text-button" style={{ fontSize: "10px", color: "#60a5fa", padding: 0 }} onClick={() => onOpenPool?.(rig, info)}>Edit</button>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px" }}>
+            <div style={{ overflow: "hidden", textOverflow: "ellipsis" }}><span style={{ opacity: 0.65 }}>Host:</span> {rig.host || info?.stratumHost || "N/A"}</div>
+            <div><span style={{ opacity: 0.65 }}>Port:</span> {rig.port || info?.stratumPort || "N/A"}</div>
+            <div style={{ gridColumn: "span 2", overflow: "hidden", textOverflow: "ellipsis" }}><span style={{ opacity: 0.65 }}>User:</span> {rig.user || info?.username || "N/A"}</div>
+>>>>>>> Stashed changes
           </div>
         </div>
       )}
 
+<<<<<<< Updated upstream
       <div
         style={{
           display: "flex",
@@ -1281,11 +1718,19 @@ const MrrRigCard = ({
               onOpenPool?.(rig, info);
             }}
           >
+=======
+      {/* ─── Buttons (unchanged) ─── */}
+      <div style={{ display: "flex", gap: "8px", marginTop: "auto", flexWrap: "wrap" }}>
+        {(isMine || isRented) && (
+          <button className="btn-pro secondary" style={{ flex: "1 1 120px", fontSize: "10px", background: isRented ? "rgba(139, 92, 246, 0.16)" : "rgba(255,255,255,0.05)", color: isRented ? "#a78bfa" : "#94a3b8" }}
+            onClick={() => { togglePoolInfo(rig.id); onOpenPool?.(rig, info); }}>
+>>>>>>> Stashed changes
             {expandedPools.has(rig.id) ? "Hide Pools" : "Pools"}
           </button>
         )}
         {isMine && !isRented && (
           <>
+<<<<<<< Updated upstream
             <button
               className="btn-pro secondary"
               style={{
@@ -1349,6 +1794,27 @@ const MrrRigCard = ({
           disabled={loadingInfoIds.has(rig.id)}
           title="Reload Rig Details"
         >
+=======
+            <button className="btn-pro secondary" style={{ flex: "1 1 90px", fontSize: "10px", color: statusStr === "disabled" ? "#10b981" : "#f87171" }}
+              onClick={() => handleRigStatus(rig, statusStr === "disabled" ? "available" : "disabled")}>
+              {statusStr === "disabled" ? "Enable" : "Disable"}
+            </button>
+            <button className="btn-pro secondary" style={{ flex: "1 1 90px", fontSize: "10px" }}
+              onClick={() => handlePriceChange(rig)}>Price</button>
+          </>
+        )}
+        {isRented && info && onOpenCompletionCalculator && (
+          <button className="btn-pro secondary" style={{ flex: "1 1 90px", fontSize: "10px" }}
+            onClick={() => onOpenCompletionCalculator(rig, info)}>Calc</button>
+        )}
+        <button className="btn-pro" style={{ flex: "1 1 90px", fontSize: "10px" }}
+          onClick={() => fetchRigDetailInfo(rig)} disabled={loadingInfoIds.has(rig.id)}>
+          {loadingInfoIds.has(rig.id) ? "..." : "More"}
+        </button>
+        <button className="btn-pro secondary" style={{ width: "36px", fontSize: "12px", padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
+          onClick={() => { setEnrichedInfo((prev) => { const next = { ...prev }; delete next[rig.id]; return next; }); fetchRigDetailInfo(rig); }}
+          disabled={loadingInfoIds.has(rig.id)} title="Reload Rig Details">
+>>>>>>> Stashed changes
           {loadingInfoIds.has(rig.id) ? "..." : "↻"}
         </button>
       </div>

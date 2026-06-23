@@ -1,7 +1,11 @@
 import { useEffect, useState, useCallback } from 'react';
 import Modal from '../Modal';
 import { MrrPoolsTable, CountdownTimer } from './MiningRigRental'; // Import CountdownTimer
+<<<<<<< Updated upstream
 import MonitorDbEditor from '../MonitorDbEditor';
+=======
+import MonitorDbEditor from '../utils/MonitorDbEditor';
+>>>>>>> Stashed changes
 import { poolHelpers as ph } from '../../core/poolUtils'; // Import poolHelpers
 
 function formatHashrateValue(rate) {

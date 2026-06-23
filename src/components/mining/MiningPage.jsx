@@ -5,8 +5,8 @@ import { RentedRigProvider } from "../mrr/RentedRigContext.jsx";
 import {
   MiningWorkspaceProvider,
   useMiningWorkspace,
-} from "./MiningWorkspaceProvider";
-import { btcValue, compactNumber, percentValue } from "./miningWorkspaceData";
+} from "./MiningWorkspaceProvider.jsx";
+import { btcValue, compactNumber, percentValue } from "./miningWorkspaceData.js";
 import { useState, useEffect, useMemo, useCallback } from "react";
 
 function StatCard({ label, value, accent }) {

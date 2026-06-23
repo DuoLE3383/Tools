@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import Modal from "./Modal";
+import Modal from "../Modal";
 
 /**
  * MonitorDbEditor Component
