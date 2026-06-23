@@ -419,7 +419,7 @@ export function calculatePriceComparison(
     return null;
 
   const yourMultiplier = getUnitMultiplier(yourUnit);
-  const marketMultiplier = getUnitMultiplier(marketUnit) * 0.93;
+  const marketMultiplier = getUnitMultiplier(marketUnit) * 0.93; // Adjust MRR price by 7% to account for fees
   if (yourMultiplier <= 0 || marketMultiplier <= 0) return null;
 
   // Prices are quoted per unit per day. Normalize both to price per H/s/day.

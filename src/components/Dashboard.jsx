@@ -6,7 +6,7 @@ import { NiceHashOrderProvider } from "./nicehash/NiceHashContext.jsx";
 import HashrateCalculator from "./HashrateCalculator";
 
 export default function Dashboard({
-  state,
+  state,  
   dispatch,
   callApi,
   handleLogout,
@@ -120,8 +120,8 @@ export default function Dashboard({
           borderRadius: "16px",
           padding: "24px",
           height: "850px",
-          minHeight: "500px",
-          overflow: "hidden",
+          minHeight: "200px",
+          overflow: "auto",
         }}
       >
         <Pools
