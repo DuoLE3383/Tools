@@ -83,7 +83,7 @@ export const TelegramTemplates = {
       `${divider}\n` +
       `<b>Paid:</b> <code> ${escapeHtml(info.price.paid)}</code> ${escapeHtml(info.price?.currency)}\n` +
       `<b>Efficiency:</b> <b>${escapeHtml(info.percent)}%</b> \n` +
-      `Adv: <code>${escapeHtml(ads)}</code>\n` +
+      `📢 Adv: <code>${escapeHtml(ads)}</code>\n` +
       `<b>Remaining:</b> ${escapeHtml(rem)}\n` +
       `<b>Target to 100%:</b> ${escapeHtml(info.targetHashrate || "N/A")}`
     );
@@ -97,7 +97,7 @@ export const TelegramTemplates = {
       `${formatRig(r)}\n` +
       `<b>Algo:</b> <code>${escapeHtml(algo)}</code>\n` +
       `<b>Status:</b> 0 H/s (Target: ${escapeHtml(info.targetHashrate)})\n` +
-      `Adv: <code>${escapeHtml(ads)}</code>\n` +
+      `📢 Adv: <code>${escapeHtml(ads)}</code>\n` +
       `<b>Rental:</b> <code>${escapeHtml(r.id)}</code>`
     );
   },
@@ -111,7 +111,7 @@ export const TelegramTemplates = {
       `<b>Algo:</b> <code>${escapeHtml(algo)}</code>\n` +
       `<b>Efficiency:</b> <b>${escapeHtml(efficiency)}%</b> (Diff: ${escapeHtml(diff)}%)\n` +
       `<b>Average:</b> ${escapeHtml(info.niceAverageHashrate)}\n` +
-      `Adv: <code>${escapeHtml(ads)}</code>\n` +
+      `📢 Adv: <code>${escapeHtml(ads)}</code>\n` +
       `<b>Target to 100%:</b> ${escapeHtml(target.toFixed(2))} ${escapeHtml(info.hashrate.suffix || "")}`
     );
   },
@@ -124,7 +124,7 @@ export const TelegramTemplates = {
       `${formatRig(r)}\n` +
       `<b>Algo:</b> <code>${escapeHtml(algo)}</code>\n` +
       `<b>Initial Eff:</b> ${escapeHtml(efficiency)}%\n` +
-      `Adv: <code>${escapeHtml(ads)}</code>\n` +
+      `📢 Adv: <code>${escapeHtml(ads)}</code>\n` +
       `<b>Paid:</b> <code> ${escapeHtml(info.price.paid)}</code> ${escapeHtml(info.price?.currency)}\n` +
       `<b>Time:</b> ${formatTimeRange(escapeHtml(info.startTime))}\n` +
       `<b>Target:</b> ${escapeHtml(target.toFixed(2))} ${escapeHtml(info.hashrate.suffix || "")}`
