@@ -1,6 +1,8 @@
+// MiningCoin.jsx - Add import and price modal
 import { useMemo, useState } from "react";
 import { btcValue, compactNumber, percentValue } from "./miningWorkspaceData";
 import { useMiningWorkspace } from "./MiningWorkspaceProvider";
+import CoinPriceModal from "./CoinPriceModal"; // <-- Add this import
 
 export default function MiningCoin({ onCall, nhClient = "BT" }) {
   const {
@@ -12,6 +14,8 @@ export default function MiningCoin({ onCall, nhClient = "BT" }) {
   } = useMiningWorkspace();
   const [query, setQuery] = useState("");
   const [onlyProfitable, setOnlyProfitable] = useState(true);
+  const [selectedCoin, setSelectedCoin] = useState(null);
+  const [priceModalOpen, setPriceModalOpen] = useState(false);
 
   const visibleRows = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -44,11 +48,22 @@ export default function MiningCoin({ onCall, nhClient = "BT" }) {
   const bestRow = visibleRows[0] || null;
   const profitableCount = combinedRows.filter((row) => row.spread > 0).length;
 
+  // Handle coin click - open price modal
+  const handleCoinClick = (coin) => {
+    setSelectedCoin({
+      symbol: coin,
+      name: coin,
+      coinId: coin.toLowerCase(),
+    });
+    setPriceModalOpen(true);
+  };
+
   return (
     <section
       className="mining-coin-page"
       style={{ display: "grid", gap: "14px" }}
     >
+      {/* ... header section ... */}
       <div
         style={{
           display: "flex",
@@ -98,6 +113,7 @@ export default function MiningCoin({ onCall, nhClient = "BT" }) {
         </div>
       </div>
 
+      {/* ... summary tiles ... */}
       <div
         style={{
           display: "grid",
@@ -129,6 +145,7 @@ export default function MiningCoin({ onCall, nhClient = "BT" }) {
         />
       </div>
 
+      {/* ... search input ... */}
       <div
         style={{
           display: "flex",
@@ -157,6 +174,7 @@ export default function MiningCoin({ onCall, nhClient = "BT" }) {
         )}
       </div>
 
+      {/* ... table ... */}
       <div
         style={{
           overflowX: "auto",
@@ -271,32 +289,60 @@ export default function MiningCoin({ onCall, nhClient = "BT" }) {
                     </div>
                   </BodyCell>
                   <BodyCell align="left">
-                    <div
-                      style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}
-                    >
-                      {row.heroCoins.map((coin) => (
-                        <span
-                          key={coin}
-                          style={{
-                            border: "1px solid rgba(96,165,250,0.22)",
-                            color: "#bfdbfe",
-                            background: "rgba(37,99,235,0.12)",
-                            borderRadius: "999px",
-                            padding: "2px 6px",
-                            fontSize: "10px",
-                          }}
-                        >
-                          {coin}
-                        </span>
-                      ))}
-                    </div>
-                  </BodyCell>
+  <div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
+    {row.heroCoins && row.heroCoins.length > 0 ? (
+      row.heroCoins.map((coin) => (
+        <button
+          key={coin}
+          onClick={() => handleCoinClick(coin)}
+          style={{
+            border: "1px solid rgba(96,165,250,0.22)",
+            color: "#bfdbfe",
+            background: "rgba(37,99,235,0.12)",
+            borderRadius: "999px",
+            padding: "2px 8px",
+            fontSize: "10px",
+            cursor: "pointer",
+            transition: "all 0.2s",
+          }}
+          onMouseEnter={(e) => {
+            e.target.style.background = "rgba(37,99,235,0.25)";
+            e.target.style.borderColor = "rgba(96,165,250,0.5)";
+          }}
+          onMouseLeave={(e) => {
+            e.target.style.background = "rgba(37,99,235,0.12)";
+            e.target.style.borderColor = "rgba(96,165,250,0.22)";
+          }}
+        >
+          {coin} 💰
+        </button>
+      ))
+    ) : (
+      <span style={{ color: "#64748b", fontSize: "10px" }}>No coins</span>
+    )}
+    {/* Show count if many coins */}
+    {row.heroCoins && row.heroCoins.length > 10 && (
+      <span style={{ color: "#64748b", fontSize: "9px", padding: "2px 4px" }}>
+        +{row.heroCoins.length - 10} more
+      </span>
+    )}
+  </div>
+</BodyCell>
                 </tr>
               ))
             )}
           </tbody>
         </table>
       </div>
+
+      {/* Price Modal */}
+      <CoinPriceModal
+        isOpen={priceModalOpen}
+        onClose={() => setPriceModalOpen(false)}
+        coin={selectedCoin}
+        onCall={onCall}
+        priceSource="coingecko"
+      />
     </section>
   );
 }

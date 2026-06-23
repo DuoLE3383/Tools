@@ -1,6 +1,6 @@
 const { useEffect, useMemo, useState } = React;
-const HASH_UNITS = ["H", "KH", "MH", "GH", "TH", "PH", "EH", "ZH"];
-const SOL_UNITS = ["Sol", "KSol", "MSol", "GSol", "TSol", "PSol", "ESol"];
+const HASH_UNITS = ["H", "KH", "MH", "GH", "TH", "PH", "EH"];
+const SOL_UNITS = ["Sol", "KSol", "MSol", "GSol"];
 const toNumber = (value) => {
   if (value === null || value === undefined || value === "") return 0;
   const parsed = typeof value === "number" ? value : parseFloat(String(value));
