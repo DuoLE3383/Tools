@@ -9,7 +9,7 @@ import {
   getStatusClass,
   getRoiColor,
   getNiceHashPriceValue,
-} from "../core/mrrUtils.js";
+} from "../../core/mrrUtils.js";
 import {
   HASHRATE_SUFFIXES,
   getAlgoDisplayName,
@@ -19,7 +19,7 @@ import {
   calculatePriceComparison,
   getMrrAlgoKey,
   isAsicBoost,
-} from "../core/mapping.js";
+} from "../../core/mapping.js";
 
 // ─── Helper: Format hashrate with unit ──────────────────────────────────
 function formatHashrateWithUnit(value, unit) {
