@@ -262,8 +262,8 @@ export default function App() {
           <div className="brand-block">
             {/* <h2>Ben Tre Mining Tool</h2> */}
             <p className="subtitle">
-              A powerful desktop tool for Nicehash miners. Manage rigs, monitor
-              stats, and automate hashpower purchases with ease.
+              A powerful tool for Nicehash miners. Manage rigs, monitor
+              stats, and automate hashpower.
             </p>
           </div>
           <div

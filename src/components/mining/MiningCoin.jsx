@@ -1,9 +1,5 @@
 import { useMemo, useState } from "react";
-import {
-  btcValue,
-  compactNumber,
-  percentValue,
-} from "./miningWorkspaceData";
+import { btcValue, compactNumber, percentValue } from "./miningWorkspaceData";
 import { useMiningWorkspace } from "./MiningWorkspaceProvider";
 
 export default function MiningCoin({ onCall, nhClient = "BT" }) {
