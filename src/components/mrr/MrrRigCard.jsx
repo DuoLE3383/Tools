@@ -128,8 +128,8 @@ const MrrRigCard = ({
   const cur = Number.isFinite(parseFloat(rawCur)) ? parseFloat(rawCur) : 0;
 
   // ── Algorithm & units ──
-  const rawAlgo = info?.algo || rig.algo || rig.algorithm || rig.type || algoName;
-  const normalizedAlgo = normalizeAlgoForNiceHash(rawAlgo || algoName);
+  const rawAlgo = info?.algo || info?.normalized?.algo || rig.algo || rig.algorithm || rig.type || algoName;
+  const normalizedAlgo = normalizeAlgoForNiceHash(rawAlgo);
   const mrrUnit = getMrrAlgorithmUnit(normalizedAlgo || rawAlgo);
   const mrrApiKey = getMrrAlgoKey(normalizedAlgo);
   const isAsicBoostAlgo = isAsicBoost(normalizedAlgo);
@@ -359,7 +359,7 @@ const MrrRigCard = ({
     ? (adsVal * (totalMs / 1000) - avgVal * (elapsedMs / 1000)) / ((totalMs - elapsedMs) / 1000)
     : 0;
   const isBehind = targetHashrate > adsVal;
-  const hSuffix = info?.hashrate?.suffix || rig.hashrate?.advertised?.type || info?.hashrate_unit || info?.unit || mrrUnit || "";
+  const hSuffix = info?.hashrate?.suffix || rig.hashrate?.advertised?.type || info?.hashrate_unit || info?.unit || mrrUnit || myNhUnit || "";
 
   const getEfficiencyAccent = (efficiency) => {
     if (!Number.isFinite(efficiency)) return "rgba(148, 163, 184, 0.18)";
@@ -488,7 +488,7 @@ const MrrRigCard = ({
                 {niceHashPriceInMrrUnit > 0 ? (
                   <>
                     {niceHashPriceInMrrUnit.toFixed(8)}
-                    <span style={{ opacity: 0.5, fontSize: "8px" }}> BTC/{mrrUnit}/Day</span>
+                    <span style={{ opacity: 0.5, fontSize: "8px" }}> BTC/{myNhUnit}/Day</span>
                   </>
                 ) : "N/A"}
               </div>
