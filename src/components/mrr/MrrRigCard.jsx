@@ -9,7 +9,7 @@ import {
   getStatusClass,
   getRoiColor,
   getNiceHashPriceValue,
-} from "./mrrUtils.js";
+} from "../../core/mrrUtils.js";
 import {
   HASHRATE_SUFFIXES,
   getAlgoDisplayName,
