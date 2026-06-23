@@ -7,7 +7,7 @@ const DUTCH_CACHE_TTL = 30000; // 30 seconds cache
 
 export function registerMiningStatsRoutes(app) {
   app.get("/api/v2/mining-stats/herominers_global", asyncHandler(async (req, res) => {
-    const { scrapeHeroMinersGlobal } = await import("../miningOpportunityNotifier.js");
+    const { scrapeHeroMinersGlobal } = await import("../mining/miningOpportunityNotifier.js");
     const force = req.query.force === "true";
     const result = await scrapeHeroMinersGlobal(force);
     res.json(result);
@@ -48,7 +48,7 @@ export function registerMiningStatsRoutes(app) {
   }));
 
   app.get("/api/v2/mining-stats/all", asyncHandler(async (req, res) => {
-    const { scrapeHeroMinersGlobal } = await import("../miningOpportunityNotifier.js");
+    const { scrapeHeroMinersGlobal } = await import("../mining/miningOpportunityNotifier.js");
     const force = req.query.force === "true";
     const [heroResult, dutchResult] = await Promise.allSettled([
       scrapeHeroMinersGlobal(force),

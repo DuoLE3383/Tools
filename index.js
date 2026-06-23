@@ -7,15 +7,16 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { setupWebSocket } from "./server/ws.js";
 import { registerRoutes } from "./server/routes.js";
-import { startMiningOpportunityScanner } from "./server/miningOpportunityNotifier.js";
+import { startMiningOpportunityScanner } from "./server/mining/miningOpportunities.js";
 import { createApp, initializeApp } from "./server/app.js";
 import { verifyToken } from "./server/auth.js";
 import { resolveNhClient, getNiceHashApp } from "./server/nh.js";
 import { mrrApiCall, initMrrConfigs } from "./server/mrr.js";
 import sqlite3 from "sqlite3";
 import { migrateOldCsvToDb } from "./server/migrate.js";
-import { initMiningTrainingDb } from "./server/miningTrainingDb.js";
+import { initMiningTrainingDb } from "./server/mining/miningTrainingDb.js";
 import { setDb } from "./server/db.js";
+import { getMiningStatus } from "./server/mining/miningTelegram.js";
 import { fetchAndSaveCoinPrices } from "./server/coinGecko/coinGeckoClient.js";
 // ✅ CORRECT IMPORT – use the scripts folder
 import { mergeDatabases } from "./data/merge.js";
@@ -58,6 +59,12 @@ app.get("/", (req, res) => {
       mining: "/api/v2/mining-stats",
     },
   });
+});
+
+// ✅ NEW: Endpoint to get latest mining opportunities
+app.get("/api/v2/mining/opportunities", async (req, res) => {
+  const data = await getMiningStatus();
+  res.status(data.success ? 200 : 500).json(data);
 });
 
 // ✅ NEW: Endpoint to clear the persistent cache
