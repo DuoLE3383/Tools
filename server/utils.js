@@ -1,6 +1,8 @@
+import { logger } from './logger.js';
+
 export const asyncHandler = fn => (req, res, next) => {
   Promise.resolve(fn(req, res, next)).catch(err => {
-    console.error(`[api:error] ${req.method} ${req.originalUrl}`, err);
+    logger.error(`[api:error] ${req.method} ${req.originalUrl}`, err);
     const status = err.statusCode || 500;
 
     if (status === 429 && err.headers) {
@@ -42,10 +44,10 @@ export function logRequestMiddleware(req, res, next) {
   const time = new Date().toLocaleTimeString();
   const body = req.method === 'GET' ? '' : ` body=${JSON.stringify(maskSensitive(req.body || {}))}`;
 
-  console.info(`[${time}] [api:${clientTag}] -> ${req.method} ${req.originalUrl}${body}`);
+  logger.info(`[${time}] [api:${clientTag}] -> ${req.method} ${req.originalUrl}${body}`);
 
   res.on('finish', () => {
-    console.info(`[${time}] [api:${clientTag}] <- ${res.statusCode} ${req.method} ${req.originalUrl} ${Date.now() - start}ms`);
+    logger.info(`[${time}] [api:${clientTag}] <- ${res.statusCode} ${req.method} ${req.originalUrl} ${Date.now() - start}ms`);
   });
 
   next();

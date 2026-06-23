@@ -2,6 +2,7 @@ import { db } from './db.js';
 import { mrrApiCall, mrrConfigs } from './mrr.js';
 import { resolveNhClient, getNiceHashApp, isAggregate, nhConfigs } from './nh.js';
 import { extractRentalInfo, extractRigInfo } from './utils.js';
+import { logger } from './logger.js';
 import { TELEGRAM_CONFIG, TelegramTemplates } from '../src/core/telegram.js';
 import { ALGO_DISPLAY_NAMES, HASHRATE_SUFFIXES, normalizeAlgoForNiceHash, getMrrAlgorithmUnit, calculatePriceComparison } from '../src/core/mapping.js';
 import { getBtcPriceData } from '../src/core/priceUtils.js';
@@ -158,7 +159,7 @@ let isMonitorRunning = false;
 const monitorInitTracker = new Set();
 async function maybeDelay(key) {
   if (!monitorInitTracker.has(key)) {
-    console.log(`[Monitor] First-time load delay (1s) for: ${key}`);
+    logger.debug(`[Monitor] First-time load delay (1s) for: ${key}`);
     await new Promise(r => setTimeout(r, 1000));
     monitorInitTracker.add(key);
   }
@@ -171,7 +172,7 @@ export async function getTelegramStatus() {
     const row = await dbGetAsync("SELECT value FROM settings WHERE key = 'telegram_enabled'");
     return { enabled: row ? row.value === 'true' : true };
   } catch (err) {
-    console.warn('[monitor:db] Failed to fetch telegram status:', err.message);
+    logger.warn('[monitor:db] Failed to fetch telegram status:', err.message);
     return { enabled: true };
   }
 }
@@ -269,14 +270,14 @@ export async function sendTelegramInternal(message) {
   await maybeDelay('sendTelegram');
   const status = await getTelegramStatus();
   if (!status.enabled) {
-    console.log('[telegram] Notifications are globally disabled, skipping message.');
+    logger.info('[telegram] Notifications are globally disabled, skipping message.');
     return { ok: true, description: 'Notifications disabled' };
   }
 
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
   if (!botToken || !chatId) {
-    console.warn('[telegram] Credentials missing');
+    logger.warn('[telegram] Credentials missing');
     throw new Error('Telegram credentials missing');
   }
 
@@ -307,7 +308,7 @@ export async function sendTelegramInternal(message) {
     }
   }
 
-  console.error(`[telegram] Failed after ${maxAttempts} attempts: ${lastError.message}`);
+  logger.error(`[telegram] Failed after ${maxAttempts} attempts: ${lastError.message}`);
   throw lastError;
 }
 
@@ -346,7 +347,7 @@ function dbAllAsync(sql, params = []) {
 // ==========================
 export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL') {
   if (isMonitorRunning) {
-    console.log(`[Monitor] Run already in progress (force=${forceNotify}), skipping to prevent nonce collisions...`);
+    logger.debug(`[Monitor] Run already in progress (force=${forceNotify}), skipping to prevent nonce collisions...`);
     return { notifications: [], summary: { error: 'Monitor already running' } };
   }
   isMonitorRunning = true;
@@ -488,10 +489,10 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
         target_100 REAL, order_diff REAL, last_updated INTEGER, last_notified INTEGER,
         low_hashrate_start INTEGER, zero_hashrate_start INTEGER, current_hashrate TEXT,
         average_hashrate TEXT, advertised_hashrate TEXT, price_paid TEXT
-      )`, (err) => { if (err) console.error(`[monitor:db] Failed to create rentals table: ${err.message}`); });
+      )`, (err) => { if (err) logger.error(`[monitor:db] Failed to create rentals table: ${err.message}`); });
 
         db.run(`CREATE TABLE IF NOT EXISTS rental_history (id TEXT PRIMARY KEY, start_time INTEGER)`,
-          (err) => { if (err) console.error(`[monitor:db] Failed to create rental_history table: ${err.message}`); });
+          (err) => { if (err) logger.error(`[monitor:db] Failed to create rental_history table: ${err.message}`); });
 
         db.run("DELETE FROM rental_history WHERE start_time < ?", [Date.now() - 172800000], () => resolve());
       });
@@ -502,11 +503,11 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
     const todayStartTs = todayStart.getTime();
 
     if (mrrAccts.length === 0) {
-      console.warn(`[${new Date().toLocaleTimeString()}] No accounts for scope: ${requestedScope}`);
+      logger.warn(`[${new Date().toLocaleTimeString()}] No accounts for scope: ${requestedScope}`);
       return { notifications: [], summary: { error: 'No accounts configured' } };
     }
 
-    console.log(`[${new Date().toLocaleTimeString()}] Starting check for ${mrrAccts.length} accounts...`);
+    logger.info(`[${new Date().toLocaleTimeString()}] Starting check for ${mrrAccts.length} accounts...`);
 
     // ------------------------------------------------------------------
     //  Process each MRR account
@@ -605,7 +606,7 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
               queueTelegramMessage(warnMsg, {
                 type: 'SYSTEM ALERT',
                 label: `High warning count ${acct}`,
-                onFailure: (e) => console.error(`[monitor] Warn alert failed: ${e.message}`)
+                onFailure: (e) => logger.error(`[monitor] Warn alert failed: ${e.message}`)
               });
               lastAlertTimes.set(alertKeyWarn, now);
             }
@@ -627,17 +628,17 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
           successfulAccts.push(acct);
         } else if (rigsRes.data) {
           const errMsg = rigsRes.data.data?.message || rigsRes.data.message || rigsRes.data.error || 'Unknown';
-          console.warn(`[${new Date().toLocaleTimeString()}] Account ${acct} rig list failed: ${errMsg}`);
+          logger.warn(`[${new Date().toLocaleTimeString()}] Account ${acct} rig list failed: ${errMsg}`);
           metric.error = true;
         }
 
         const soldRentalsRaw = extractArray(soldRes.data || {}).map(r => ({ ...r, __rentalSide: 'sold' }));
         const boughtRentalsRaw = extractArray(boughtRes.data || {}).map(r => ({ ...r, __rentalSide: 'bought' }));
         const allRentalsRaw = [...boughtRentalsRaw, ...soldRentalsRaw];
-        console.log(`[monitor:${acct}] rentals fetched: sold=${soldRentalsRaw.length}, bought=${boughtRentalsRaw.length}, rig-rented-flags=${harvestedRentalIds.size}`);
+        logger.info(`[monitor:${acct}] rentals fetched: sold=${soldRentalsRaw.length}, bought=${boughtRentalsRaw.length}, rig-rented-flags=${harvestedRentalIds.size}`);
 
         if (boughtRentalsRaw.length > 0) {
-          console.log(`[monitor:${acct}] Ignoring ${boughtRentalsRaw.length} bought rental(s) for seller heartbeat; only sold rentals affect ROI/active detail.`);
+          logger.info(`[monitor:${acct}] Ignoring ${boughtRentalsRaw.length} bought rental(s) for seller heartbeat; only sold rentals affect ROI/active detail.`);
         }
 
         const rentalsMap = new Map();
@@ -810,7 +811,7 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
             const cachedError = monitorNhPriceErrorCache.get(cacheKey);
             if (!cachedError || cachedError.message !== err.message || now - cachedError.ts >= 10 * 60 * 1000) {
               monitorNhPriceErrorCache.set(cacheKey, { message: err.message, ts: now });
-              console.warn(`[monitor] ROI price skipped for ${cacheKey}: ${err.message}`);
+              logger.warn(`[monitor] ROI price skipped for ${cacheKey}: ${err.message}`);
             }
           }
 
@@ -820,7 +821,7 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
           try {
             row = await dbGetAsync(`SELECT last_notified, low_hashrate_start, zero_hashrate_start FROM rentals WHERE id = ?`, [String(r.id)]);
           } catch (err) {
-            console.error(`[monitor:db] Failed to fetch rental ${r.id}: ${err.message}`);
+            logger.error(`[monitor:db] Failed to fetch rental ${r.id}: ${err.message}`);
             row = null;
           }
 
@@ -846,7 +847,7 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
                 [
                   String(r.id), r.name || r.id, acct, startT, endT, info.algo, displayTarget, orderDiff, now, lowHashStart, zeroHashStart,
                   currentHash, average, advertised, info.price.paid, lastNotified
-                ], (err) => { if (err) console.error(`[${new Date().toLocaleTimeString()}] [monitor:db] Upsert error for ${r.id}: ${err.message}`); }
+                ], (err) => { if (err) logger.error(`[${new Date().toLocaleTimeString()}] [monitor:db] Upsert error for ${r.id}: ${err.message}`); }
               );
               if (startT > 0) db.run("INSERT OR IGNORE INTO rental_history (id, start_time) VALUES (?, ?)", [String(r.id), startT]);
               resolve();
@@ -865,7 +866,7 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
                   queueTelegramMessage(msg, {
                     type: 'LOW EFFICIENCY',
                     label: `Low efficiency ${acct} ${r.id}`,
-                    onFailure: (e) => console.error(`[monitor] Low hashrate alert failed: ${e.message}`)
+                    onFailure: (e) => logger.error(`[monitor] Low hashrate alert failed: ${e.message}`)
                   });
                   lastAlertTimes.set(alertKey, now);
                 }
@@ -884,7 +885,7 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
                   queueTelegramMessage(msg, {
                     type: 'ZERO HASHRATE',
                     label: `Zero hashrate ${acct} ${r.id}`,
-                    onFailure: (e) => console.error(`[monitor] Zero hashrate alert failed: ${e.message}`)
+                    onFailure: (e) => logger.error(`[monitor] Zero hashrate alert failed: ${e.message}`)
                   });
                   lastAlertTimes.set(alertKey, now);
                 }
@@ -901,7 +902,7 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
                 queueTelegramMessage(msg, {
                   type: 'STARTUP ALERT',
                   label: `Startup alert ${acct} ${r.id}`,
-                  onFailure: (e) => console.error(`[monitor] Startup alert failed: ${e.message}`)
+                  onFailure: (e) => logger.error(`[monitor] Startup alert failed: ${e.message}`)
                 });
                 lastAlertTimes.set(startupKey, now);
               }
@@ -915,7 +916,7 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
                 queueTelegramMessage(msg, {
                   type: 'ALMOST COMPLETE',
                   label: `Completion alert ${acct} ${r.id}`,
-                  onFailure: (e) => console.error(`[monitor] Completion alert failed: ${e.message}`)
+                  onFailure: (e) => logger.error(`[monitor] Completion alert failed: ${e.message}`)
                 });
                 lastAlertTimes.set(completionKey, now);
               }
@@ -938,7 +939,7 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
                 queueTelegramMessage(msg, {
                   type: 'RENTAL SUCCESS',
                   label: `Completion success ${acct} ${r.id}`,
-                  onFailure: (e) => console.error(`[monitor] Success alert failed: ${e.message}`)
+                  onFailure: (e) => logger.error(`[monitor] Success alert failed: ${e.message}`)
                 });
                 lastAlertTimes.set(successKey, now);
               }
@@ -952,7 +953,7 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
                 queueTelegramMessage(msg, {
                   type: 'PERFECT 100%',
                   label: `Perfect efficiency ${acct} ${r.id}`,
-                  onFailure: (e) => console.error(`[monitor] Perfect efficiency alert failed: ${e.message}`)
+                  onFailure: (e) => logger.error(`[monitor] Perfect efficiency alert failed: ${e.message}`)
                 });
                 lastAlertTimes.set(perfectKey, now);
               }
@@ -1036,7 +1037,7 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
         if (!metric.error) successfulAccts.push(acct);
 
       } catch (err) {
-        console.error(`[${new Date().toLocaleTimeString()}] [monitor:error] Client ${acct}: ${err.message}`);
+        logger.error(`[${new Date().toLocaleTimeString()}] [monitor:error] Client ${acct}: ${err.message}`);
         metric.error = true;
         accountMetrics.push(metric);
       }
@@ -1050,13 +1051,13 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
       await dbRunAsync(
         `DELETE FROM rentals WHERE client IN (${clientPlaceholders}) AND id NOT IN (${activePlaceholders})`,
         [...successfulAcctList, ...Array.from(currentActiveRentalIds)]
-      ).catch((err) => console.warn(`[monitor:db] Failed to prune stale rentals: ${err.message}`));
+      ).catch((err) => logger.warn(`[monitor:db] Failed to prune stale rentals: ${err.message}`));
     } else if (successfulAcctList.length > 0) {
       const placeholders = successfulAcctList.map(() => '?').join(',');
       await dbRunAsync(
         `DELETE FROM rentals WHERE client IN (${placeholders})`,
         successfulAcctList
-      ).catch((err) => console.warn(`[monitor:db] Failed to clear stale rentals: ${err.message}`));
+      ).catch((err) => logger.warn(`[monitor:db] Failed to clear stale rentals: ${err.message}`));
     }
 
     const rented24hRow = await dbGetAsync(
@@ -1116,7 +1117,7 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
             await dbRunAsync(`DELETE FROM rentals WHERE id = ?`, [fr.id]);
           },
           onFailure: async (e) => {
-            console.warn(`[${new Date().toLocaleTimeString()}] [monitor] Finish notice failed for ${fr.id}: ${e.message}`);
+            logger.warn(`[${new Date().toLocaleTimeString()}] [monitor] Finish notice failed for ${fr.id}: ${e.message}`);
             notifications.push({ id: fr.id, client: fr.client, status: 'Failed', type: 'Finished', error: e.message });
             await dbRunAsync(`DELETE FROM rentals WHERE id = ?`, [fr.id]);
           }
@@ -1139,7 +1140,7 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
 
     // Log the filtering
     if (currentActiveRentalIds.size !== rentedAll) {
-      console.log(`[Monitor] 📊 Real rentals: ${rentedAll} (${currentActiveRentalIds.size - rentedAll} ghost rentals filtered out)`);
+      logger.info(`[Monitor] 📊 Real rentals: ${rentedAll} (${currentActiveRentalIds.size - rentedAll} ghost rentals filtered out)`);
     }
 
     if (shouldSendCombinedSummary && (accountMetrics.length > 0 || activeRentalLines.length > 0)) {
@@ -1192,7 +1193,7 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
         }
         lastAlertTimes.set('global_summary', now);
       } catch (e) {
-        console.error(`[${new Date().toLocaleTimeString()}] [monitor] Summary send failed: ${e.message}`);
+        logger.error(`[${new Date().toLocaleTimeString()}] [monitor] Summary send failed: ${e.message}`);
       }
     }
 

@@ -4,7 +4,7 @@ import { resolveNhClient, getNiceHashApp, nhConfigs, isAggregate, normalizeAlgoF
 import { mrrApiCall } from "../mrr.js";
 import { db } from "../db.js";
 import { getAlgorithmUnit } from "../../src/core/mapping.js";
-import { saveToDatabase } from "./_helpers.js"; // see below
+import { saveToDatabase } from "./_helpers.js";
 
 export function registerNiceHashRoutes(app) {
   // Middleware for NiceHash client resolution
@@ -380,6 +380,16 @@ export function registerNiceHashRoutes(app) {
       res.status(500).json({ success: false, error: err.message });
     } finally {
       await driver.quit();
+    }
+  }));
+
+  // ─── Training / Snapshots ───────────────────────────────────
+  app.post("/api/v2/mining/training-snapshot", asyncHandler(async (req, res) => {
+    try {
+      await saveToDatabase('mining_snapshot.json', req.body);
+      res.json({ success: true, message: "Snapshot saved." });
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
     }
   }));
 }

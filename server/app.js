@@ -8,6 +8,7 @@ import { initNhConfigs, nhConfigs, getNiceHashApp, resolveNhClient } from './nh.
 import { initMrrConfigs, mrrConfigs, initNonces, syncMrrClock, mrrApiCall } from './mrr.js';
 import { registerRoutes } from './routes.js';
 import { corsMiddleware, logRequestMiddleware } from './utils.js';
+import { logger } from './logger.js';
 import { runRentalMonitor } from './monitor.js';
 import { startMiningOpportunityScanner } from './miningOpportunityNotifier.js';
 import { authMiddleware, generateToken } from './auth.js';
@@ -52,7 +53,7 @@ export function createApp({ distPath }) {
 
 export async function initializeApp(env) {
   try {
-    console.log('🚀 Initializing system...');
+    logger.info('🚀 Initializing system...');
     initNhConfigs(env); // Initialize NiceHash configurations
     initMrrConfigs(env); // Initialize MiningRigRentals configurations
 
@@ -61,18 +62,18 @@ export async function initializeApp(env) {
     const missing = requiredAuth.filter(key => !env[key]);
 
     if (missing.length > 0) {
-      console.warn(`⚠️  WARNING: Missing authentication variables: ${missing.join(', ')}. Login will fail.`);
+      logger.warn(`⚠️  WARNING: Missing authentication variables: ${missing.join(', ')}. Login will fail.`);
     } else {
-      console.log('✅ Auth Configuration Loaded:');
-      console.log(`   - ADMIN_USER: ${env.ADMIN_USER}`);
-      console.log(`   - JWT_SECRET: ${env.JWT_SECRET ? '******** (Set)' : 'MISSING'}`);
-      console.log(`   - ADMIN_PASS: ${env.ADMIN_PASS ? '******** (Set)' : 'MISSING'}`);
+      logger.info('✅ Auth Configuration Loaded:');
+      logger.info(`   - ADMIN_USER: ${env.ADMIN_USER}`);
+      logger.info(`   - JWT_SECRET: ${env.JWT_SECRET ? '******** (Set)' : 'MISSING'}`);
+      logger.info(`   - ADMIN_PASS: ${env.ADMIN_PASS ? '******** (Set)' : 'MISSING'}`);
     }
 
     await initNonces();
     await syncMrrClock();
   } catch (error) {
-    console.error('❌ Critical Initialization Failure:', error.message);
+    logger.error('❌ Critical Initialization Failure:', error.message);
     process.exit(1);
   }
 
@@ -85,7 +86,7 @@ export async function initializeApp(env) {
     try {
       await runRentalMonitor();
     } catch (err) {
-      console.error('[Monitor] Loop error:', err.message);
+      logger.error('[Monitor] Loop error:', err.message);
     } finally {
       // Schedule next run in 60s
       setTimeout(startMonitor, 60000);
@@ -97,7 +98,7 @@ export async function initializeApp(env) {
     runRentalMonitor(true)
       .then(() => startMonitor())
       .catch((err) => {
-        console.error('[Monitor] Force heartbeat failed, starting normal loop anyway:', err.message);
+        logger.error('[Monitor] Force heartbeat failed, starting normal loop anyway:', err.message);
         startMonitor();
       });
   }, 15000);
@@ -109,10 +110,10 @@ export async function initializeApp(env) {
     const { client } = resolveNhClient('BT');
     if (client) {
       getNiceHashApp(client).public.getTime().then((t) => {
-        console.log('✅ Connection verified. Server Time:', new Date(t).toLocaleString());
-      }).catch((e) => console.warn('⚠️ NiceHash connectivity check failed on start:', e.message));
+        logger.info('✅ Connection verified. Server Time:', new Date(t).toLocaleString());
+      }).catch((e) => logger.warn('⚠️ NiceHash connectivity check failed on start:', e.message));
     }
   } catch (error) {
-    console.error('❌ Initialization Error:', error.message);
+    logger.error('❌ Initialization Error:', error.message);
   }
 }

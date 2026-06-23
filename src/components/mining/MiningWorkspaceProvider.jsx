@@ -158,7 +158,6 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "BT" }) {
             // Training snapshot persistence should never block refresh.
           }
         }
-
         setLastUpdated(new Date().toISOString());
       } catch (err) {
         setError(err.message || "Failed to load mining workspace data");
