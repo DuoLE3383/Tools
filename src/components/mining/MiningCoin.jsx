@@ -4,7 +4,7 @@ import { btcValue, compactNumber, percentValue } from "./miningWorkspaceData";
 import { useMiningWorkspace } from "./MiningWorkspaceProvider";
 import CoinPriceModal from "./CoinPriceModal"; // <-- Add this import
 
-export default function MiningCoin({ onCall, nhClient = "BT" }) {
+export default function MiningCoin({ onCall, nhClient = "VN" }) {
   const {
     routes: combinedRows,
     loading,
@@ -22,7 +22,9 @@ export default function MiningCoin({ onCall, nhClient = "BT" }) {
   useEffect(() => {
     const checkTelegram = async () => {
       try {
-        const result = await onCall("/api/v2/telegram/status", { silent: true });
+        const result = await onCall("/api/v2/telegram/status", { 
+          query: { client: nhClient },
+          silent: true });
         setTelegramStatus(result);
       } catch {
         setTelegramStatus({ error: "Failed to check" });
@@ -31,7 +33,7 @@ export default function MiningCoin({ onCall, nhClient = "BT" }) {
     checkTelegram();
     const interval = setInterval(checkTelegram, 30000);
     return () => clearInterval(interval);
-  }, [onCall]);
+  }, [onCall, nhClient]);
 
   const visibleRows = useMemo(() => {
     const needle = query.trim().toLowerCase();
