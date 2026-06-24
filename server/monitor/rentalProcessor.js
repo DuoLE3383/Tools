@@ -1,3 +1,4 @@
+// rentalProcessor.js - Complete upgraded version
 import { dbRunAsync, dbGetAsync } from "./dbHelpers.js";
 import { logger } from "../logger.js";
 import { TELEGRAM_CONFIG, TelegramTemplates } from "../../src/core/telegram.js";
@@ -8,7 +9,7 @@ import {
   getAlgoDisplayName,
 } from "../../src/core/mapping.js";
 import { getBtcPriceData } from "../../src/core/priceUtils.js";
-import { getMonitorNhActiveOrders, sendTelegramInternal } from "./helpers.js";
+import { getMonitorNhActiveOrders, sendTelegramInternal } from "../monitor/helpers.js";
 import { extractRentalInfo } from "../utils.js";
 
 const { ALERT_COOLDOWN_MS } = TELEGRAM_CONFIG;
@@ -17,13 +18,27 @@ const lastAlertTimes = new Map();
 const monitorNhPriceCache = new Map();
 const monitorNhPriceErrorCache = new Map();
 
+// ============================================================
+// HELPER: Format hashrate for display
+// ============================================================
+function formatHashrate(value, suffix) {
+  const num = Number.parseFloat(value || 0);
+  if (!Number.isFinite(num) || num <= 0) return "0 H/s";
+  
+  const units = ["H/s", "KH/s", "MH/s", "GH/s", "TH/s", "PH/s", "EH/s", "ZH/s"];
+  let idx = 0;
+  let scaled = num;
+  while (scaled >= 1000 && idx < units.length - 1) {
+    scaled /= 1000;
+    idx += 1;
+  }
+  const unit = suffix || units[idx] || "H/s";
+  return `${scaled.toFixed(2)} ${unit}`;
+}
+
 /**
  * Checks if a rental is actively mining and has data, or is new enough to be considered valid.
  * This filters out "ghost" rentals that are stuck in a rented state without ever starting.
- * @param {object} rental - The raw rental object from MRR.
- * @param {object} info - The extracted and normalized rental info.
- * @param {number} now - The current timestamp.
- * @returns {boolean} - True if the rental is considered real.
  */
 export function isRealRental(rental, info, now = Date.now()) {
     if (!rental || !info) {
@@ -42,6 +57,7 @@ export function isRealRental(rental, info, now = Date.now()) {
     const averageHash = parseFloat(info.hashrate?.average || 0);
     const paidAmount = parseFloat(info.price?.paid || 0);
 
+    // If there's any activity or payment, it's real
     if (paidAmount > 0 || currentHash > 0 || averageHash > 0) {
         logger.debug(`[monitor:isRealRental] Rental ${rentalId} is real (has paid amount or hashrate).`);
         return true;
@@ -50,6 +66,10 @@ export function isRealRental(rental, info, now = Date.now()) {
     // For new rentals, check their age
     const rawStart = info.startTime || rental.start_time || rental.startTime || rental.created_at || 0;
     if (!rawStart) {
+        if (parseFloat(rental.price || 0) > 0) {
+            logger.debug(`[monitor:isRealRental] Rental ${rentalId} is real (has price).`);
+            return true;
+        }
         logger.debug(`[monitor:isRealRental] Rental ${rentalId} is NOT real (no activity and no start time).`);
         return false;
     }
@@ -57,9 +77,17 @@ export function isRealRental(rental, info, now = Date.now()) {
     const startT = new Date(String(rawStart).endsWith("UTC") ? rawStart : `${rawStart} UTC`).getTime();
     const ageMs = now - startT;
 
-    // Grace period: if it started in the last 5 minutes, consider it real.
-    if (ageMs > 0 && ageMs < 5 * 60 * 1000) {
-        logger.debug(`[monitor:isRealRental] Rental ${rentalId} is considered real (in 5-minute grace period).`);
+    // Grace period: if it started in the last hour, consider it real.
+    if (ageMs > 0 && ageMs < 60 * 60 * 1000) {
+        logger.debug(`[monitor:isRealRental] Rental ${rentalId} is considered real (in 1-hour grace period).`);
+        return true;
+    }
+
+    // If it has a price or advertised hashrate, consider it real
+    const advertisedHash = parseFloat(info.hashrate?.advertised || 0);
+    const price = parseFloat(info.price?.paid || info.price?.price || rental.price || 0);
+    if (advertisedHash > 0 || price > 0) {
+        logger.debug(`[monitor:isRealRental] Rental ${rentalId} is real (has advertised hashrate or price).`);
         return true;
     }
 
@@ -153,15 +181,41 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
     const elapsedMs = startT > 0 ? Math.max(0, Math.min(now - startT, totalDurationMs)) : 0;
     const remainingMs = endT > 0 ? Math.max(0, endT - now) : 0;
 
-    const advertised = parseFloat(info.hashrate.advertised);
-    const average = parseFloat(info.hashrate.average);
+    // ============================================================
+    // EXTRACT HASHRATE VALUES WITH PROPER FALLBACKS
+    // ============================================================
+    const advertised = parseFloat(info.hashrate?.advertised || 0);
+    const average = parseFloat(info.hashrate?.average || 0);
+    const current = parseFloat(info.hashrate?.current || rental?.hashrate?.current || 0);
+    const suffix = info.hashrate?.suffix || "H/s";
+
+    // If current is 0 but average > 0, use average as current
+    const effectiveCurrent = current > 0 ? current : (average > 0 ? average : 0);
+    
+    // ============================================================
+    // FORMAT HASHRATE VALUES FOR DISPLAY
+    // ============================================================
+    const currentDisplay = effectiveCurrent > 0 
+        ? formatHashrate(effectiveCurrent, suffix)
+        : "0 H/s";
+    
+    const avgDisplay = average > 0 
+        ? formatHashrate(average, suffix)
+        : "0 H/s";
+    
+    const advDisplay = advertised > 0 
+        ? formatHashrate(advertised, suffix)
+        : "0 H/s";
+
+    // Log for debugging
+    logger.debug(`[monitor] ${rental.id} - Current: ${currentDisplay}, Avg: ${avgDisplay}, Adv: ${advDisplay}`);
+
     const totalExpectedHashes = advertised * (totalDurationMs / 1000);
     const actualHashesDone = average * (elapsedMs / 1000);
     const remainingHashesNeeded = totalExpectedHashes - actualHashesDone;
     const requiredHashrate = remainingMs > 0 ? remainingHashesNeeded / (remainingMs / 1000) : 0;
     const displayTarget = Number.isFinite(requiredHashrate) && requiredHashrate > 0 ? requiredHashrate : 0;
     const efficiency = parseFloat(info.percent || 0);
-    const currentHash = info.hashrate.current;
 
     const priceRoi = await getPriceRoi(info, acct, now);
     const orderDiff = priceRoi !== null && !isNaN(priceRoi) ? priceRoi : (100 - efficiency).toFixed(1);
@@ -177,7 +231,7 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET 
            name=excluded.name, client=excluded.client, algo=excluded.algo, order_diff=excluded.order_diff, start_time=excluded.start_time, end_time=excluded.end_time, target_100=excluded.target_100, last_updated=excluded.last_updated, low_hashrate_start=excluded.low_hashrate_start, zero_hashrate_start=excluded.zero_hashrate_start, current_hashrate=excluded.current_hashrate, average_hashrate=excluded.average_hashrate, advertised_hashrate=excluded.advertised_hashrate, price_paid=excluded.price_paid`,
-        [String(rental.id), liveRig?.name || rental.name || rental.id, acct, startT, endT, info.algo, displayTarget, orderDiff, now, lowHashStart, zeroHashStart, currentHash, average, advertised, info.price.paid, lastNotified]
+        [String(rental.id), liveRig?.name || rental.name || rental.id, acct, startT, endT, info.algo, displayTarget, orderDiff, now, lowHashStart, zeroHashStart, effectiveCurrent, average, advertised, info.price.paid, lastNotified]
     ).catch(err => logger.error(`[monitor:db] Upsert error for ${rental.id}: ${err.message}`));
 
     if (startT > 0) {
@@ -187,7 +241,7 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
     // --- Alerts ---
     if (efficiency < 50) {
         if (lowHashStart === 0) lowHashStart = now;
-        if (now - lowHashStart >= 900000) { // 15 minutes
+        if (now - lowHashStart >= 900000) {
             const alertKey = `${rental.id}_low_50`;
             if (now - (lastAlertTimes.get(alertKey) || 0) > ALERT_COOLDOWN_MS) {
                 const msg = TelegramTemplates.efficiency(acct, rental, info, efficiency, displayTarget, info.algo);
@@ -199,12 +253,13 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
         lowHashStart = 0;
     }
 
-    if (currentHash === 0) {
+    const isTrulyStalled = effectiveCurrent === 0 && average === 0;
+    if (effectiveCurrent === 0) {
         if (zeroHashStart === 0) zeroHashStart = now;
-        if (now - zeroHashStart >= 600000) { // 10 minutes
+        if (now - zeroHashStart >= 600000 && isTrulyStalled) {
             const alertKey = `${rental.id}_zero_10m`;
             if (now - (lastAlertTimes.get(alertKey) || 0) > ALERT_COOLDOWN_MS) {
-                const msg = TelegramTemplates.zeroHashrate(acct, rental, info, info.algo);
+                const msg = TelegramTemplates.zeroHashrate(acct, rental, info, info.algo, advDisplay);
                 sendTelegramNotification(msg, { type: "ZERO HASHRATE", label: `Zero hashrate ${acct} ${rental.id}` });
                 lastAlertTimes.set(alertKey, now);
             }
@@ -226,10 +281,9 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
         const remM = Math.floor((remainingMs % 3600000) / 60000);
         const remStr = remainingMs <= 0 ? "Finished" : remD > 0 ? `${remD}d ${remH}h` : `${remH}h ${remM}m`;
 
-        // Create an enriched rental object that includes the rig name for the template
         const rentalForNotice = { ...rental, name: liveRig?.name || rental.name || rental.id };
 
-        const msg = TelegramTemplates.rentedNotice(hbType, rentalForNotice, info, acct, remStr, info.algo, info.niceAdvertisedHashrate);
+        const msg = TelegramTemplates.rentedNotice(hbType, rentalForNotice, info, acct, remStr, info.algo, advDisplay);
 
         sendTelegramNotification(msg, {
             type: hbType,
@@ -246,7 +300,7 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
         notifications.push({ id: rental.id, client: acct, status: "Skipped", reason: "Already notified" });
     }
 
-    // --- Build Summary Line ---
+    // --- Build Summary Line with PROPER HASHRATE VALUES ---
     const hasEndTime = endT > 0;
     const isFinished_s = remainingMs <= 0;
     const remD_s = Math.floor(remainingMs / 86400000);
@@ -256,23 +310,36 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
     const remStr_s = isFinished_s ? "Finished" : hasEndTime ? (remD_s > 0 ? `${remD_s}d ${remH_s}h` : `${remH_s}h ${remM_s}m`) : "Active";
     const perfEmoji = efficiency >= 100 ? "🎊" : efficiency >= 90 ? "🟢" : efficiency >= 70 ? "🔵" : efficiency >= 50 ? "🟡" : "🔴";
 
-    const currentSpeedVal = parseFloat(info.hashrate.current || 0);
-    const speedStatus = currentSpeedVal > 0 ? `<b>${info.niceHashrate}</b>` : "⚠️ <b>0 H/s</b>";
+    // ============================================================
+    // BUILD SPEED STATUS WITH WARNING IF NEEDED
+    // ============================================================
+    let speedStatus;
+    if (effectiveCurrent > 0) {
+        speedStatus = currentDisplay;
+    } else if (average > 0) {
+        // If current is 0 but average > 0, show average with warning
+        speedStatus = `⚠️ ${avgDisplay}`;
+    } else {
+        speedStatus = "⚠️ 0 H/s";
+    }
 
+    // ============================================================
+    // BUILD ACTIVE RENTAL LINE WITH CORRECT PARAMETER ORDER
+    // ============================================================
     const activeRentalLine = TelegramTemplates.activeRentalLine(
-        perfEmoji,
-        getAlgoDisplayName(info.algo),
-        liveRig?.name || rental.name || rental.id,
-        remStr_s,
-        efficiency,
-        orderDiff,
-        info.niceAverageHashrate,
-        info.niceAdvertisedHashrate,
-        speedStatus,
-        displayTarget,
-        "",
-        acct,
-        info
+        perfEmoji,                    // 1: perfEmoji
+        getAlgoDisplayName(info.algo), // 2: algo
+        liveRig?.name || rental.name || rental.id, // 3: name
+        remStr_s,                     // 4: remaining
+        efficiency,                   // 5: efficiency
+        orderDiff,                    // 6: roi
+        avgDisplay,                   // 7: avg (average hashrate)
+        advDisplay,                   // 8: ads (advertised hashrate)
+        speedStatus,                  // 9: cur (current hashrate with warning)
+        displayTarget,                // 10: target
+        "",                           // 11: extra
+        acct,                         // 12: client
+        info                          // 13: info
     );
 
     return {

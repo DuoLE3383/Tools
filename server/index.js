@@ -4,7 +4,7 @@ import http from 'http';
 import dotenv from 'dotenv';
 import { registerRoutes } from './server/routes.js';
 import { setupWebSocket } from './server/ws.js';
-import { startMiningOpportunityScanner } from './server/miningOpportunityNotifier.js';
+import { startMiningOpportunityScanner } from './server/miningOpportunities.js';
 
 // Load environment variables
 dotenv.config();

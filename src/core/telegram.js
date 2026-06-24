@@ -1,4 +1,4 @@
-// core/telegram.js
+// core/telegram.js - Complete upgraded version
 // Browser-safe Telegram templates - works in both Node.js and browser environments
 
 export const TELEGRAM_CONFIG = {
@@ -24,8 +24,16 @@ export function formatRig(r) {
 
 export function formatHashrate(value, suffix) {
   const num = Number.parseFloat(value || 0);
-  if (!Number.isFinite(num) || num <= 0) return "0 N/A";
-  return `${num.toFixed(2)} ${suffix || ""}`.trim();
+  if (!Number.isFinite(num) || num <= 0) return "0 H/s";
+  const units = ["H/s", "KH/s", "MH/s", "GH/s", "TH/s", "PH/s", "EH/s", "ZH/s"];
+  let idx = 0;
+  let scaled = num;
+  while (scaled >= 1000 && idx < units.length - 1) {
+    scaled /= 1000;
+    idx += 1;
+  }
+  const unit = suffix || units[idx] || "H/s";
+  return `${scaled.toFixed(2)} ${unit}`;
 }
 
 export function formatTimeRange(start, end) {
@@ -41,6 +49,9 @@ const divider = "━━━━━━━━━━━━━━";
 export const TelegramTemplates = {
   divider,
 
+  // ============================================================
+  // ACTIVE RENTAL LINE - FIXED PARAMETER ORDER
+  // ============================================================
   activeRentalLine: (
     perfEmoji,
     algo,
@@ -49,7 +60,7 @@ export const TelegramTemplates = {
     efficiency,
     roi,
     avg,
-    ads,
+    adv,
     cur,
     target,
     extra,
@@ -62,12 +73,23 @@ export const TelegramTemplates = {
 
     const displayName =
       shortName.length > 18 ? `${shortName.slice(0, 17)}...` : shortName;
+
+    // Format all values with proper display
+    const avgDisplay = avg || "0 H/s";
+    const advDisplay = adv || "0 H/s";
+    const curDisplay = cur || "0 H/s";
+    
+    // Ensure cur has warning if it's 0
+    const finalCurDisplay = curDisplay === "0 H/s" || curDisplay === "0" 
+      ? "⚠️ 0 H/s" 
+      : curDisplay;
+
     return (
       `${perfEmoji} <b>${escapeHtml(algo)}</b> 🔀 <code>${escapeHtml(client)}</code> | ${escapeHtml(displayName)}\n` +
-      `⏱ Remaining: <code> ${escapeHtml(remaining)}</code>\n` +
-      `📡 Cur: <code>${cur}</code> | 📈 Avg: <code>${avg}</code>\n` +
-      `📢 Adv: <code>${ads}</code> | 📊 Eff: <b>${typeof efficiency === "number" ? efficiency.toFixed(2) : efficiency}%</b>\n` +
-      `💰 Paid: <b><code>${escapeHtml(info.price?.paid)}</code> ${escapeHtml(info.price?.currency)}</b>\n` +
+      `⏱️ Remaining: <code> ${escapeHtml(remaining)}</code>\n` +
+      `📡 Cur: <code>${escapeHtml(finalCurDisplay)}</code> | 📈 Avg: <code>${escapeHtml(avgDisplay)}</code>\n` +
+      `📢 Adv: <code>${escapeHtml(advDisplay)}</code> | 📊 Eff: <b>${typeof efficiency === "number" ? efficiency.toFixed(2) : efficiency}%</b>\n` +
+      `💰 Paid: <b><code>${escapeHtml(info.price?.paid || "0.00")}</code> ${escapeHtml(info.price?.currency || "BTC")}</b>\n` +
       `${extra}${divider}\n`
     );
   },
@@ -192,6 +214,9 @@ export const TelegramTemplates = {
     );
   },
 
+  // ============================================================
+  // HEARTBEAT SUMMARY - FIXED
+  // ============================================================
   heartbeatSummary: (
     barChart,
     online,
@@ -204,8 +229,7 @@ export const TelegramTemplates = {
     rented24h,
     algos,
   ) => {
-    const rentedCount =
-      typeof rented === "number" ? rented : parseInt(rented) || 0;
+    const rentedCount = typeof rented === "number" ? rented : parseInt(rented) || 0;
 
     let summary = `📊 <b>SUMMARY</b> [${time || new Date().toLocaleTimeString()}]\n`;
     summary += `${divider}\n`;
@@ -220,12 +244,18 @@ export const TelegramTemplates = {
       summary += `${divider}\n`;
     }
 
-    if (lines && lines.length > 0) {
+    // Better handling of rental details
+    if (lines && Array.isArray(lines) && lines.length > 0) {
       summary += `<b>Active Rentals Detail:</b>\n\n`;
-      summary += lines.join("");
+      const validLines = lines.filter(line => line && line.trim() && line.trim() !== '');
+      if (validLines.length > 0) {
+        summary += validLines.join("");
+      } else {
+        summary += `<i>No active rentals with valid data</i>\n`;
+      }
     } else {
       summary += `<b>Active Rentals Detail:</b>\n\n`;
-      summary += `<i>No active rentals</i>\n`;
+      summary += `<i>No active rentals found</i>\n`;
     }
 
     return summary;
@@ -242,13 +272,6 @@ export const TelegramTemplates = {
 // SERVER-ONLY: Template reload function (safe for browser)
 // ============================================================
 
-/**
- * Reload templates - kept for backward compatibility.
- * In browser, this returns the existing templates.
- * In Node.js, you can override this with a server-side implementation.
- */
 export function reloadTelegramTemplates() {
-  // In browser environments, this just returns the static templates
-  // Server can override this by importing a separate server module
   return TelegramTemplates;
 }
