@@ -33,7 +33,7 @@ function formatHashrate(value, suffix) {
     idx += 1;
   }
   const unit = suffix || units[idx] || "H/s";
-  return `${scaled.toFixed(2)} ${unit}`;
+  return `${scaled.toFixed(2)}${unit.toUpperCase()}`;
 }
 
 /**
@@ -182,33 +182,33 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
     const remainingMs = endT > 0 ? Math.max(0, endT - now) : 0;
 
     // ============================================================
-    // EXTRACT HASHRATE VALUES WITH PROPER FALLBACKS
+    // EXTRACT HASHRATE VALUES - KEEP CURRENT AND AVERAGE SEPARATE
     // ============================================================
     const advertised = parseFloat(info.hashrate?.advertised || 0);
     const average = parseFloat(info.hashrate?.average || 0);
     const current = parseFloat(info.hashrate?.current || rental?.hashrate?.current || 0);
     const suffix = info.hashrate?.suffix || "H/s";
 
-    // If current is 0 but average > 0, use average as current
-    const effectiveCurrent = current > 0 ? current : (average > 0 ? average : 0);
-    
+    // Log raw values for debugging
+    logger.debug(`[monitor] ${rental.id} - Raw: current=${current}, avg=${average}, adv=${advertised}`);
+
     // ============================================================
     // FORMAT HASHRATE VALUES FOR DISPLAY
     // ============================================================
-    const currentDisplay = effectiveCurrent > 0 
-        ? formatHashrate(effectiveCurrent, suffix)
+    const currentDisplay = current > 0 
+        ? formatHashrate(current, suffix)
         : "0 H/s";
-    
+
     const avgDisplay = average > 0 
         ? formatHashrate(average, suffix)
         : "0 H/s";
-    
+
     const advDisplay = advertised > 0 
         ? formatHashrate(advertised, suffix)
         : "0 H/s";
 
-    // Log for debugging
-    logger.debug(`[monitor] ${rental.id} - Current: ${currentDisplay}, Avg: ${avgDisplay}, Adv: ${advDisplay}`);
+    // Log formatted values for debugging
+    logger.debug(`[monitor] ${rental.id} - Formatted: cur=${currentDisplay}, avg=${avgDisplay}, adv=${advDisplay}`);
 
     const totalExpectedHashes = advertised * (totalDurationMs / 1000);
     const actualHashesDone = average * (elapsedMs / 1000);
@@ -231,7 +231,7 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET 
            name=excluded.name, client=excluded.client, algo=excluded.algo, order_diff=excluded.order_diff, start_time=excluded.start_time, end_time=excluded.end_time, target_100=excluded.target_100, last_updated=excluded.last_updated, low_hashrate_start=excluded.low_hashrate_start, zero_hashrate_start=excluded.zero_hashrate_start, current_hashrate=excluded.current_hashrate, average_hashrate=excluded.average_hashrate, advertised_hashrate=excluded.advertised_hashrate, price_paid=excluded.price_paid`,
-        [String(rental.id), liveRig?.name || rental.name || rental.id, acct, startT, endT, info.algo, displayTarget, orderDiff, now, lowHashStart, zeroHashStart, effectiveCurrent, average, advertised, info.price.paid, lastNotified]
+        [String(rental.id), liveRig?.name || rental.name || rental.id, acct, startT, endT, info.algo, displayTarget, orderDiff, now, lowHashStart, zeroHashStart, current, average, advertised, info.price.paid, lastNotified]
     ).catch(err => logger.error(`[monitor:db] Upsert error for ${rental.id}: ${err.message}`));
 
     if (startT > 0) {
@@ -253,8 +253,8 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
         lowHashStart = 0;
     }
 
-    const isTrulyStalled = effectiveCurrent === 0 && average === 0;
-    if (effectiveCurrent === 0) {
+    const isTrulyStalled = current === 0 && average === 0;
+    if (current === 0) {
         if (zeroHashStart === 0) zeroHashStart = now;
         if (now - zeroHashStart >= 600000 && isTrulyStalled) {
             const alertKey = `${rental.id}_zero_10m`;
@@ -311,17 +311,22 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
     const perfEmoji = efficiency >= 100 ? "🎊" : efficiency >= 90 ? "🟢" : efficiency >= 70 ? "🔵" : efficiency >= 50 ? "🟡" : "🔴";
 
     // ============================================================
-    // BUILD SPEED STATUS WITH WARNING IF NEEDED
+    // BUILD SPEED STATUS - Use average as fallback when current is 0
     // ============================================================
     let speedStatus;
-    if (effectiveCurrent > 0) {
+    if (current > 0) {
+        // Current has data - use it
         speedStatus = currentDisplay;
     } else if (average > 0) {
-        // If current is 0 but average > 0, show average with warning
-        speedStatus = `⚠️ ${avgDisplay}`;
+        // Current is 0 but average has data - rental IS mining, use average
+        speedStatus = avgDisplay;
     } else {
+        // Both are 0 - truly stalled
         speedStatus = "⚠️ 0 H/s";
     }
+
+    // Log for debugging
+    logger.debug(`[monitor] ${rental.id} - SpeedStatus: ${speedStatus} (current=${current}, avg=${average})`);
 
     // ============================================================
     // BUILD ACTIVE RENTAL LINE WITH CORRECT PARAMETER ORDER
@@ -333,9 +338,9 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
         remStr_s,                     // 4: remaining
         efficiency,                   // 5: efficiency
         orderDiff,                    // 6: roi
+        speedStatus,                  // 9: cur (current hashrate - uses average as fallback)
         avgDisplay,                   // 7: avg (average hashrate)
         advDisplay,                   // 8: ads (advertised hashrate)
-        speedStatus,                  // 9: cur (current hashrate with warning)
         displayTarget,                // 10: target
         "",                           // 11: extra
         acct,                         // 12: client
