@@ -40,7 +40,7 @@ export default function CoinPriceModal({
     try {
       const endpoint = source === "coingecko" 
         ? "/api/v2/price/coingecko"
-        : "/api/v2/price/mcm";
+        : "/api/v2/price/cmc";
       
       const query = source === "coingecko"
         ? { coinId: coin.coinId || coin.symbol, vs_currency: "usd" }
@@ -113,7 +113,7 @@ export default function CoinPriceModal({
 
         {/* Source Toggle */}
         <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
-          {["coingecko", "mcm"].map((s) => (
+          {["coingecko", "cmc"].map((s) => (
             <button
               key={s}
               onClick={() => setSource(s)}
