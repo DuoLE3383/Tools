@@ -53,19 +53,19 @@ export const TelegramTemplates = {
   // ACTIVE RENTAL LINE - FIXED PARAMETER ORDER
   // ============================================================
   activeRentalLine: (
-    perfEmoji,
-    algo,
-    name,
-    remaining,
-    efficiency,
-    roi,
-    avg,
-    adv,
-    cur,
-    target,
-    extra,
-    client,
-    info = { price: {} },
+    perfEmoji, // 1: performance emoji
+    algo, // 2: algo
+    name, // 3: rig name
+    remaining, // 4: remaining time
+    efficiency, // 5: efficiency percentage
+    roi, // 6: roi percentage
+    cur, // 7: current hashrate
+    avg, // 8: average hashrate
+    adv,  // 9: advertised hashrate
+    target, // 10: target hashrate
+    extra, // 11: extra info
+    client, // 12: client/account
+    info = { price: {} } // 13: price info
   ) => {
     const shortName = String(name || "N/A")
       .replace(/\s+/g, " ")
@@ -75,9 +75,9 @@ export const TelegramTemplates = {
       shortName.length > 18 ? `${shortName.slice(0, 17)}...` : shortName;
 
     // Format all values with proper display
-    const avgDisplay = avg || "0 H/s";
-    const advDisplay = adv || "0 H/s";
-    const curDisplay = cur || "0 H/s";
+    const avgDisplay = avg || "⚠️ H/s";
+    const advDisplay = adv || "⚠️ H/s";
+    const curDisplay = cur || "⚠️ H/s";
     
     // Ensure cur has warning if it's 0
     const finalCurDisplay = curDisplay === "0 H/s" || curDisplay === "0" 
