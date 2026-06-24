@@ -190,7 +190,7 @@ export const TelegramTemplates = {
   perfectEfficiency: (acct, r, efficiency, info, remainingMs, algo) => {
     const remH = Math.floor(remainingMs / 3600000);
     return (
-      `🎊 <b>[PERFECT 100%]</b>\n` +
+      `✅ <b>[PERFECT 100%]</b>\n` +
       `<b>Account:</b> <code>${escapeHtml(formatAccount(acct))}</code>\n` +
       `${divider}\n` +
       `${escapeHtml(formatRig(r))}\n` +

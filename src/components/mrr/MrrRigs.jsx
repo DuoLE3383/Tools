@@ -219,10 +219,10 @@ export default function MrrRigs({
 
         // Ensure rig.price exists before calling the template function
         let perfEmoji = "⚪";
-        if (effNum >= 100) perfEmoji = "🎊";
+        if (effNum >= 100) perfEmoji = "✅";
         else if (effNum >= 95) perfEmoji = "🟢";
         else if (effNum >= 70) perfEmoji = "🔵";
-        else if (effNum < 50) perfEmoji = "🔴";
+        else if (effNum <= 50) perfEmoji = "🔴";
 
         return TelegramTemplates.activeRentalLine(
           perfEmoji,

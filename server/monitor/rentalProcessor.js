@@ -339,8 +339,8 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
         efficiency,                   // 5: efficiency
         orderDiff,                    // 6: roi
         speedStatus,                  // 9: cur (current hashrate - uses average as fallback)
-        advDisplay,                   // 8: ads (advertised hashrate)
         avgDisplay,                   // 7: avg (average hashrate)
+        advDisplay,                   // 8: ads (advertised hashrate)
         displayTarget,                // 10: target
         "",                           // 11: extra
         acct,                         // 12: client
