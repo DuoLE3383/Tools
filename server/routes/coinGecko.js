@@ -19,7 +19,7 @@ export function registerCoinGeckoRoutes(app) {
   }));
 
   // Endpoint for the price modal (CMC)
-  app.get('/api/v2/price/mcm', asyncHandler(async (req, res) => {
+  app.get('/api/v2/price/cmc', asyncHandler(async (req, res) => {
     const { symbol } = req.query;
     if (!symbol) {
       return res.status(400).json({ error: 'symbol is required' });
