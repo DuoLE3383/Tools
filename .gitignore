@@ -53,3 +53,5 @@ mrr_monitor.db-wal
 orders.csv
 package-lock.json
 mrr_monitor.db-wal
+worker/index.js
+wrangler.jsonc
