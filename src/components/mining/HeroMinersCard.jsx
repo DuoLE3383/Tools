@@ -316,8 +316,8 @@ export default function HeroMinersCard({ onCall, pollInterval = 30000 }) {
     setLoading(true);
     try {
       const stats = await fetchMiningStats(
-        "herominers_global",
-        "BT",
+        "herominers",
+        "VN",
         null,
         null,
         20000,

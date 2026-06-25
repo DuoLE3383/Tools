@@ -4,7 +4,7 @@ import { btcValue, compactNumber, percentValue } from "./miningWorkspaceData";
 import { useMiningWorkspace } from "./MiningWorkspaceProvider";
 import CoinPriceModal from "./CoinPriceModal"; // <-- Add this import
 
-export default function MiningCoin({ onCall, nhClient = "BT" }) {
+export default function MiningCoin({ onCall, nhClient = "VN" }) {
   const {
     routes: combinedRows,
     loading,

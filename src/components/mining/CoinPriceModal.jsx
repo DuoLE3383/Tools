@@ -43,7 +43,7 @@ export default function CoinPriceModal({
         : "/api/v2/price/mcm";
       
       const query = source === "coingecko"
-        ? { coinId: coin.coinId || coin.symbol, vs_currency: "usd" }
+        ? { coinId: coin.coinId || coin.symbol.toLowerCase(), vs_currency: "usd" }
         : { symbol: coin.symbol, currency: "USD" };
       
       const result = await onCall(endpoint, { query, silent: true });

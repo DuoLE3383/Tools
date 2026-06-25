@@ -1,22 +1,16 @@
 import path from "path";
 import fs from "node:fs/promises";
 import sqlite3 from "sqlite3";
-import * as cheerio from "cheerio";
 import {
   normalizeAlgo,
   getAlgorithmDisplayName,
-} from "../src/core/mapping.js";
-import { fetchAndSaveCoinPrices, getCoinPricesFromDb } from "./coinGecko/coinGeckoClient.js";
-import { getBtcPrice } from "./utils/priceUtils.js";
-import { getCoinGeckoId } from "./coinGecko/coinMapping.js";
-import { CONFIG } from "./config.js";
-
-const DATA_DIR = path.resolve(process.cwd(), "data");
-const TRENDS_DB_PATH = path.join(DATA_DIR, "mining_trends.db");
-const COMMON_HEADERS = {
-  "User-Agent":
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36",
-};
+} from "../../src/core/mapping.js";
+import { fetchAndSaveCoinPrices, getCoinPricesFromDb } from "../coinGecko/coinGeckoClient.js";
+import { getBtcPrice } from "../utils/priceUtils.js";
+import { getCoinGeckoId } from "../coinGecko/coinMapping.js";
+import { CONFIG } from "../config.js";
+import { scrapeHeroMinersGlobal } from "./heroMiners.js";
+import { scrapeMiningDutchGlobal } from "./miningDutch.js";
 
 let lastNotifiedOpportunities = new Map();
 let opportunityDb = null;
@@ -25,6 +19,8 @@ let dbInitPromise = null;
 // =========================
 //  DB
 // =========================
+const DATA_DIR = path.resolve(process.cwd(), "data");
+const TRENDS_DB_PATH = path.join(DATA_DIR, "mining_trends.db");
 function openDb() {
   return new Promise((resolve, reject) => {
     const db = new sqlite3.Database(TRENDS_DB_PATH, (err) => {
@@ -112,85 +108,6 @@ async function sendMineTelegram(message) {
     }
   }
   return null;
-}
-
-// =========================
-//  Scrape HeroMiners
-// =========================
-export async function scrapeHeroMinersGlobal(force = true) {
-  try {
-    const res = await fetch("https://herominers.com/sitemap.xml", {
-      headers: COMMON_HEADERS, signal: AbortSignal.timeout(10000),
-    });
-    if (!res.ok) throw new Error(`Hero sitemap: ${res.status}`);
-    const xml = await res.text();
-    const poolHosts = [...new Set(
-      [...xml.matchAll(/https:\/\/([a-z0-9-]+)\.herominers\.com\//gi)]
-        .map((m) => m[1]).filter((h) => h && h !== "herominers")
-    )].sort();
-    if (poolHosts.length === 0) throw new Error("No pool hosts found");
-
-    const settled = await Promise.allSettled(
-      poolHosts.map(async (host) => {
-        const r = await fetch(`https://${host}.herominers.com/api/stats`, {
-          headers: COMMON_HEADERS, signal: AbortSignal.timeout(10000),
-        });
-        if (!r.ok) throw new Error(`${host} ${r.status}`);
-        return { host, data: await r.json() };
-      })
-    );
-
-    const coinStats = [];
-    for (const item of settled) {
-      if (item.status !== "fulfilled") continue;
-      const { host, data } = item.value;
-      const config = data?.config || {};
-      const pool = data?.pool || {};
-      const algo = String(config.cnAlgorithm || config.algorithm || host).trim();
-      const priceBtc = parseFloat(pool.price?.btc ?? pool.price?.BTC ?? 0);
-      const miners = parseInt(pool.miners || 0) + parseInt(pool.soloMiners || 0);
-      coinStats.push({
-        coin: String(config.symbol || host).toUpperCase(),
-        host, algorithm: algo,
-        normalizedAlgo: normalizeAlgo(algo),
-        miners, btcPerDay: priceBtc,
-      });
-    }
-    return { success: true, coinStats };
-  } catch (err) {
-    console.error("[mine:hero]", err.message);
-    return { success: false, error: err.message, coinStats: [] };
-  }
-}
-
-// =========================
-//  Scrape Mining-Dutch
-// =========================
-export async function scrapeMiningDutchGlobal(force = false) {
-  try {
-    const res = await fetch("https://www.mining-dutch.nl/", {
-      headers: COMMON_HEADERS, signal: AbortSignal.timeout(10000),
-    });
-    if (!res.ok) throw new Error(`Dutch: ${res.status}`);
-    const html = await res.text();
-    const $ = cheerio.load(html);
-    const coinStats = [];
-    const nowMiningTable = $('h4:contains("Currently Mining")').next("table");
-    nowMiningTable.find("tbody > tr").each((i, el) => {
-      const tds = $(el).find("td");
-      if (tds.length < 5) return;
-      const algo = $(tds[0]).text().trim();
-      const miners = parseInt($(tds[1]).text().trim(), 10) || 0;
-      const btcPerDay = parseFloat($(tds[2]).text().trim().split(" ")[0]) || 0;
-      const existing = coinStats.find((c) => c.algorithm === algo);
-      if (existing) { existing.btcPerDay = Math.max(existing.btcPerDay, btcPerDay); existing.miners += miners; }
-      else coinStats.push({ algorithm: algo, normalizedAlgo: normalizeAlgo(algo), miners, btcPerDay });
-    });
-    return { success: true, coinStats };
-  } catch (err) {
-    console.error("[mine:dutch]", err.message);
-    return { success: false, error: err.message, coinStats: [] };
-  }
 }
 
 // =========================

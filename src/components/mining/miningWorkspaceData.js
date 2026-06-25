@@ -39,7 +39,7 @@ const normalizeKey = (algo) =>
   normalizeAlgoForNiceHash(algo || "").toUpperCase();
 
 export function normalizeMiningDutchRows(payload) {
-  const source = payload?.miningpooldutch || payload || {};
+  const source = payload?.miningdutch || payload || {};
   const rows = Array.isArray(source?.coinStats) ? source.coinStats : [];
 
   return rows
@@ -63,7 +63,7 @@ export function normalizeMiningDutchRows(payload) {
 
 export function normalizeHeroRows(payload) {
   const source =
-    payload?.herominers_global || payload?.herominers || payload || {};
+    payload?.herominers || payload?.herominers || payload || {};
   const rows = Array.isArray(source?.coinStats) ? source.coinStats : [];
 
   return rows

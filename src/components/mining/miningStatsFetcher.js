@@ -24,8 +24,8 @@ function normalizeMiningStatsResponse(data, type) {
     return { ...data, coinStats: data.coinStats, miners: data.miners || 0, success: data.success !== false };
   }
 
-  if (data.herominers_global) {
-    const heroData = data.herominers_global;
+  if (data.herominers) {
+    const heroData = data.herominers;
     return {
       ...data,
       coinStats: Array.isArray(heroData.coinStats) ? heroData.coinStats : [],
@@ -35,8 +35,8 @@ function normalizeMiningStatsResponse(data, type) {
     };
   }
 
-  if (data.miningpooldutch) {
-    const dutchData = data.miningpooldutch;
+  if (data.miningdutch) {
+    const dutchData = data.miningdutch;
     return {
       ...data,
       coinStats: Array.isArray(dutchData.coinStats) ? dutchData.coinStats : [],
@@ -101,10 +101,8 @@ async function fetchMiningStatsInternal(
   force = false,
 ) {
   const restPathMap = {
-    herominers_global: "herominers_global",
-    herominers: "herominers_global",
-    miningpooldutch: "miningpooldutch",
-    miningDutch: "miningpooldutch",
+    herominers: "herominers",
+    miningDutch: "miningdutch",
     all: "all",
   };
 

@@ -1,6 +1,6 @@
 // server/routes/miningStats.js
-import { scrapeHeroMinersGlobal } from '../mining/heroMiners.js';
-import { scrapeMiningDutchGlobal } from '../mining/miningDutch.js';
+import { scrapeHeroMinersGlobal } from './heroMiners.js';
+import { scrapeMiningDutchGlobal } from './miningDutch.js';
 import { asyncHandler } from '../utils.js';
 
 export function registerMiningStatsRoutes(app) {

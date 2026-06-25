@@ -33,7 +33,7 @@ const ALGO_MAPPING = {
   "etchash": "ETCHASH",
 };
 
-export function MiningWorkspaceProvider({ children, onCall, nhClient = "BT" }) {
+export function MiningWorkspaceProvider({ children, onCall, nhClient = "VN" }) {
   const [heroStats, setHeroStats] = useState(null);
   const [dutchStats, setDutchStats] = useState(null);
   const [mrrMarketStats, setMrrMarketStats] = useState(null);
@@ -67,8 +67,8 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "BT" }) {
       try {
         // 1. FETCH HERO MINERS DATA
         const heroResult = await fetchMiningStats(
-          "herominers_global",
-          "BT",
+          "herominers",
+          "VN",
           null,
           null,
           20000,
@@ -80,8 +80,8 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "BT" }) {
 
         // 2. FETCH MINING-DUTCH DATA
         const dutchResult = await fetchMiningStats(
-          "miningpooldutch",
-          "BT",
+          "miningdutch",
+          "VN",
           null,
           null,
           20000,
