@@ -26,7 +26,7 @@ function formatHashrate(value, suffix) {
   const num = Number.parseFloat(value || 0);
   if (!Number.isFinite(num) || num <= 0) return "0 H/s";
   
-  const units = ["H/s", "KH/s", "MH/s", "GH/s", "TH/s", "PH/s", "EH/s", "ZH/s"];
+  const units = [" H/s", " KH/s", " MH/s", " GH/s", " TH/s", " PH/s", " EH/s"];
   let idx = 0;
   let scaled = num;
   while (scaled >= 1000 && idx < units.length - 1) {
