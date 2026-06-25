@@ -27,7 +27,7 @@ export default function App() {
   const [modalContent, setModalContent] = useState(null);
   const [algorithm, setAlgorithm] = useState("");
   const [market, setMarket] = useState("");
-  const [mrrClient, setMrrClient] = useState("BT");
+  const [mrrClient, setMrrClient] = useState("VN");
   const [completionCalculatorContext, setCompletionCalculatorContext] =
     useState(null);
   const [, setRouteTick] = useState(0);

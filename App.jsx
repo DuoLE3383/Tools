@@ -461,7 +461,7 @@ export default function App() {
         callApi('/api/v2/mining/rigs2', { silent: true, section: 'mining' }),
       ]).catch(err => addDebugLog(`Initial fetch error: ${err.message}`, 'error'));
     }
-  }, [isAuthenticated]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, addDebugLog, callApi, forceCheckStatus]);
 
   // Background refresh interval
   useEffect(() => {

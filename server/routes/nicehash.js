@@ -49,13 +49,13 @@ export function registerNiceHashRoutes(app) {
 
   // ─── Accounting ─────────────────────────────────────────────
   app.get("/api/v2/accounting/balances", asyncHandler(async (req, res) => {
-    const clientParam = String(req.query.client || "BT").toUpperCase();
+    const clientParam = String(req.query.client || "VN").toUpperCase();
     if (isAggregate(clientParam)) {
       const nhAccounts = Object.keys(nhConfigs).filter(k => nhConfigs[k].apiKey && nhConfigs[k].apiSecret && nhConfigs[k].orgId);
       const clientMap = new Map();
       for (const acct of nhAccounts) {
         const { client, clientName } = resolveNhClient(acct);
-        if (client && !clientMap.has(clientName) && (acct === "BT" || clientName !== "BT")) {
+        if (client && !clientMap.has(clientName) && (acct === "VN" || clientName !== "VN")) {
           clientMap.set(clientName, client);
         }
       }
@@ -85,13 +85,13 @@ export function registerNiceHashRoutes(app) {
   // ─── Mining ──────────────────────────────────────────────────
   app.get("/api/v2/mining/address", asyncHandler(async (req, res) => res.json(await req.nhApp.mining.getMiningAddress())));
   app.get("/api/v2/mining/rigs2", asyncHandler(async (req, res) => {
-    const clientParam = String(req.query.client || "BT").toUpperCase();
+    const clientParam = String(req.query.client || "VN").toUpperCase();
     if (isAggregate(clientParam)) {
       const nhAccounts = Object.keys(nhConfigs).filter(k => nhConfigs[k].apiKey && nhConfigs[k].apiSecret && nhConfigs[k].orgId && !isAggregate(k));
       const clientMap = new Map();
       for (const acct of nhAccounts) {
         const { client, clientName } = resolveNhClient(acct);
-        if (client && !clientMap.has(clientName) && (acct === "BT" || clientName !== "BT")) {
+        if (client && !clientMap.has(clientName) && (acct === "VN" || clientName !== "VN")) {
           clientMap.set(clientName, client);
         }
       }
@@ -113,7 +113,7 @@ export function registerNiceHashRoutes(app) {
 
   // ─── Hashpower Orders ───────────────────────────────────────
   app.get("/api/v2/hashpower/myOrders", asyncHandler(async (req, res) => {
-    const clientParam = String(req.query.client || "BT").toUpperCase();
+    const clientParam = String(req.query.client || "VN").toUpperCase();
     const query = { ...req.query };
     if (!query.ts) query.ts = Date.now().toString();
     let data;
@@ -122,7 +122,7 @@ export function registerNiceHashRoutes(app) {
       const clientMap = new Map();
       for (const acct of nhAccounts) {
         const { client, clientName } = resolveNhClient(acct);
-        if (client && !clientMap.has(clientName) && (acct === "BT" || clientName !== "BT")) {
+        if (client && !clientMap.has(clientName) && (acct === "VN" || clientName !== "VN")) {
           clientMap.set(clientName, client);
         }
       }
@@ -172,7 +172,7 @@ export function registerNiceHashRoutes(app) {
     const matchingOrders = [];
     const results = await Promise.all(nhAccounts.map(async (acct) => {
       const { client, clientName } = resolveNhClient(acct);
-      if (!client || (acct !== "BT" && clientName === "BT" && acct !== "PH")) return null;
+      if (!client || (acct !== "VN" && clientName === "VN" && acct !== "PH")) return null;
       try {
         const data = await getNiceHashApp(client).hashpower.getMyOrders({ limit: 1000 });
         return { clientName, list: data?.list || [] };
@@ -192,7 +192,7 @@ export function registerNiceHashRoutes(app) {
     res.json({ success: true, maxPrice, totalPaid: totalPaid.toFixed(8), count: matchingOrders.length, orders: matchingOrders });
   }));
   app.get("/api/v2/hashpower/order/price", asyncHandler(async (req, res) => {
-    const clientParam = String(req.query.client || "BT").toUpperCase();
+    const clientParam = String(req.query.client || "VN").toUpperCase();
     const query = { ...req.query };
     if (!query.ts) query.ts = Date.now().toString();
     const algorithm = normalizeAlgoForNiceHash(query.algorithm);
@@ -236,7 +236,7 @@ export function registerNiceHashRoutes(app) {
       const nhAccounts = Object.keys(nhConfigs).filter(k => nhConfigs[k].apiKey && nhConfigs[k].apiSecret && nhConfigs[k].orgId && !isAggregate(k));
       for (const acct of nhAccounts) {
         const { client, clientName } = resolveNhClient(acct);
-        if (!client || (acct !== "BT" && clientName === "BT")) continue;
+        if (!client || (acct !== "VN" && clientName === "VN")) continue;
         try {
           const orderPrice = await matchActiveOrder(clientName, client);
           if (orderPrice) { res.set("X-NH-Client", clientName); return res.json(orderPrice); }
@@ -244,7 +244,7 @@ export function registerNiceHashRoutes(app) {
       }
       for (const acct of nhAccounts) {
         const { client, clientName } = resolveNhClient(acct);
-        if (!client || (acct !== "BT" && clientName === "BT")) continue;
+        if (!client || (acct !== "VN" && clientName === "VN")) continue;
         try {
           const marketPrice = await matchMarketPrice(clientName, client);
           if (marketPrice) { res.set("X-NH-Client", clientName); return res.json(marketPrice); }
@@ -264,19 +264,19 @@ export function registerNiceHashRoutes(app) {
   }));
   app.get("/api/v2/hashpower/orderBook/:algo/:market", asyncHandler(async (req, res) => {
     const { algo, market } = req.params;
-    const clientParam = String(req.query.client || "BT").toUpperCase();
+    const clientParam = String(req.query.client || "VN").toUpperCase();
     const { client } = resolveNhClient(clientParam);
     const app = getNiceHashApp(client);
     res.json(await app.hashpower.getOrderBook({ algorithm: algo, market }));
   }));
   app.get("/api/v2/hashpower/order/:orderId", asyncHandler(async (req, res) => {
-    const clientParam = String(req.query.client || "BT").toUpperCase();
+    const clientParam = String(req.query.client || "VN").toUpperCase();
     if (isAggregate(clientParam)) {
       const nhAccounts = Object.keys(nhConfigs).filter(k => nhConfigs[k].apiKey && nhConfigs[k].apiSecret && nhConfigs[k].orgId && !isAggregate(k));
       const processedClients = new Set();
       for (const acct of nhAccounts) {
         const { client, clientName } = resolveNhClient(acct);
-        if (!client || (acct !== "BT" && clientName === "BT") || processedClients.has(clientName)) continue;
+        if (!client || (acct !== "VN" && clientName === "VN") || processedClients.has(clientName)) continue;
         processedClients.add(clientName);
         try {
           const data = await getNiceHashApp(client).hashpower.getOrderDetail(req.params.orderId);
@@ -294,13 +294,13 @@ export function registerNiceHashRoutes(app) {
 
   // ─── Pools ──────────────────────────────────────────────────
   app.get("/api/v2/pools", asyncHandler(async (req, res) => {
-    const clientParam = String(req.query.client || "BT").toUpperCase();
+    const clientParam = String(req.query.client || "VN").toUpperCase();
     if (isAggregate(clientParam)) {
       const nhAccounts = Object.keys(nhConfigs).filter(k => nhConfigs[k].apiKey && nhConfigs[k].apiSecret && nhConfigs[k].orgId && !isAggregate(k));
       const clientMap = new Map();
       for (const acct of nhAccounts) {
         const { client, clientName } = resolveNhClient(acct);
-        if (client && !clientMap.has(clientName) && (acct === "BT" || clientName !== "BT")) {
+        if (client && !clientMap.has(clientName) && (acct === "VN" || clientName !== "VN")) {
           clientMap.set(clientName, client);
         }
       }
@@ -323,7 +323,7 @@ export function registerNiceHashRoutes(app) {
     }
     const data = await req.nhApp.pools.getPools();
     const pools = data?.list || [];
-    const clientName = res.get("X-NH-Client") || "BT";
+    const clientName = res.get("X-NH-Client") || "VN";
     if (pools.length > 0) {
       db.serialize(() => {
         db.run(`CREATE TABLE IF NOT EXISTS nh_pools (id TEXT, name TEXT, algorithm TEXT, stratumHostname TEXT, port TEXT, username TEXT, password TEXT, nhClient TEXT, last_updated DATETIME DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (id, nhClient))`);
@@ -335,13 +335,13 @@ export function registerNiceHashRoutes(app) {
     res.json(data);
   }));
   app.get("/api/v2/pool/:poolId", asyncHandler(async (req, res) => {
-    const clientParam = String(req.query.client || "BT").toUpperCase();
+    const clientParam = String(req.query.client || "VN").toUpperCase();
     if (isAggregate(clientParam)) {
       const nhAccounts = Object.keys(nhConfigs).filter(k => nhConfigs[k].apiKey && nhConfigs[k].apiSecret && nhConfigs[k].orgId && !isAggregate(k));
       const processedClients = new Set();
       for (const acct of nhAccounts) {
         const { client, clientName } = resolveNhClient(acct);
-        if (!client || (acct !== "BT" && clientName === "BT") || processedClients.has(clientName)) continue;
+        if (!client || (acct !== "VN" && clientName === "VN") || processedClients.has(clientName)) continue;
         processedClients.add(clientName);
         try {
           const data = await getNiceHashApp(client).pools.getPoolDetails(req.params.poolId);
@@ -355,7 +355,7 @@ export function registerNiceHashRoutes(app) {
   app.post("/api/v2/pools/verify", asyncHandler(async (req, res) => res.json(await req.nhApp.pools.verifyPool(req.body))));
   app.post("/api/v2/pools/verify-browser", asyncHandler(async (req, res) => {
     const { stratumHost, stratumPort, username } = req.body;
-    const clientParam = String(req.query.client || "BT").toUpperCase();
+    const clientParam = String(req.query.client || "VN").toUpperCase();
     const isHeadless = req.query.headless === "true";
     const options = new chrome.Options();
     if (isHeadless) options.addArguments("--headless=new");

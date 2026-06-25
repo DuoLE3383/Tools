@@ -3,10 +3,10 @@ import { dbRunAsync, dbGetAsync } from "./dbHelpers.js";
 import { logger } from "../logger.js";
 import { TELEGRAM_CONFIG, TelegramTemplates } from "../../src/core/telegram.js";
 import {
-    normalizeAlgoForNiceHash,
-    getMrrAlgorithmUnit,
-    calculatePriceComparison,
-    getAlgoDisplayName,
+  normalizeAlgoForNiceHash,
+  getMrrAlgorithmUnit,
+  calculatePriceComparison,
+  getAlgoDisplayName,
 } from "../../src/core/mapping.js";
 import { getBtcPriceData } from "../../src/core/priceUtils.js";
 import { getMonitorNhActiveOrders, sendTelegramInternal } from "../monitor/helpers.js";
@@ -23,18 +23,18 @@ const monitorNhPriceErrorCache = new Map();
 // HELPER: Format hashrate for display
 // ============================================================
 function formatHashrate(value, suffix) {
-    const num = Number.parseFloat(value || 0);
-    if (!Number.isFinite(num) || num <= 0) return "0 H/s";
-
-    const units = ["H/s", "KH/s", "MH/s", "GH/s", "TH/s", "PH/s", "EH/s", "ZH/s"];
-    let idx = 0;
-    let scaled = num;
-    while (scaled >= 1000 && idx < units.length - 1) {
-        scaled /= 1000;
-        idx += 1;
-    }
-    const unit = suffix || units[idx] || "H/s";
-    return `${scaled.toFixed(2)}${unit.toUpperCase()}`;
+  const num = Number.parseFloat(value || 0);
+  if (!Number.isFinite(num) || num <= 0) return "0 H/s";
+  
+  const units = ["H/s", "KH/s", "MH/s", "GH/s", "TH/s", "PH/s", "EH/s", "ZH/s"];
+  let idx = 0;
+  let scaled = num;
+  while (scaled >= 1000 && idx < units.length - 1) {
+    scaled /= 1000;
+    idx += 1;
+  }
+  const unit = suffix || units[idx] || "H/s";
+  return `${scaled.toFixed(2)}${unit.toUpperCase()}`;
 }
 
 /**
@@ -54,12 +54,13 @@ export function isRealRental(rental, info, now = Date.now()) {
     }
 
     // Check for any sign of activity
-    const currentHash = parseFloat(info.hashrate?.current || 0);
-    const averageHash = parseFloat(info.hashrate?.average || 0);
-    const paidAmount = parseFloat(info.price?.paid || 0);
+    const currentHash = parseFloat(info.hashrate?.current || null);
+    const averageHash = parseFloat(info.hashrate?.average || null);
+    const paidAmount = parseFloat(info.price?.paid || null);
+    
 
     // If there's any activity or payment, it's real
-    if (paidAmount > 0 || averageHash > 0) {
+    if (paidAmount > 0 || averageHash > 0 || currentHash > 0) {
         logger.debug(`[monitor:isRealRental] Rental ${rentalId} is real (has paid amount or hashrate).`);
         return true;
     }
@@ -67,7 +68,7 @@ export function isRealRental(rental, info, now = Date.now()) {
     // For new rentals, check their age
     const rawStart = info.startTime || rental.start_time || rental.startTime || rental.created_at || 0;
     if (!rawStart) {
-        if (parseFloat(rental.price || 0) > 0) {
+        if (parseFloat(rental.price) > 0) {
             logger.debug(`[monitor:isRealRental] Rental ${rentalId} is real (has price).`);
             return true;
         }
@@ -213,7 +214,7 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
     const remainingMs = endT > 0 ? Math.max(0, endT - now) : 0;
 
     // ============================================================
-    // EXTRACT HASHRATE VALUES
+    // EXTRACT HASHRATE VALUES - KEEP CURRENT AND AVERAGE SEPARATE
     // ============================================================
     const advertised = parseFloat(info.hashrate?.advertised || 0);
     const average = parseFloat(info.hashrate?.average || 0);
@@ -226,15 +227,16 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
     // ============================================================
     // FORMAT HASHRATE VALUES FOR DISPLAY
     // ============================================================
-    const currentDisplay = current > 0
-        ? formatHashrate(current, suffix)
-        : "0 H/s";
+    let currentDisplay;
+    if (current > 0) {
+      currentDisplay = formatHashrate(current, suffix);
+    } else {
+      currentDisplay = "⚠️ 0 H/s"; // Only show warning if both are zero
+    }
 
-    const avgDisplay = average > 0
-        ? formatHashrate(average, suffix)
-        : "0 H/s";
+    const avgDisplay = average > 0 ? formatHashrate(average, suffix) : "0 H/s";
 
-    const advDisplay = advertised > 0
+    const advDisplay = advertised > 0 
         ? formatHashrate(advertised, suffix)
         : "0 H/s";
 
@@ -306,14 +308,11 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
     if (!alreadyNotifiedThisRun && (forceNotify || (isNewToMonitor && withinReasonableStart))) {
         notifiedRentalIdsThisRun.add(String(rental.id));
         const hbType = forceNotify ? "MONITOR" : "RENTING";
-
         const remD = Math.floor(remainingMs / 86400000);
         const remH = Math.floor((remainingMs % 86400000) / 3600000);
         const remM = Math.floor((remainingMs % 3600000) / 60000);
         const remStr = remainingMs <= 0 ? "Finished" : remD > 0 ? `${remD}d ${remH}h` : `${remH}h ${remM}m`;
-
         const rentalForNotice = { ...rental, name: liveRig?.name || rental.name || rental.id };
-
         const msg = TelegramTemplates.rentedNotice(hbType, rentalForNotice, info, acct, remStr, info.algo, advDisplay);
 
         sendTelegramNotification(msg, {
@@ -339,43 +338,33 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
     const remM_s = Math.floor((remainingMs % 3600000) / 60000);
 
     const remStr_s = isFinished_s ? "Finished" : hasEndTime ? (remD_s > 0 ? `${remD_s}d ${remH_s}h` : `${remH_s}h ${remM_s}m`) : "Active";
-    const perfEmoji = efficiency >= 100 ? "✅" : efficiency >= 90 ? "🟢" : efficiency >= 70 ? "🔵" : efficiency >= 50 ? "🟡" : "🔴";
+    const perfEmoji = efficiency >= 100 ? "✅" : efficiency >= 90 ? "🟢" : efficiency >= 70 ? "🔵" : efficiency >= 50 ? "🟡" : "🔴"; // eslint-disable-line no-nested-ternary
 
-    const nhOrderPrice = await getNiceHashOrderPriceForRental(order.price, rental, acct);
+    const nhOrderPrice = await getNiceHashOrderPriceForRental(rental, acct);
     // ============================================================
-    // BUILD SPEED STATUS - Use average as fallback when current is 0
+    // BUILD ACTIVE RENTAL LINE
     // ============================================================
-    let speedStatus;
-    if (current > 0) {
-        // Current has data - use it
-        speedStatus = currentDisplay;
-    } else {
-        // Both are 0 - truly stalled
-        speedStatus = "⚠️ 0 H/s";
-    }
-
-    // Log for debugging
-    logger.debug(`[monitor] ${rental.id} - SpeedStatus: ${speedStatus} (current=${current}, avg=${average})`);
+    logger.debug(`[monitor] ${rental.id} - Display: cur=${currentDisplay}, avg=${avgDisplay}, adv=${advDisplay}`);
 
     // ============================================================
-    // BUILD ACTIVE RENTAL LINE WITH CORRECT PARAMETER ORDER
+    // BUILD ACTIVE RENTAL LINE WITH CORRECT PARAMETER ORDER with core/telegram.js
     // ============================================================
-    // CORRECT - parameter order matches template
     const activeRentalLine = TelegramTemplates.activeRentalLine(
-        perfEmoji,        // 1: perfEmoji ✓
-        getAlgoDisplayName(info.algo), // 2: algo ✓
-        liveRig?.name || rental.name || rental.id, // 3: name ✓
-        remStr_s,         // 4: remaining ✓
-        efficiency,       // 5: efficiency ✓
-        orderDiff,        // 6: roi ✓
-        avgDisplay,       // 7: avg (should be cur) ✗
-        advDisplay,       // 8: ads (should be adv) ✗
-        speedStatus,      // 9: cur (should be avg) ✗
-        displayTarget,    // 10: target ✓
-        "",               // 11: extra ✓
-        acct,             // 12: client ✓
-        info              // 13: info ✓
+        perfEmoji,                    // 1: perfEmoji
+        getAlgoDisplayName(info.algo), // 2: algo
+        liveRig?.name || rental.name || rental.id, // 3: name
+        remStr_s,                     // 4: remaining
+        efficiency,                   // 5: efficiency (Correct)
+        orderDiff,                    // 6: roi (Correct)
+        currentDisplay,               // 7: cur (now with fallback)
+        avgDisplay,                   // 8: avg
+        advDisplay,                   // 9: ads
+        displayTarget,                // 10: target
+        "",                           // 11: extra
+        acct,                         // 12: client
+        info                          // 13: info
     );
+
     return {
         isValid: true,
         activeRentalLine,

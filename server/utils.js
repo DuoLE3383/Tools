@@ -172,213 +172,89 @@ export function extractRentalInfo(rental, liveRig = null) {
   // ============================================================
   // EXTRACT CURRENT HASHRATE - TRY EVERY POSSIBLE SOURCE
   // ============================================================
-  let currentHash = 0;
-  let averageHash = 0;
-  let advertisedHash = 0;
-  let hashrateSuffix = '';
+  const getFloat = (value) => {
+    if (value === undefined || value === null) return 0;
+    if (typeof value === 'object' && value !== null) {
+      const nested = value.hash || value.rate || value.speed;
+      return parseFloat(nested) || 0;
+    }
+    return parseFloat(value) || 0;
+  };
 
-  // Log all possible sources for debugging
-  logger.debug(`[extractRentalInfo] Looking for current hashrate in:`, {
-    rentalId: rental.id,
-    hasLiveRig: !!liveRig,
-    rentalHashrate: rental.hashrate,
-    liveRigHashrate: liveRig?.hashrate,
-    rentalCurrent: rental.current_hashrate,
-    liveRigCurrent: liveRig?.current_hashrate,
-    rentalSpeed: rental.speed,
-    liveRigSpeed: liveRig?.speed,
-  });
+  const findValue = (...candidates) => {
+    for (const cand of candidates) {
+      const val = getFloat(cand);
+      if (val > 0) return val;
+    }
+    return 0;
+  };
 
-  // ============================================================
-  // SOURCE 1: liveRig.hashrate (MOST RECENT)
-  // ============================================================
-  if (liveRig) {
-    // Direct hashrate
-    if (liveRig.hashrate !== undefined && liveRig.hashrate !== null) {
-      const val = parseFloat(liveRig.hashrate);
-      if (val > 0) {
-        currentHash = val;
-        logger.debug(`[extractRentalInfo] Found current from liveRig.hashrate: ${val}`);
+  const findSuffix = (...candidates) => {
+    for (const cand of candidates) {
+      if (typeof cand === 'string' && cand) return cand;
+      if (typeof cand === 'object' && cand !== null) {
+        const nested = cand.suffix || cand.unit || cand.type;
+        if (typeof nested === 'string' && nested) return nested;
       }
     }
-    // Current hashrate
-    if (currentHash === 0 && liveRig.current_hashrate !== undefined && liveRig.current_hashrate !== null) {
-      const val = parseFloat(liveRig.current_hashrate);
-      if (val > 0) {
-        currentHash = val;
-        logger.debug(`[extractRentalInfo] Found current from liveRig.current_hashrate: ${val}`);
-      }
-    }
-    // Speed
-    if (currentHash === 0 && liveRig.speed !== undefined && liveRig.speed !== null) {
-      const val = parseFloat(liveRig.speed);
-      if (val > 0) {
-        currentHash = val;
-        logger.debug(`[extractRentalInfo] Found current from liveRig.speed: ${val}`);
-      }
-    }
-    // Status hashrate
-    if (currentHash === 0 && liveRig.status?.hashrate !== undefined && liveRig.status?.hashrate !== null) {
-      const val = parseFloat(liveRig.status.hashrate);
-      if (val > 0) {
-        currentHash = val;
-        logger.debug(`[extractRentalInfo] Found current from liveRig.status.hashrate: ${val}`);
-      }
-    }
-    // Suffix from liveRig
-    if (!hashrateSuffix) {
-      if (liveRig.hashrate_suffix) hashrateSuffix = liveRig.hashrate_suffix;
-      else if (liveRig.suffix) hashrateSuffix = liveRig.suffix;
-      else if (liveRig.unit) hashrateSuffix = liveRig.unit;
-      else if (liveRig.hashrate?.suffix) hashrateSuffix = liveRig.hashrate.suffix;
-      else if (liveRig.hashrate?.unit) hashrateSuffix = liveRig.hashrate.unit;
-    }
-  }
+    return '';
+  };
 
-  // ============================================================
-  // SOURCE 2: merged.hashrate
-  // ============================================================
-  if (currentHash === 0 && merged.hashrate && typeof merged.hashrate === 'object') {
-    // Current
-    if (merged.hashrate.current !== undefined && merged.hashrate.current !== null) {
-      const val = parseFloat(merged.hashrate.current);
-      if (val > 0) {
-        currentHash = val;
-        logger.debug(`[extractRentalInfo] Found current from merged.hashrate.current: ${val}`);
-      }
-    }
-    // Hash
-    if (currentHash === 0 && merged.hashrate.hash !== undefined && merged.hashrate.hash !== null) {
-      const val = parseFloat(merged.hashrate.hash);
-      if (val > 0) {
-        currentHash = val;
-        logger.debug(`[extractRentalInfo] Found current from merged.hashrate.hash: ${val}`);
-      }
-    }
-    // Last 15min
-    if (currentHash === 0 && merged.hashrate.last_15min !== undefined) {
-      const val = parseFloat(merged.hashrate.last_15min?.hash || merged.hashrate.last_15min);
-      if (val > 0) {
-        currentHash = val;
-        logger.debug(`[extractRentalInfo] Found current from merged.hashrate.last_15min: ${val}`);
-      }
-    }
-    // Last 5min
-    if (currentHash === 0 && merged.hashrate.last_5min !== undefined) {
-      const val = parseFloat(merged.hashrate.last_5min?.hash || merged.hashrate.last_5min);
-      if (val > 0) {
-        currentHash = val;
-        logger.debug(`[extractRentalInfo] Found current from merged.hashrate.last_5min: ${val}`);
-      }
-    }
-    
-    // Average
-    if (merged.hashrate.average !== undefined && merged.hashrate.average !== null) {
-      const val = parseFloat(merged.hashrate.average?.hash || merged.hashrate.average);
-      if (val > 0) averageHash = val;
-    }
-    
-    // Advertised
-    if (merged.hashrate.advertised !== undefined && merged.hashrate.advertised !== null) {
-      const val = parseFloat(merged.hashrate.advertised?.hash || merged.hashrate.advertised);
-      if (val > 0) advertisedHash = val;
-    }
-    
-    // Suffix
-    if (!hashrateSuffix) {
-      if (merged.hashrate.suffix) hashrateSuffix = merged.hashrate.suffix;
-      else if (merged.hashrate.unit) hashrateSuffix = merged.hashrate.unit;
-    }
-  }
+  const currentHash = findValue(
+    liveRig?.hashrate,
+    liveRig?.current_hashrate,
+    liveRig?.speed,
+    liveRig?.status?.hashrate,
+    merged.hashrate?.current,
+    merged.hashrate?.hash,
+    merged.hashrate?.last_5min,
+    merged.hashrate?.last_15min,
+    merged.rig?.hashrate,
+    merged.rig?.current_hashrate,
+    merged.rig?.speed,
+    merged.rig?.status?.hashrate,
+    merged.status?.hashrate,
+    merged.current_hashrate,
+    merged.hashrate,
+    merged.speed
+  );
 
-  // ============================================================
-  // SOURCE 3: merged.rig
-  // ============================================================
-  if (currentHash === 0 && merged.rig && typeof merged.rig === 'object') {
-    // Hashrate
-    if (merged.rig.hashrate !== undefined && merged.rig.hashrate !== null) {
-      const val = parseFloat(merged.rig.hashrate);
-      if (val > 0) {
-        currentHash = val;
-        logger.debug(`[extractRentalInfo] Found current from merged.rig.hashrate: ${val}`);
-      }
-    }
-    // Current hashrate
-    if (currentHash === 0 && merged.rig.current_hashrate !== undefined && merged.rig.current_hashrate !== null) {
-      const val = parseFloat(merged.rig.current_hashrate);
-      if (val > 0) {
-        currentHash = val;
-        logger.debug(`[extractRentalInfo] Found current from merged.rig.current_hashrate: ${val}`);
-      }
-    }
-    // Speed
-    if (currentHash === 0 && merged.rig.speed !== undefined && merged.rig.speed !== null) {
-      const val = parseFloat(merged.rig.speed);
-      if (val > 0) {
-        currentHash = val;
-        logger.debug(`[extractRentalInfo] Found current from merged.rig.speed: ${val}`);
-      }
-    }
-    // Status hashrate
-    if (currentHash === 0 && merged.rig.status?.hashrate !== undefined && merged.rig.status?.hashrate !== null) {
-      const val = parseFloat(merged.rig.status.hashrate);
-      if (val > 0) {
-        currentHash = val;
-        logger.debug(`[extractRentalInfo] Found current from merged.rig.status.hashrate: ${val}`);
-      }
-    }
-    
-    // Suffix
-    if (!hashrateSuffix) {
-      if (merged.rig.hashrate_suffix) hashrateSuffix = merged.rig.hashrate_suffix;
-      else if (merged.rig.suffix) hashrateSuffix = merged.rig.suffix;
-      else if (merged.rig.unit) hashrateSuffix = merged.rig.unit;
-    }
-  }
+  const averageHash = findValue(
+    merged.hashrate?.average,
+    merged.rig?.hashrate?.average,
+    merged.average_hashrate
+  );
 
-  // ============================================================
-  // SOURCE 4: merged.status
-  // ============================================================
-  if (currentHash === 0 && merged.status && typeof merged.status === 'object') {
-    if (merged.status.hashrate !== undefined && merged.status.hashrate !== null) {
-      const val = parseFloat(merged.status.hashrate);
-      if (val > 0) {
-        currentHash = val;
-        logger.debug(`[extractRentalInfo] Found current from merged.status.hashrate: ${val}`);
-      }
-    }
-  }
+  const advertisedHash = findValue(
+    merged.hashrate?.advertised,
+    merged.rig?.hashrate?.advertised,
+    merged.advertised_hashrate
+  );
 
-  // ============================================================
-  // SOURCE 5: Direct fields on merged
-  // ============================================================
-  if (currentHash === 0) {
-    const directFields = ['current_hashrate', 'hashrate', 'speed', 'current_speed', 'hash_speed'];
-    for (const field of directFields) {
-      if (merged[field] !== undefined && merged[field] !== null) {
-        const val = parseFloat(merged[field]);
-        if (val > 0) {
-          currentHash = val;
-          logger.debug(`[extractRentalInfo] Found current from merged.${field}: ${val}`);
-          break;
-        }
-      }
-    }
-  }
+  let hashrateSuffix = findSuffix(
+    liveRig?.hashrate_suffix,
+    liveRig?.suffix,
+    liveRig?.unit,
+    liveRig?.hashrate,
+    merged.hashrate?.suffix,
+    merged.hashrate?.unit,
+    merged.hashrate?.advertised,
+    merged.rig?.hashrate_suffix,
+    merged.rig?.suffix,
+    merged.rig?.unit,
+    merged.rig?.hashrate?.advertised
+  );
 
   // ============================================================
   // FALLBACK: Use average as current if no current found
   // ============================================================
-  if (currentHash === 0 && averageHash > 0) {
-    currentHash = averageHash;
-    logger.debug(`[extractRentalInfo] Using average as current fallback: ${currentHash}`);
-  }
+  const finalCurrentHash = currentHash > 0 ? currentHash : averageHash;
 
   // ============================================================
   // DETECT SUFFIX FROM VALUE MAGNITUDE IF NOT FOUND
   // ============================================================
   if (!hashrateSuffix || hashrateSuffix === 'H/s' || hashrateSuffix === 'H') {
-    const maxVal = Math.max(currentHash, averageHash, advertisedHash);
+    const maxVal = Math.max(finalCurrentHash, averageHash, advertisedHash);
     if (maxVal >= 1e12) hashrateSuffix = 'TH/s';
     else if (maxVal >= 1e9) hashrateSuffix = 'GH/s';
     else if (maxVal >= 1e6) hashrateSuffix = 'MH/s';
@@ -396,8 +272,8 @@ export function extractRentalInfo(rental, liveRig = null) {
   // ============================================================
   // FORMAT FOR DISPLAY
   // ============================================================
-  const niceHashrate = currentHash > 0 
-    ? `${currentHash.toFixed(2)} ${hashrateSuffix}` 
+  const niceHashrate = finalCurrentHash > 0 
+    ? `${finalCurrentHash.toFixed(2)} ${hashrateSuffix}` 
     : '0 H/s';
   const niceAverageHashrate = averageHash > 0 
     ? `${averageHash.toFixed(2)} ${hashrateSuffix}` 
@@ -407,7 +283,7 @@ export function extractRentalInfo(rental, liveRig = null) {
     : '0 H/s';
 
   // Log final extracted values
-  logger.debug(`[extractRentalInfo] FINAL - ${rental.id || 'N/A'}: Current: ${currentHash} ${hashrateSuffix}, Avg: ${averageHash}, Adv: ${advertisedHash}`);
+  logger.debug(`[extractRentalInfo] FINAL - ${rental.id || 'N/A'}: Current: ${finalCurrentHash} ${hashrateSuffix}, Avg: ${averageHash}, Adv: ${advertisedHash}`);
 
   // Extract other info
   const algo = merged.algo || merged.algorithm || merged.miningAlgorithm || 
@@ -429,11 +305,11 @@ export function extractRentalInfo(rental, liveRig = null) {
   }
   
   // Calculate percent if missing
-  if (percent === 0 && averageHash > 0 && advertisedHash > 0) {
+  if (percent <= 0 && averageHash > 0 && advertisedHash > 0) {
     percent = (averageHash / advertisedHash) * 100;
   }
-  if (percent === 0 && currentHash > 0 && advertisedHash > 0) {
-    percent = (currentHash / advertisedHash) * 100;
+  if (percent <= 0 && finalCurrentHash > 0 && advertisedHash > 0) {
+    percent = (finalCurrentHash / advertisedHash) * 100;
   }
 
   const priceObj = merged.price || merged.rig?.price || {};
@@ -448,7 +324,7 @@ export function extractRentalInfo(rental, liveRig = null) {
     endTime: merged.end || merged.end_time || merged.rig?.status?.end || merged.rig?.end || '',
     percent: Math.round(percent * 100) / 100, // Round to 2 decimal places
     hashrate: { 
-      current: currentHash, 
+      current: finalCurrentHash, 
       advertised: advertisedHash, 
       average: averageHash, 
       suffix: hashrateSuffix 

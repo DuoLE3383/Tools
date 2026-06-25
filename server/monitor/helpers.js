@@ -90,7 +90,7 @@ export function extractArray(payload, keys = ["rentals", "rigs", "list", "result
 }
 
 export async function getMonitorNhActiveOrders(clientName) {
-    const cacheKey = String(clientName || "BT").toUpperCase();
+    const cacheKey = String(clientName || "VN").toUpperCase();
     const cached = monitorNhOrdersCache.get(cacheKey);
     if (cached && Date.now() - cached.ts < MONITOR_NH_ORDERS_TTL) {
         return cached.orders;

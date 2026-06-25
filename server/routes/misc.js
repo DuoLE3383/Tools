@@ -1,7 +1,7 @@
 // routes/misc.js
 import { asyncHandler } from "../utils.js";
 import { sendTelegramInternal, runRentalMonitor, getTelegramStatus, setTelegramStatus } from "../monitor.js";
-import { saveMiningTrainingSnapshot } from "../miningTrainingDb.js";
+import { saveMiningTrainingSnapshot } from "../mining/miningTrainingDb.js";
 import { db } from "../db.js";
 import { saveToDatabase } from "./_helpers.js";
 import fs from "fs/promises";

@@ -102,10 +102,10 @@ export function resolveNhClient(clientNameRaw) {
   // 4. Recursive fallback to BT if client is unconfigured
   if (clientName !== 'BT') {
     console.warn(`[nh:resolve] Client "${clientName}" not found or unconfigured. Falling back to BT.`);
-    return resolveNhClient('BT');
+    return resolveNhClient('VN');
   }
 
-  return { client: undefined, clientName: 'BT' };
+  return { client: undefined, clientName: 'VN' };
 }
 
 /**

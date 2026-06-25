@@ -1,28 +1,20 @@
 // index.js – corrected startup
 import "dotenv/config";
 import express from "express";
-import http from "http";
 import cors from "cors";
 import path from "path";
 import { fileURLToPath } from "url";
-import { setupWebSocket } from "./server/ws.js";
-import { registerRoutes } from "./server/routes.js";
-import { startMiningOpportunityScanner } from "./server/miningOpportunityNotifier.js";
 import { createApp, initializeApp } from "./server/app.js";
-import { verifyToken } from "./server/auth.js";
-import { resolveNhClient, getNiceHashApp } from "./server/nh.js";
-import { mrrApiCall, initMrrConfigs } from "./server/mrr.js";
 import sqlite3 from "sqlite3";
 import { migrateOldCsvToDb } from "./server/migrate.js";
-import { initMiningTrainingDb } from "./server/miningTrainingDb.js";
+import { initMiningTrainingDb } from "./server/mining/miningTrainingDb.js";
 import { setDb } from "./server/db.js";
-import { fetchAndSaveCoinPrices } from "./server/coinGecko/coinGeckoClient.js";
-// ✅ CORRECT IMPORT – use the scripts folder
 import { mergeDatabases } from "./data/merge.js";
+import { logger } from "./server/logger.js";
+import { startCoinFetcherService } from './server/coinFetcher.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const distPath = path.join(__dirname, "dist", "client");
 
 const DATA_DIR = path.join(__dirname, "data");
 const STATS_DB_PATH = path.join(DATA_DIR, "stats.db");
@@ -30,45 +22,8 @@ const STATS_DB_PATH = path.join(DATA_DIR, "stats.db");
 // ============================================================
 // CREATE APP
 // ============================================================
-const app = createApp({ distPath });
+const app = createApp({ distPath: path.join(__dirname, "dist") });
 const PORT = process.env.PORT || 3000;
-
-// ============================================================
-// MIDDLEWARE
-// ============================================================
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-// ============================================================
-// HEALTH CHECK ROUTES
-// ============================================================
-app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", timestamp: new Date().toISOString() });
-});
-
-app.get("/", (req, res) => {
-  res.json({
-    service: "NiceHash API Toolbox",
-    status: "running",
-    version: "1.0.0",
-    endpoints: {
-      health: "/api/health",
-      time: "/api/v2/time",
-      mining: "/api/v2/mining-stats",
-    },
-  });
-});
-
-// ✅ NEW: Endpoint to clear the persistent cache
-app.post("/api/v2/admin/clean-cache", async (req, res) => {
-  try {
-    await cleanAllCache();
-    res.json({ success: true, message: "Persistent server cache cleared." });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-});
 
 // ============================================================
 // DATABASE SETUP
@@ -79,7 +34,7 @@ function initDatabase() {
   return new Promise((resolve, reject) => {
     dbInstance = new sqlite3.Database(STATS_DB_PATH, (dbErr) => {
       if (dbErr) return reject(dbErr);
-      dbInstance.run("PRAGMA journal_mode = WAL;", (err) => {
+      dbInstance.run("PRAGMA journal_mode = WAL;", (err) => { // nosemgrep: javascript.lang.security.audit.non-literal-sql-db-access.non-literal-sql-db-access
         if (err) console.warn("[db] Failed to enable WAL mode:", err.message);
       });
       dbInstance.run(
@@ -130,7 +85,7 @@ function initDatabase() {
 async function cleanAllCache() {
   console.info("[init] Wiping persistent cache for fresh start...");
   try {
-    await new Promise((resolve, reject) => {
+    await new Promise((resolve, reject) => { // nosemgrep: javascript.lang.security.audit.non-literal-sql-db-access.non-literal-sql-db-access
       dbInstance.run("DELETE FROM stats_cache", (err) => {
         if (err) return reject(err);
         console.info("✨ Persistent cache (stats_cache) cleared.");
@@ -148,7 +103,7 @@ function loadStats() {
       console.log("[db] Database not initialized, skipping stats load.");
       return resolve();
     }
-    dbInstance.all(`SELECT key, data, ts FROM stats_cache`, [], (err, rows) => {
+    dbInstance.all(`SELECT key, data, ts FROM stats_cache`, [], (err, rows) => { // nosemgrep: javascript.lang.security.audit.non-literal-sql-db-access.non-literal-sql-db-access
       if (err) {
         console.log(
           "[db] No existing stats database found or failed to read, starting fresh.",
@@ -176,75 +131,55 @@ function loadStats() {
 // ============================================================
 async function startServer() {
   try {
-    console.log("[init] Initializing database...");
+    logger.info("[init] Initializing database...");
     await initDatabase();
 
     // ✅ RUN DATABASE MERGE AFTER DB IS OPEN
-    console.log("[init] Merging databases into stats.db...");
+    logger.info("[init] Merging databases into stats.db...");
     try {
       await mergeDatabases();
-      console.log("[init] Database merge completed.");
+      logger.info("[init] Database merge completed.");
     } catch (mergeErr) {
-      console.error("[init] Database merge failed:", mergeErr.message);
+      logger.error("[init] Database merge failed:", mergeErr.message);
       // Continue anyway – the app might still work with just stats.db
     }
 
-    console.log("[init] Cleaning cache...");
+    logger.info("[init] Cleaning cache...");
     await cleanAllCache();
 
-    console.log("[init] Initializing mining training DB...");
+    logger.info("[init] Initializing mining training DB...");
     await initMiningTrainingDb();
 
-    console.log("[init] Loading stats...");
+    logger.info("[init] Loading stats...");
     await loadStats();
 
-    console.log("[init] Migrating old CSV files...");
+    logger.info("[init] Migrating old CSV files...");
     await migrateOldCsvToDb();
 
-    console.log("[init] Initializing MRR configs...");
-    await initMrrConfigs(process.env);
-
-    console.log("[init] Initializing app...");
+    logger.info("[init] Initializing app...");
     await initializeApp(process.env);
 
-    console.log("[init] Registering routes...");
-    registerRoutes(app);
-    console.log("[Routes] All routes registered");
-
-    // Create HTTP server
-    const server = http.createServer(app);
-
-    // Setup WebSocket
-    setupWebSocket(server);
-
     // Start the server
-    server.listen(PORT, "0.0.0.0", () => {
-      console.log("--- NiceHash API Toolbox Server Started ---");
-      console.log(
+    app.server.listen(PORT, "0.0.0.0", () => {
+      logger.raw("--- NiceHash API Toolbox Server Started ---");
+      logger.raw(
         "Environment: " +
           (process.env.NICEHASH_ENVIRONMENT
             ? process.env.NICEHASH_ENVIRONMENT.toUpperCase()
             : "production"),
       );
-      console.log(`Listening on http://localhost:${PORT}`);
-      console.log(`WebSocket: ws://localhost:${PORT}/api/v2/mrr/fetch/ws`);
-
-      // Start mining scanner after a delay
-      setTimeout(() => {
-        console.log("[Mining Scanner] Initializing...");
-        try {
-          startMiningOpportunityScanner();
-        } catch (err) {
-          console.error("[Mining Scanner] Failed to start:", err.message);
-        }
-      }, 5000);
+      logger.raw(`Listening on http://localhost:${PORT}`);
+      logger.raw(`WebSocket: ws://localhost:${PORT}/api/v2/mrr/fetch/ws`);
     });
+
+    // Start the coin fetcher service
+    startCoinFetcherService(dbInstance);
 
     // Graceful shutdown
     function shutdown(signal) {
-      console.log(`[api] Received ${signal}, shutting down...`);
-      server.close(() => {
-        console.log("[api] Server closed");
+      logger.info(`[api] Received ${signal}, shutting down...`);
+      app.server.close(() => {
+        logger.info("[api] Server closed");
         process.exit(0);
       });
     }

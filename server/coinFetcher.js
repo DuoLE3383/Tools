@@ -1,4 +1,4 @@
-// start.js - Complete working version with database lock handling
+// server/coinFetcher.js
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -25,12 +25,12 @@ const CONFIG = {
   COINMARKETCAP_API_KEY: process.env.CMC_API_KEY || '',
   COINMARKETCAP_ENABLED: !!process.env.CMC_API_KEY && process.env.CMC_API_KEY.length > 0,
   
-  DB_PATH: path.join(__dirname, 'data', 'stats.db'),
+  DB_PATH: path.join(__dirname, '..', 'data', 'stats.db'),
   FETCH_INTERVAL_MINUTES: 60,
   
   MAX_RETRIES: 3,
   RETRY_DELAY_MS: 5000,
-  BATCH_SIZE: 1000,
+  BATCH_SIZE: 100,
   MAP_LIMIT: 5000,
   
   // Database retry settings
@@ -45,7 +45,7 @@ if (CONFIG.COINMARKETCAP_ENABLED) {
 }
 
 // Ensure data directory exists
-const dataDir = path.join(__dirname, 'data');
+const dataDir = path.join(__dirname, '..', 'data');
 if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
 }
@@ -53,17 +53,20 @@ if (!fs.existsSync(dataDir)) {
 // ============================================================
 // DATABASE SETUP WITH LOCK HANDLING
 // ============================================================
-let db;
+let db; // This will be the shared database instance
 
-function initDatabase() {
+function initDatabase(dbInstance) {
   return new Promise((resolve, reject) => {
-    // Open database with WAL mode for better concurrency
-    db = new sqlite3.Database(CONFIG.DB_PATH, (err) => {
-      if (err) {
-        reject(err);
-        return;
-      }
-      
+    if (!dbInstance) {
+      return reject(new Error("Database instance was not provided to coinFetcher."));
+    }
+    db = dbInstance;
+
+    // The main server already sets WAL mode, but we can ensure it here too.
+    db.run('PRAGMA journal_mode=WAL', (err) => {
+      if (err) console.warn('⚠️ [coinFetcher] Could not enable WAL mode:', err.message);
+    });
+
       // Enable WAL mode for better concurrent access
       db.run('PRAGMA journal_mode=WAL', (err) => {
         if (err) console.warn('⚠️ Could not enable WAL mode:', err.message);
@@ -132,7 +135,6 @@ function initDatabase() {
           if (err) console.error('❌ Failed to create cmc_coins table:', err.message);
         });
 
-        // Metadata table
         db.run(`
           CREATE TABLE IF NOT EXISTS coin_metadata (
             key TEXT PRIMARY KEY,
@@ -157,7 +159,6 @@ function initDatabase() {
         
         resolve();
       });
-    });
   });
 }
 
@@ -376,7 +377,7 @@ async function fetchCoinGeckoData() {
     await dbRunAsync('BEGIN TRANSACTION');
     await dbRunAsync('DELETE FROM coingecko_coins');
     
-    const batchSize = 1000;
+    const batchSize = 100;
     for (let i = 0; i < coins.length; i += batchSize) {
       const batch = coins.slice(i, i + batchSize);
       for (const coin of batch) {
@@ -541,7 +542,7 @@ async function fetchCoinMarketCapData() {
     await dbRunAsync('DELETE FROM cmc_coins');
     
     let insertedCount = 0;
-    const insertBatchSize = 1000;
+    const insertBatchSize = 100;
     for (let i = 0; i < allCoinData.length; i += insertBatchSize) {
       const batch = allCoinData.slice(i, i + insertBatchSize);
       for (const coin of batch) {
@@ -596,7 +597,7 @@ async function fetchCoinMarketCapData() {
 // ============================================================
 // FETCH ALL DATA
 // ============================================================
-async function fetchAllCoinData() {
+export async function fetchAllCoinData() {
   console.log('\n🔄 Fetching coin data...');
   console.log(`📊 CoinGecko: ${CONFIG.COINGECKO_ENABLED ? 'ENABLED' : 'DISABLED'}`);
   console.log(`📊 CoinMarketCap: ${CONFIG.COINMARKETCAP_ENABLED ? 'ENABLED' : 'DISABLED'}`);
@@ -630,15 +631,20 @@ async function fetchAllCoinData() {
 // ============================================================
 // GET COIN DATA FROM DATABASE
 // ============================================================
-export function getCoinData(symbol, source = 'coingecko') {
-  return dbGetAsync(
-    `SELECT * FROM ${source === 'coingecko' ? 'coingecko_coins' : 'cmc_coins'} 
-     WHERE UPPER(symbol) = ? ORDER BY last_updated DESC LIMIT 1`,
-    [symbol.toUpperCase()]
-  );
+export function getCoinData(identifier, source = 'coingecko') {
+  const isCoingecko = source === 'coingecko';
+  const table = isCoingecko ? 'coingecko_coins' : 'cmc_coins';
+  
+  // CoinGecko is best looked up by its unique 'id' (e.g., "bitcoin").
+  // CoinMarketCap is best looked up by 'symbol' (e.g., "BTC").
+  const column = isCoingecko ? 'id' : 'symbol';
+
+  const sql = `SELECT * FROM ${table} WHERE UPPER(${column}) = ? ORDER BY last_updated DESC LIMIT 1`;
+  
+  return dbGetAsync(sql, [identifier.toUpperCase()]);
 }
 
-export function getAllCoins(source = 'coingecko', limit = 1000) {
+export function getAllCoins(source = 'coingecko', limit = 100) {
   return dbAllAsync(
     `SELECT * FROM ${source === 'coingecko' ? 'coingecko_coins' : 'cmc_coins'} 
      ORDER BY market_cap_usd DESC LIMIT ?`,
@@ -667,129 +673,42 @@ export function getCoinPrice(symbol) {
 // ============================================================
 // SCHEDULER
 // ============================================================
-function startScheduler() {
-  setTimeout(async () => {
-    console.log('\n⏰ Running initial fetch...');
-    await fetchAllCoinData();
-  }, 5000);
-  
-  const intervalMinutes = CONFIG.FETCH_INTERVAL_MINUTES;
-  const cronExpression = `*/${intervalMinutes} * * * *`;
-  
-  cron.schedule(cronExpression, async () => {
-    console.log(`\n⏰ Scheduled fetch (every ${intervalMinutes} minutes)`);
-    await fetchAllCoinData();
-  });
-  
-  console.log(`⏰ Scheduler started: fetching every ${intervalMinutes} minutes`);
-}
+export function startCoinFetcherService(mainDbInstance) {
+  console.log('🚀 Starting Coin Fetcher Service...');
+  console.log('📁 Working directory:', __dirname);
+  console.log('📊 Initializing coin database...');
 
-// ============================================================
-// MAIN
-// ============================================================
-console.log('🚀 Starting NiceHash Tool...');
-console.log('📁 Working directory:', __dirname);
-console.log('📊 Initializing coin database...');
-
-try {
-  await initDatabase();
-  console.log('✅ Database initialized:', CONFIG.DB_PATH);
-  
-  console.log(`📊 Coin Sources:`);
-  console.log(`   CoinGecko: ${CONFIG.COINGECKO_ENABLED ? '✅ ENABLED' : '❌ DISABLED'}`);
-  console.log(`   CoinMarketCap: ${CONFIG.COINMARKETCAP_ENABLED ? '✅ ENABLED' : '❌ DISABLED'}`);
-  if (CONFIG.COINMARKETCAP_ENABLED) {
-    console.log(`   💡 CMC will fetch ALL coins (this may take 30-60 seconds on first run)`);
-  }
-  
-  startScheduler();
-} catch (error) {
-  console.error('❌ Database initialization failed:', error.message);
-  process.exit(1);
-}
-
-// ============================================================
-// ORIGINAL PROCESS MANAGEMENT
-// ============================================================
-
-let processes = [];
-
-function cleanup() {
-  console.log('\n🛑 Shutting down...');
-  processes.forEach(p => {
-    try {
-      p.kill();
-    } catch (e) {}
-  });
-  process.exit(0);
-}
-
-process.on('SIGINT', cleanup);
-process.on('SIGTERM', cleanup);
-
-console.log('📡 Starting backend server...');
-const backend = spawn('node', ['index.js'], {
-  stdio: 'pipe',
-  shell: true,
-  env: { ...process.env }
-});
-
-processes.push(backend);
-
-let backendReady = false;
-
-backend.stdout.on('data', (data) => {
-  const output = data.toString().trim();
-  if (output) console.log('[📡]', output);
-  // Updated to match the new ready signal from the unified logger
-  if (output.includes('Listening on http://localhost:3000')) {
-    backendReady = true;
-    console.log('✅ Backend ready! Starting frontend...');
-    
-    setTimeout(() => {
-      console.log('🎨 Starting frontend...');
+  initDatabase(mainDbInstance)
+    .then(() => {
+      console.log('✅ Database initialized for Coin Fetcher:', CONFIG.DB_PATH);
       
-      const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+      console.log(`📊 Coin Sources:`);
+      console.log(`   CoinGecko: ${CONFIG.COINGECKO_ENABLED ? '✅ ENABLED' : '❌ DISABLED'}`);
+      console.log(`   CoinMarketCap: ${CONFIG.COINMARKETCAP_ENABLED ? '✅ ENABLED' : '❌ DISABLED'}`);
+      if (CONFIG.COINMARKETCAP_ENABLED) {
+        console.log(`   💡 CMC will fetch ALL coins (this may take 30-60 seconds on first run)`);
+      }
       
-      const frontend = spawn(npmCmd, ['run', 'dev'], {
-        stdio: 'inherit',
-        shell: true,
-        env: { ...process.env }
-      });
-      processes.push(frontend);
+      // Start the scheduler
+      setTimeout(async () => {
+        console.log('\n⏰ Running initial coin fetch...');
+        await fetchAllCoinData();
+      }, 5000);
       
-      frontend.on('error', (err) => {
-        console.error('❌ Frontend error:', err.message);
+      const intervalMinutes = CONFIG.FETCH_INTERVAL_MINUTES;
+      const cronExpression = `*/${intervalMinutes} * * * *`;
+      
+      cron.schedule(cronExpression, async () => {
+        console.log(`\n⏰ Scheduled coin fetch (every ${intervalMinutes} minutes)`);
+        await fetchAllCoinData();
       });
       
-      frontend.on('close', (code) => {
-        if (code !== 0 && code !== null) {
-          console.error(`❌ Frontend exited with code ${code}`);
-        }
-      });
-    }, 1500);
-  }
-});
+      console.log(`⏰ Coin fetcher scheduler started: fetching every ${intervalMinutes} minutes`);
+    })
+    .catch(error => {
+      console.error('❌ Coin fetcher database initialization failed:', error.message);
+      process.exit(1);
+    });
+}
 
-backend.stderr.on('data', (data) => {
-  const error = data.toString().trim();
-  if (error && !error.includes('ECONNREFUSED') && !error.includes('DeprecationWarning')) {
-    console.error('[Backend Error]', error);
-  }
-});
-
-backend.on('error', (err) => {
-  console.error('❌ Backend error:', err.message);
-});
-
-backend.on('close', (code) => {
-  if (code !== 0 && code !== null) {
-    console.error(`❌ Backend exited with code ${code}`);
-  }
-  if (!backendReady) {
-    console.log('❌ Backend failed to start. Please check the errors above.');
-  }
-});
-
-console.log('📡 Backend starting... Waiting for ready signal.');
-console.log('💡 Press Ctrl+C to stop all services.');
+export { db };
