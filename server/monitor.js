@@ -9,11 +9,20 @@ import { dbGetAsync, dbRunAsync, dbAllAsync } from "./monitor/dbHelpers.js";
 import { extractArray, sendTelegramInternal, getTelegramStatus, setTelegramStatus } from "./monitor/helpers.js";
 import { processRental, isRealRental } from "./monitor/rentalProcessor.js";
 
-// const getAlgoDisplayName = (code) => {
-//   if (!code) return "N/A";
-//   const uc = String(code).toUpperCase();
-//   return ALGO_DISPLAY_NAMES[uc] || code;
-// };
+// ============================================================
+// ADD THIS MISSING FUNCTION
+// ============================================================
+async function sendTelegramNotification(message, options = {}) {
+    const text = String(message || "").trim();
+    if (!text) return;
+
+    try {
+        await sendTelegramInternal(text);
+        if (options.onSuccess) await options.onSuccess();
+    } catch (err) {
+        if (options.onFailure) await options.onFailure(err);
+    }
+}
 
 // Re-export for backward compatibility with other modules
 export { sendTelegramInternal, getTelegramStatus, setTelegramStatus };
@@ -244,10 +253,6 @@ const lastAlertTimes = new Map([["global_summary", 0]]);
 const lastRigStates = new Map();
 
 // ==========================
-//  Helper: HTML escaping
-// ==========================
-
-// ==========================
 //  Main monitoring function
 // ==========================
 export async function runRentalMonitor(
@@ -289,6 +294,7 @@ export async function runRentalMonitor(
     const currentActiveRentalIds = new Set();
     const globalRentalsMap = new Map();
     const notifiedRentalIdsThisRun = new Set();
+    const queuedTelegramMessages = []; // Add this missing declaration
 
     const queueTelegramMessage = (message, options = {}) => {
       const text = String(message || "").trim();
@@ -710,7 +716,7 @@ export async function runRentalMonitor(
         sendTelegramNotification(finishMsg, {
           type: "RENTAL FINISHED",
           label: `Finished ${fr.client} ${fr.id}`,
-          summary: { // This summary object seems unused, but keeping it for now
+          summary: {
             account: fr.client,
             rig: enriched.name || enriched.id,
             algo: resolveRentalAlgo(enriched, info),
@@ -792,7 +798,7 @@ export async function runRentalMonitor(
           TelegramTemplates.heartbeatSummary(
             barChart,
             onlineAll, 
-            rentedAll, // ✅ Using real rental count
+            rentedAll,
             offlineAll,
             disabledAll,
             totalAll,
@@ -843,7 +849,6 @@ export async function runRentalMonitor(
           warning: warningAll,
         },
         perAccount: accountMetrics,
-        // FIXED: Only include real rentals in the summary
         activeRentals: allRentedRigs
           .filter((r) => {
             const rentalDetail = globalRentalsMap.get(String(r.id));

@@ -19,7 +19,7 @@ export function formatAccount(account) {
 }
 
 export function formatRig(r) {
-  return `${escapeHtml(r?.name || r?.id || "N/A")} (<code>${escapeHtml(r?.id || "N/A")}</code>)`;
+  return `${escapeHtml(r?.name || r?.id || "N/A")}`;
 }
 
 export function formatHashrate(value, suffix) {
@@ -53,19 +53,19 @@ export const TelegramTemplates = {
   // ACTIVE RENTAL LINE - FIXED PARAMETER ORDER
   // ============================================================
   activeRentalLine: (
-    perfEmoji, // 1: performance emoji
-    algo, // 2: algo
-    name, // 3: rig name
-    remaining, // 4: remaining time
-    efficiency, // 5: efficiency percentage
-    roi, // 6: roi percentage
-    cur, // 7: current hashrate
-    avg, // 8: average hashrate
-    adv,  // 9: advertised hashrate
-    target, // 10: target hashrate
-    extra, // 11: extra info
-    client, // 12: client/account
-    info = { price: {} } // 13: price info
+    perfEmoji,    // 1
+    algo,         // 2
+    name,         // 3
+    remaining,    // 4
+    efficiency,   // 5
+    roi,          // 6
+    avg,          // 7  ← This is the 7th parameter
+    adv,          // 8  ← This is the 8th parameter
+    cur,          // 9  ← This is the 9th parameter
+    target,       // 10
+    extra,        // 11
+    client,       // 12
+    info          // 13
   ) => {
     const shortName = String(name || "N/A")
       .replace(/\s+/g, " ")
@@ -78,10 +78,10 @@ export const TelegramTemplates = {
     const avgDisplay = avg || "⚠️ H/s";
     const advDisplay = adv || "⚠️ H/s";
     const curDisplay = cur || "⚠️ H/s";
-    
+
     // Ensure cur has warning if it's 0
-    const finalCurDisplay = curDisplay === "0 H/s" || curDisplay === "0" 
-      ? "⚠️ 0 H/s" 
+    const finalCurDisplay = curDisplay === "0 H/s" || curDisplay === "0"
+      ? "⚠️ 0 H/s"
       : curDisplay;
 
     return (
