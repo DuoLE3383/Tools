@@ -71,16 +71,15 @@ export const TelegramTemplates = {
     return (
       `🚀 <b>[${type}]</b>\n` +
       `<b>Account:</b> <code>${formatAccount(acct)}</code>\n` +
-      `${divider}\n` +
       `<b>Rig:</b> ${formatRig(r)}\n` +
       `<b>Algo:</b> <code>${escapeHtml(algo)}</code>\n` +
       `<b>Time:</b> ${formatTimeRange(info.startTime, info.endTime)}\n` +
-      `${divider}\n` +
       `💰 Paid: <code>${escapeHtml(info.price?.paid)} </code> <b> ${escapeHtml(info.price?.currency)}</b>\n` +
       `<b>Efficiency:</b> <b>${info.percent}%</b> (Diff: ${diff}%)\n` +
       `Adv: <code>${ads}</code>\n` +
       `<b>Remaining:</b> ${rem}\n` +
-      `<b>Target to 100%:</b> ${info.targetHashrate || "N/A"}`
+      `<b>Target to 100%:</b> ${info.targetHashrate || "N/A"}/n` +
+      `${divider}\n`
     );
   },
 
@@ -156,7 +155,7 @@ export const TelegramTemplates = {
       `<b>Algo:</b> <code>${escapeHtml(algo)}</code>\n` +
       `<b>Avg Speed:</b> ${avg} ${suffix}\n` +
       `<b>Final Efficiency:</b> <b>${parseFloat(efficiency).toFixed(2)}%</b>\n` +
-      `💰 Paid: <code>${escapeHtml(info.price?.paid)} </code> <b> ${escapeHtml(info.price?.currency)}</b>\n` +
+      `💰Paid: <code>${escapeHtml(info.price?.paid)}</code> <b>${escapeHtml(info.price?.currency)}</b>`
     );
   },
 
@@ -170,7 +169,7 @@ export const TelegramTemplates = {
       `<b>Algo:</b> <code>${escapeHtml(algo)}</code>\n` +
       `<b>Status:</b> Running perfectly at ${efficiency}%\n` +
       `<b>Remaining:</b> ~${remH}h\n` +
-      `💰 Paid: <code>${escapeHtml(info.price?.paid)} </code> <b> ${escapeHtml(info.price?.currency)}</b>\n` +
+      `💰 Paid: <code>${escapeHtml(info.price?.paid)} </code> <b> ${escapeHtml(info.price?.currency)}</b>`
     );
   },
 
@@ -199,8 +198,9 @@ export const TelegramTemplates = {
     rented24h,
     algos,
   ) => {
-    const rentedCount = typeof rented === 'number' ? rented : parseInt(rented) || 0;
-    
+    const rentedCount =
+      typeof rented === "number" ? rented : parseInt(rented) || 0;
+
     let summary = `📊 <b>SUMMARY</b> [${time || new Date().toLocaleTimeString()}]\n`;
     summary += `${divider}\n`;
     summary += `🟢 Online: <b>${online || 0}</b> / Renting: <b>${rentedCount}</b>\n`;
@@ -208,12 +208,12 @@ export const TelegramTemplates = {
     summary += `📦 Total Rigs: <b>${total || 0}</b>\n`;
     summary += `🆕 Rented (24h): <b>${rented24h || 0}</b>\n`;
     summary += `${divider}\n`;
-    
+
     if (algos && algos.length > 0) {
       summary += `<b>Algorithms Online:</b>\n${algos.join("\n")}\n`;
       summary += `${divider}\n`;
     }
-    
+
     if (lines && lines.length > 0) {
       summary += `<b>Active Rentals Detail:</b>\n\n`;
       summary += lines.join("");
@@ -221,15 +221,21 @@ export const TelegramTemplates = {
       summary += `<b>Active Rentals Detail:</b>\n\n`;
       summary += `<i>No active rentals</i>\n`;
     }
-    
+
     return summary;
   },
 
   rigStatusWarning: (acct, rig, algo) =>
-    `⚠️ <b>[RIG WARNING]</b>\n<b>MRR:</b> ${formatAccount(acct)}\n<b>Rig:</b> ${formatRig(rig)}\n<b>Algo:</b> <code>${escapeHtml(algo)}</code>\n<b>Status:</b> <code>${rig.status?.status || rig.status}</code>`,
-    
+    `⚠️ <b>[RIG WARNING]</b>\n
+    ${formatAccount(acct)}\n
+   ${formatRig(rig)}\n
+   <b>Algo:</b> <code>${escapeHtml(algo)}</code>\n
+   <b>Status:</b> <code>${rig.status?.status || rig.status}</code>`,
+
   highWarningCount: (acct, count) =>
-    `⚠️ <b>[SYSTEM ALERT]</b>\n<b>MRR:</b> ${formatAccount(acct)}\n<b>High Warning Count:</b> <b>${count}</b> rigs in warning state.`,
+    `⚠️ <b>[SYSTEM ALERT]</b>\n 
+  ${formatAccount(acct)}\n
+  <b>High Warning Count:</b> <b>${count}</b> rigs in warning state.`,
 };
 
 // ============================================================
