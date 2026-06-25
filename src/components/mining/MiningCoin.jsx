@@ -1,34 +1,20 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { fetchMiningStats } from "./miningStatsFetcher";
-import { getNiceHashPriceValue } from "../../core/mrrUtils";
-import {
-  normalizeMiningDutchRows,
-  normalizeHeroRows,
-  mergeMiningRoutes,
-  btcValue,
-  compactNumber,
-  percentValue,
-} from "./miningWorkspaceData";
-
-export default function MiningCoin({ onCall, nhClient = "BT" }) {
-  const [heroStats, setHeroStats] = useState(null);
-  const [dutchStats, setDutchStats] = useState(null);
-  const [niceHashPrices, setNiceHashPrices] = useState({});
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+// MiningCoin.jsx - Add import and price modal
+import { useMemo, useState } from "react";
+import { btcValue, compactNumber, percentValue } from "./miningWorkspaceData";
+import { useMiningWorkspace } from "./MiningWorkspaceProvider";
+import CoinPriceModal from "./CoinPriceModal"; 
+export default function MiningCoin({ onCall, nhClient = "VN" }) {
+  const {
+    routes: combinedRows,
+    loading,
+    error,
+    lastUpdated,
+    refresh,
+  } = useMiningWorkspace();
   const [query, setQuery] = useState("");
   const [onlyProfitable, setOnlyProfitable] = useState(true);
-  const [lastUpdated, setLastUpdated] = useState("");
-
-  const miningDutchRows = useMemo(
-    () => normalizeMiningDutchRows(dutchStats),
-    [dutchStats],
-  );
-  const heroRows = useMemo(() => normalizeHeroRows(heroStats), [heroStats]);
-  const combinedRows = useMemo(
-    () => mergeMiningRoutes(miningDutchRows, heroRows, niceHashPrices),
-    [miningDutchRows, heroRows, niceHashPrices],
-  );
+  const [selectedCoin, setSelectedCoin] = useState(null);
+  const [priceModalOpen, setPriceModalOpen] = useState(false);
 
   const visibleRows = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -61,83 +47,22 @@ export default function MiningCoin({ onCall, nhClient = "BT" }) {
   const bestRow = visibleRows[0] || null;
   const profitableCount = combinedRows.filter((row) => row.spread > 0).length;
 
-  const loadData = useCallback(
-    async (force = false) => {
-      setLoading(true);
-      setError("");
-
-      try {
-        const [heroResult, dutchResult] = await Promise.allSettled([
-          fetchMiningStats("herominers_global", "BT", null, null, 20000, force),
-          fetchMiningStats("miningpooldutch", "BT", null, null, 20000, force),
-        ]);
-
-        const hero =
-          heroResult.status === "fulfilled" ? heroResult.value : null;
-        const dutch =
-          dutchResult.status === "fulfilled" ? dutchResult.value : null;
-        const nextHero = hero || heroStats;
-        const nextDutch = dutch || dutchStats;
-
-        if (hero) setHeroStats(hero);
-        if (dutch) setDutchStats(dutch);
-
-        if (!hero && !dutch) {
-          throw new Error(
-            heroResult.reason?.message ||
-            dutchResult.reason?.message ||
-            "Failed to load mining coin profitability",
-          );
-        }
-
-        setLastUpdated(new Date().toISOString());
-
-        const algos = Array.from(
-          new Set([
-            ...normalizeHeroRows(nextHero).map((row) => row.nicehashAlgo),
-            ...normalizeMiningDutchRows(nextDutch).map(
-              (row) => row.nicehashAlgo,
-            ),
-          ]),
-        ).filter((algo) => algo && algo !== "UNKNOWN");
-
-        if (typeof onCall === "function") {
-          const pricePairs = await Promise.all(
-            algos.map(async (algo) => {
-              try {
-                const data = await onCall("/api/v2/hashpower/order/price", {
-                  query: { algorithm: algo, market: "USA", client: nhClient },
-                  silent: true,
-                });
-                return [algo, getNiceHashPriceValue(data)];
-              } catch {
-                return [algo, 0];
-              }
-            }),
-          );
-
-          setNiceHashPrices(Object.fromEntries(pricePairs));
-        }
-      } catch (err) {
-        setError(err.message || "Failed to load mining coin profitability");
-      } finally {
-        setLoading(false);
-      }
-    },
-    [heroStats, dutchStats, nhClient, onCall],
-  );
-
-  useEffect(() => {
-    queueMicrotask(() => {
-      void loadData();
+  // Handle coin click - open price modal
+  const handleCoinClick = (coin) => {
+    setSelectedCoin({
+      symbol: coin,
+      name: coin,
+      coinId: coin.toLowerCase(),
     });
-  }, [loadData]);
+    setPriceModalOpen(true);
+  };
 
   return (
     <section
       className="mining-coin-page"
       style={{ display: "grid", gap: "14px" }}
     >
+      {/* ... header section ... */}
       <div
         style={{
           display: "flex",
@@ -179,7 +104,7 @@ export default function MiningCoin({ onCall, nhClient = "BT" }) {
           </label>
           <button
             className="btn-pro secondary"
-            onClick={() => void loadData(true)}
+            onClick={() => void refresh(true)}
             disabled={loading}
           >
             {loading ? "Refreshing..." : "Refresh"}
@@ -187,6 +112,7 @@ export default function MiningCoin({ onCall, nhClient = "BT" }) {
         </div>
       </div>
 
+      {/* ... summary tiles ... */}
       <div
         style={{
           display: "grid",
@@ -218,6 +144,7 @@ export default function MiningCoin({ onCall, nhClient = "BT" }) {
         />
       </div>
 
+      {/* ... search input ... */}
       <div
         style={{
           display: "flex",
@@ -246,6 +173,7 @@ export default function MiningCoin({ onCall, nhClient = "BT" }) {
         )}
       </div>
 
+      {/* ... table ... */}
       <div
         style={{
           overflowX: "auto",
@@ -363,24 +291,52 @@ export default function MiningCoin({ onCall, nhClient = "BT" }) {
                     <div
                       style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}
                     >
-                      {row.heroCoins.slice(0, 8).map((coin) => (
+                      {row.heroCoins && row.heroCoins.length > 0 ? (
+                        row.heroCoins.map((coin) => (
+                          <button
+                            key={coin}
+                            onClick={() => handleCoinClick(coin)}
+                            style={{
+                              border: "1px solid rgba(96,165,250,0.22)",
+                              color: "#bfdbfe",
+                              background: "rgba(37,99,235,0.12)",
+                              borderRadius: "999px",
+                              padding: "2px 8px",
+                              fontSize: "10px",
+                              cursor: "pointer",
+                              transition: "all 0.2s",
+                            }}
+                            onMouseEnter={(e) => {
+                              e.target.style.background =
+                                "rgba(37,99,235,0.25)";
+                              e.target.style.borderColor =
+                                "rgba(96,165,250,0.5)";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.target.style.background =
+                                "rgba(37,99,235,0.12)";
+                              e.target.style.borderColor =
+                                "rgba(96,165,250,0.22)";
+                            }}
+                          >
+                            {coin} 💰
+                          </button>
+                        ))
+                      ) : (
+                        <span style={{ color: "#64748b", fontSize: "10px" }}>
+                          No coins
+                        </span>
+                      )}
+                      {/* Show count if many coins */}
+                      {row.heroCoins && row.heroCoins.length > 10 && (
                         <span
-                          key={coin}
                           style={{
-                            border: "1px solid rgba(96,165,250,0.22)",
-                            color: "#bfdbfe",
-                            background: "rgba(37,99,235,0.12)",
-                            borderRadius: "999px",
-                            padding: "2px 6px",
-                            fontSize: "10px",
+                            color: "#64748b",
+                            fontSize: "9px",
+                            padding: "2px 4px",
                           }}
                         >
-                          {coin}
-                        </span>
-                      ))}
-                      {row.heroCoins.length > 8 && (
-                        <span style={{ color: "#64748b" }}>
-                          +{row.heroCoins.length - 8}
+                          +{row.heroCoins.length - 10} more
                         </span>
                       )}
                     </div>
@@ -391,6 +347,15 @@ export default function MiningCoin({ onCall, nhClient = "BT" }) {
           </tbody>
         </table>
       </div>
+
+      {/* Price Modal */}
+      <CoinPriceModal
+        isOpen={priceModalOpen}
+        onClose={() => setPriceModalOpen(false)}
+        coin={selectedCoin}
+        onCall={onCall}
+        priceSource="coingecko"
+      />
     </section>
   );
 }

@@ -6,18 +6,18 @@ let cachedDutchTime = 0;
 const DUTCH_CACHE_TTL = 30000; // 30 seconds cache
 
 export function registerMiningStatsRoutes(app) {
-  app.get("/api/v2/mining-stats/herominers_global", asyncHandler(async (req, res) => {
+  app.get("/api/v2/mining-stats/herominers", asyncHandler(async (req, res) => {
     const { scrapeHeroMinersGlobal } = await import("../miningOpportunityNotifier.js");
     const force = req.query.force === "true";
     const result = await scrapeHeroMinersGlobal(force);
     res.json(result);
   }));
 
-  app.get("/api/v2/mining-stats/miningpooldutch", asyncHandler(async (req, res) => {
+  app.get("/api/v2/mining-stats/miningdutch", asyncHandler(async (req, res) => {
     const force = req.query.force === "true";
     const now = Date.now();
     if (!force && cachedDutchData && (now - cachedDutchTime < DUTCH_CACHE_TTL)) {
-      return res.json({ success: true, miningpooldutch: cachedDutchData, cached: true });
+      return res.json({ success: true, miningdutch: cachedDutchData, cached: true });
     }
     try {
       const apiRes = await fetch("https://www.mining-dutch.nl/api/v1/public/multiport/?method=avgprofitability", {
@@ -37,13 +37,13 @@ export function registerMiningStatsRoutes(app) {
       }));
       cachedDutchData = { coinStats, fetchedAt: new Date().toISOString() };
       cachedDutchTime = now;
-      res.json({ success: true, miningpooldutch: cachedDutchData });
+      res.json({ success: true, miningdutch: cachedDutchData });
     } catch (err) {
       if (cachedDutchData) {
         console.warn("[Mining-Dutch] Fetch failed, returning cached data:", err.message);
-        return res.json({ success: true, miningpooldutch: cachedDutchData, cached: true, warning: err.message });
+        return res.json({ success: true, miningdutch: cachedDutchData, cached: true, warning: err.message });
       }
-      res.json({ success: false, error: err.message, miningpooldutch: { coinStats: [] } });
+      res.json({ success: false, error: err.message, miningdutch: { coinStats: [] } });
     }
   }));
 
@@ -55,7 +55,7 @@ export function registerMiningStatsRoutes(app) {
       (async () => {
         const now = Date.now();
         if (!force && cachedDutchData && (now - cachedDutchTime < DUTCH_CACHE_TTL)) {
-          return { success: true, miningpooldutch: cachedDutchData, cached: true };
+          return { success: true, miningdutch: cachedDutchData, cached: true };
         }
         try {
           const apiRes = await fetch("https://www.mining-dutch.nl/api/v1/public/multiport/?method=avgprofitability", {
@@ -74,19 +74,19 @@ export function registerMiningStatsRoutes(app) {
           }));
           cachedDutchData = { coinStats, fetchedAt: new Date().toISOString() };
           cachedDutchTime = now;
-          return { success: true, miningpooldutch: cachedDutchData };
+          return { success: true, miningdutch: cachedDutchData };
         } catch (err) {
           if (cachedDutchData) {
             console.warn("[Mining-Dutch] All Stats fetch failed, returning cached data:", err.message);
-            return { success: true, miningpooldutch: cachedDutchData, cached: true, warning: err.message };
+            return { success: true, miningdutch: cachedDutchData, cached: true, warning: err.message };
           }
-          return { success: false, error: err.message, miningpooldutch: { coinStats: [] } };
+          return { success: false, error: err.message, miningdutch: { coinStats: [] } };
         }
       })(),
     ]);
     res.json({
-      herominers_global: heroResult.status === "fulfilled" ? heroResult.value : null,
-      miningpooldutch: dutchResult.status === "fulfilled" ? dutchResult.value?.miningpooldutch : null,
+      herominers: heroResult.status === "fulfilled" ? heroResult.value : null,
+      miningdutch: dutchResult.status === "fulfilled" ? dutchResult.value?.miningdutch : null,
     });
   }));
 }

@@ -144,18 +144,18 @@ export default function MiningDutch({ onCall }) {
       try {
         // Use REST mining-stats route which fetches from the public API
         const response = await fetchMiningStats(
-          "miningpooldutch",
-          "BT",
+          "miningdutch",
+          "VN",
           null,
           null,
           20000,
           force,
         );
 
-        if (response?.miningpooldutch) {
+        if (response?.miningdutch) {
           setStats(response);
           setLastFetchedAt(
-            response.miningpooldutch.fetchedAt || new Date().toISOString(),
+            response.miningdutch.fetchedAt || new Date().toISOString(),
           );
         } else if (response?.success) {
           setStats(response);

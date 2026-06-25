@@ -6,8 +6,6 @@ import { getBtcPrice } from "./utils/priceUtils.js";
 
 const ACTION_HANDLERS = {
   herominers: handleHeroMiners,
-  herominers_global: handleHeroMiners,
-  miningpooldutch: handleMiningDutch,
   miningDutch: handleMiningDutch,
   all: handleAll,
 };
@@ -82,7 +80,7 @@ async function handleHeroMiners(options) {
     const result = await scrapeHeroMinersGlobal(btcPrice);
     
     return {
-      herominers_global: {
+      herominers: {
         success: result.success,
         coinStats: result.coinStats || [],
         miners: result.miners || 0,
@@ -106,7 +104,7 @@ async function handleMiningDutch(options) {
     const result = await scrapeMiningDutchGlobal(btcPrice, force);
     
     return {
-      miningpooldutch: {
+      miningdutch: {
         success: result.success,
         coinStats: result.coinStats || [],
         fetchedAt: new Date().toISOString(),
