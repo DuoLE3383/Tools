@@ -8,7 +8,11 @@ const DUTCH_CACHE_TTL = 30000; // 30 seconds cache
 export function registerMiningStatsRoutes(app) {
   app.get("/api/v2/mining-stats/herominers_global", asyncHandler(async (req, res) => {
 <<<<<<< HEAD
+<<<<<<< HEAD
     const { scrapeHeroMinersGlobal } = await import("../mining/miningOpportunities.js");
+=======
+    const { scrapeHeroMinersGlobal } = await import("../miningOpportunityNotifier.js");
+>>>>>>> parent of 1db0535 (big update)
 =======
     const { scrapeHeroMinersGlobal } = await import("../miningOpportunityNotifier.js");
 >>>>>>> parent of 1db0535 (big update)
@@ -53,7 +57,11 @@ export function registerMiningStatsRoutes(app) {
 
   app.get("/api/v2/mining-stats/all", asyncHandler(async (req, res) => {
 <<<<<<< HEAD
+<<<<<<< HEAD
     const { scrapeHeroMinersGlobal } = await import("../mining/miningOpportunities.js");
+=======
+    const { scrapeHeroMinersGlobal } = await import("../miningOpportunityNotifier.js");
+>>>>>>> parent of 1db0535 (big update)
 =======
     const { scrapeHeroMinersGlobal } = await import("../miningOpportunityNotifier.js");
 >>>>>>> parent of 1db0535 (big update)
