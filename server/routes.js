@@ -13,3 +13,8 @@ export function registerRoutes(app) {
   registerMiscRoutes(app);
   registerMiningStatsRoutes(app);
 }
+
+export async function registerWebSocketRoutes(server) {
+  const { setupPriceWebSocket } = await import('./routes/prices.js');
+  setupPriceWebSocket(server);
+}

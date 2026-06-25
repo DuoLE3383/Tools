@@ -6,7 +6,7 @@ import { SyncManager } from '../SyncManager.js'; // Assuming SyncManager is in t
 import { db } from './db.js'; // db is now simpler
 import { initNhConfigs, nhConfigs, getNiceHashApp, resolveNhClient } from './nh.js';
 import { initMrrConfigs, mrrConfigs, initNonces, syncMrrClock, mrrApiCall } from './mrr.js';
-import { registerRoutes } from './routes.js';
+import { registerRoutes, registerWebSocketRoutes } from './routes.js';
 import { corsMiddleware, logRequestMiddleware } from './utils.js';
 import { logger } from './logger.js';
 import { runRentalMonitor } from './monitor.js';
@@ -26,9 +26,10 @@ export function createApp({ distPath }) {
 
   registerRoutes(app);
 
-  // Create HTTP server and attach WebSocket
+  // Create HTTP server and attach WebSockets
   const server = http.createServer(app);
   setupWebSocket(server);
+  registerWebSocketRoutes(server);
   app.server = server;
 
   if (distPath) {

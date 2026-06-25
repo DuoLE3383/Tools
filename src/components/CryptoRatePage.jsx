@@ -440,7 +440,7 @@ export default function CryptoRatePage({ onCall, onPriceUpdate }) {
                 textAlign: "center",
               }}
             >
-              $ {coin.price.toFixed(2)}
+            $ {(coin.price || 0).toFixed(2)}
             </div>
           </div>
         ))}
