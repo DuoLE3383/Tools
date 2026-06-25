@@ -972,7 +972,7 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
             const divider = '━━━━━━━━━━━━━━━━━';
 
             const currentSpeedVal = parseFloat(info.hashrate.current || 0);
-            const speedStatus = currentSpeedVal > 0 ? `<b>${info.niceHashrate}H</b>` : '⚠️ <b>0 H/s</b>';
+            const speedStatus = currentSpeedVal > 0 ? `${info.niceHashrate}` : '⚠️ 0 H/s';
             const algo = resolveRentalAlgo(r, info);
 
             activeRentalLines.push(TelegramTemplates.activeRentalLine(
