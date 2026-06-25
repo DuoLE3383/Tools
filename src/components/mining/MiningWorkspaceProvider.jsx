@@ -15,6 +15,7 @@ import {
   normalizeMrrMarketRows,
   normalizeMiningDutchRows,
 } from "./miningWorkspaceData";
+import { getNiceHashPriceValue } from "../../core/mrrUtils";
 
 const MiningWorkspaceContext = createContext(null);
 
@@ -105,9 +106,7 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "BT" }) {
                   query: { algorithm: algo, market: "USA", client: nhClient },
                   silent: true,
                 });
-                const price = Number.parseFloat(
-                  data?.price ?? data?.fixedPrice ?? data?.marketPrice ?? 0,
-                );
+                const price = getNiceHashPriceValue(data);
                 return [algo, Number.isFinite(price) ? price : 0];
               } catch {
                 return [algo, 0];
