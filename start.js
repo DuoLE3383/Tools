@@ -882,8 +882,4 @@ console.log('💡 Press Ctrl+C to stop all services.');
 export { 
   db, 
   fetchAllCoinData,
-  getCoinData,
-  getAllCoins,
-  getCoinPrice,
-  setupCoinRoutes
 };

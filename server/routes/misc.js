@@ -94,15 +94,7 @@ export function registerMiscRoutes(app) {
 
   // ─── Mining Opportunities Scan ──────────────────────────────
   app.get("/api/v2/mining/opportunities/scan", asyncHandler(async (req, res) => {
-<<<<<<< HEAD
-<<<<<<< HEAD
-    const { handleMiningOpportunityScan } = await import("../mining/miningOpportunities.js");
-=======
-    const { handleMiningOpportunityScan } = await import("../miningOpportunityNotifier.js");
->>>>>>> parent of 1db0535 (big update)
-=======
-    const { handleMiningOpportunityScan } = await import("../miningOpportunityNotifier.js");
->>>>>>> parent of 1db0535 (big update)
+    const { handleMiningOpportunityScan } = await import("../mining/miningOpportunityNotifier.js");
     await handleMiningOpportunityScan(req, res);
   }));
 }
