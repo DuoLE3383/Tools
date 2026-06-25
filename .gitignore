@@ -1,57 +1,38 @@
+# Dependencies
 node_modules/
+package-lock.json
+
+# Environment files
 .env
+.env.*
+!.env.example
+
+# OS files
 .DS_Store
+
+# Build outputs
 dist/
-orders.xlsx
-orders.csv
-*.csv
-dist/nh_tool/index.js
-dist/client/index.html
 *.asar
-orders.csv
-*.csv
-*.db
-*.csv
-mrr_monitor.db
-mrr_monitor.db
-*.csv
+
+# Database files
 *.db
 *.db-wal
 *.db-shm
+mrr_monitor.db*
 database.json
-*.db-wal
-*.db-wal
-*.db
 database.zip
-mrr_monitor.db
-mrr_monitor.db-shm
-mrr_monitor.db-wal
-orders.csv
-mrr_monitor.db
-mrr_monitor.db-wal
-orders.csv
-mrr_monitor.db-shm
-mrr_monitor.db-wal
-node_modules/.vite/deps/_metadata.json
-orders.csv
+
+# Data files
+*.csv
+*.xlsx
+orders.*
+
+# Cloudflare Workers
 wrangler.toml
-mrr_monitor.db-wal
-*.db-wal
-mrr_monitor.db
-mrr_monitor.db-shm
-mrr_monitor.db-wal
-node_modules/.vite/deps/_metadata.json
-orders.csv
-orders.csv
-node_modules/.vite/deps/_metadata.json
-mrr_monitor.db-wal
-mrr_monitor.db-shm
-mrr_monitor.db
-orders.csv
-mrr_monitor.db-shm
-mrr_monitor.db-wal
-orders.csv
-package-lock.json
-mrr_monitor.db-wal
-worker/index.js
 wrangler.jsonc
+.wrangler/
+worker/index.js
+
+# Vite cache
+.vite/
+node_modules/.vite/
