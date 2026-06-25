@@ -11,6 +11,7 @@ import {
 import { getBtcPriceData } from "../../src/core/priceUtils.js";
 import { getMonitorNhActiveOrders, sendTelegramInternal } from "../monitor/helpers.js";
 import { extractRentalInfo } from "../utils.js";
+import { getNiceHashPriceValue } from "../../src/core/mrrUtils.js";
 
 const { ALERT_COOLDOWN_MS } = TELEGRAM_CONFIG;
 
@@ -58,7 +59,7 @@ export function isRealRental(rental, info, now = Date.now()) {
     const paidAmount = parseFloat(info.price?.paid || 0);
 
     // If there's any activity or payment, it's real
-    if (paidAmount > 0 || currentHash > 0 || averageHash > 0) {
+    if (paidAmount > 0 || averageHash > 0) {
         logger.debug(`[monitor:isRealRental] Rental ${rentalId} is real (has paid amount or hashrate).`);
         return true;
     }
@@ -93,6 +94,36 @@ export function isRealRental(rental, info, now = Date.now()) {
 
     logger.debug(`[monitor:isRealRental] Rental ${rentalId} is a ghost (age: ${Math.round(ageMs / 1000)}s, no activity).`);
     return false;
+}
+
+/**
+ * Fetches the price of an active NiceHash order that matches the rental's algorithm.
+ * @param {object} rental - The MRR rental object.
+ * @param {string} acct - The account name (e.g., 'BT', 'PH').
+ * @returns {Promise<number|null>} The price of the matched order, or null if not found.
+ */
+async function getNiceHashOrderPriceForRental(rental, acct) {
+    try {
+        const nhAlgo = normalizeAlgoForNiceHash(rental.algo);
+        if (!nhAlgo || nhAlgo === "UNKNOWN" || nhAlgo === "N/A") {
+            // This is a common case for algos not on NiceHash, so we just return null.
+            return null;
+        }
+
+        const activeOrders = await getMonitorNhActiveOrders(acct);
+        const matchedOrder = activeOrders.find(
+            (order) => normalizeAlgoForNiceHash(order?.algorithm?.enumName || order?.algorithm || order?.algo) === nhAlgo
+        );
+
+        if (matchedOrder) {
+            const price = parseFloat(matchedOrder.price || 0);
+            return price > 0 ? price : null;
+        }
+    } catch (err) {
+        logger.error(`[monitor] Error in getNiceHashOrderPriceForRental for rental ${rental.id}: ${err.message}`);
+    }
+
+    return null;
 }
 
 async function sendTelegramNotification(message, options = {}) {
@@ -308,8 +339,9 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
     const remM_s = Math.floor((remainingMs % 3600000) / 60000);
 
     const remStr_s = isFinished_s ? "Finished" : hasEndTime ? (remD_s > 0 ? `${remD_s}d ${remH_s}h` : `${remH_s}h ${remM_s}m`) : "Active";
-    const perfEmoji = efficiency >= 100 ? "🎊" : efficiency >= 90 ? "🟢" : efficiency >= 70 ? "🔵" : efficiency >= 50 ? "🟡" : "🔴";
+    const perfEmoji = efficiency >= 100 ? "✅" : efficiency >= 90 ? "🟢" : efficiency >= 70 ? "🔵" : efficiency >= 50 ? "🟡" : "🔴";
 
+    const nhOrderPrice = await getNiceHashOrderPriceForRental(order.price, rental, acct);
     // ============================================================
     // BUILD SPEED STATUS - Use average as fallback when current is 0
     // ============================================================

@@ -1,8 +1,8 @@
-// MiningCoin.jsx - Add import and price modal
+// MiningCoin.jsx - with shared modal via context
 import { useMemo, useState, useEffect } from "react";
 import { btcValue, compactNumber, percentValue } from "./miningWorkspaceData";
 import { useMiningWorkspace } from "./MiningWorkspaceProvider";
-import CoinPriceModal from "./CoinPriceModal"; // <-- Add this import
+import { useCoinPrice } from "./CoinPriceContext.jsx"; // <-- import context hook
 
 export default function MiningCoin({ onCall, nhClient = "VN" }) {
   const {
@@ -12,28 +12,30 @@ export default function MiningCoin({ onCall, nhClient = "VN" }) {
     lastUpdated,
     refresh,
   } = useMiningWorkspace();
+  const { openCoinModal } = useCoinPrice(); // <-- use the shared modal trigger
   const [query, setQuery] = useState("");
   const [onlyProfitable, setOnlyProfitable] = useState(true);
-  const [selectedCoin, setSelectedCoin] = useState(null);
-  const [priceModalOpen, setPriceModalOpen] = useState(false);
   const [telegramStatus, setTelegramStatus] = useState(null);
 
   // Check Telegram status
   useEffect(() => {
-    const checkTelegram = async () => {
-      try {
-        const result = await onCall("/api/v2/telegram/status", { 
-          query: { client: nhClient },
-          silent: true });
-        setTelegramStatus(result);
-      } catch {
-        setTelegramStatus({ error: "Failed to check" });
-      }
-    };
-    checkTelegram();
-    const interval = setInterval(checkTelegram, 30000);
-    return () => clearInterval(interval);
-  }, [onCall, nhClient]);
+  const checkTelegram = async () => {
+    try {
+      const result = await onCall("/api/v2/telegram/status", { 
+        query: { client: nhClient },
+        silent: true,
+        // Add a flag to prevent showing errors
+      });
+      setTelegramStatus(result);
+    } catch {
+      // Silently ignore – backend endpoint may not exist
+      setTelegramStatus(null);
+    }
+  };
+  checkTelegram();
+  const interval = setInterval(checkTelegram, 30000);
+  return () => clearInterval(interval);
+}, [onCall, nhClient]);
 
   const visibleRows = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -66,22 +68,11 @@ export default function MiningCoin({ onCall, nhClient = "VN" }) {
   const bestRow = visibleRows[0] || null;
   const profitableCount = combinedRows.filter((row) => row.spread > 0).length;
 
-  // Handle coin click - open price modal
-  const handleCoinClick = (coin) => {
-    setSelectedCoin({
-      symbol: coin,
-      name: coin,
-      coinId: coin.toLowerCase(),
-    });
-    setPriceModalOpen(true);
-  };
-
   return (
     <section
       className="mining-coin-page"
       style={{ display: "grid", gap: "14px" }}
     >
-      {/* ... header section ... */}
       {/* Header with Telegram status */}
       <div
         style={{
@@ -155,7 +146,7 @@ export default function MiningCoin({ onCall, nhClient = "VN" }) {
         </div>
       </div>
 
-      {/* ... summary tiles ... */}
+      {/* Summary tiles */}
       <div
         style={{
           display: "grid",
@@ -187,7 +178,7 @@ export default function MiningCoin({ onCall, nhClient = "VN" }) {
         />
       </div>
 
-      {/* ... search input ... */}
+      {/* Search input */}
       <div
         style={{
           display: "flex",
@@ -216,7 +207,7 @@ export default function MiningCoin({ onCall, nhClient = "VN" }) {
         )}
       </div>
 
-      {/* ... table ... */}
+      {/* Table */}
       <div
         style={{
           overflowX: "auto",
@@ -248,7 +239,6 @@ export default function MiningCoin({ onCall, nhClient = "VN" }) {
               <HeaderCell>Spread</HeaderCell>
               <HeaderCell>HeroMiners</HeaderCell>
               <HeaderCell align="left">Coins</HeaderCell>
-              <HeaderCell align="left">Coins ({combinedRows.reduce((sum, r) => sum + (r.heroCoins?.length || 0), 0)})</HeaderCell>
             </tr>
           </thead>
           <tbody>
@@ -340,7 +330,7 @@ export default function MiningCoin({ onCall, nhClient = "VN" }) {
                           {row.heroCoins.slice(0, 10).map((coin) => (
                             <button
                               key={coin}
-                              onClick={() => handleCoinClick(coin)}
+                              onClick={() => openCoinModal(coin)}
                               style={{
                                 border: "1px solid rgba(96,165,250,0.22)",
                                 color: "#bfdbfe",
@@ -380,14 +370,6 @@ export default function MiningCoin({ onCall, nhClient = "VN" }) {
           </tbody>
         </table>
       </div>
-
-      {/* Price Modal */}
-      <CoinPriceModal
-        isOpen={priceModalOpen}
-        onClose={() => setPriceModalOpen(false)}
-        coin={selectedCoin}
-        onCall={onCall}
-      />
     </section>
   );
 }

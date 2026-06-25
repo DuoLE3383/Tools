@@ -204,7 +204,8 @@ export default function App() {
 
     // Build query string
     const enrichedQuery = { ...query };
-    const isPriceReq = path.includes('/order/price');
+    const isPriceReq = path.includes('/order/price') || path.includes('/price/');
+
     if (path.startsWith('/api/v2/') && !enrichedQuery.client && !isPriceReq) {
       const isPoolReq = path.includes('/pools') || section === 'pools';
       enrichedQuery.client = isPoolReq ? state.nhPoolClient : state.nhOrderClient;

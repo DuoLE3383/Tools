@@ -1,17 +1,16 @@
-// HeroMinersCard.jsx - COMPLETE FIXED VERSION
+// HeroMinersCard.jsx - UPGRADED with coin price modal integration
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { fetchMiningStats } from "./miningStatsFetcher.js";
 import { useRentedRigs } from "../mrr/RentedRigContext.jsx";
 import MiningDutch from "./MiningDutch.jsx";
+import { useCoinPrice } from "./CoinPriceContext.jsx"; // <-- new import
 
 // Algorithm normalization - match HeroMiners format
 function normalizeAlgorithm(algo) {
   if (!algo) return "";
-  // Remove spaces, special characters, convert to lowercase
   let cleaned = String(algo).toLowerCase()
     .replace(/[^a-z0-9]/g, "");
   
-  // Handle specific mappings
   const mappings = {
     "cryptonight": ["cryptonight", "cryptonightv7", "cryptonightv8", "cryptonightheavy", "cryptonightr"],
     "randomx": ["randomx", "randomxmonero"],
@@ -24,17 +23,14 @@ function normalizeAlgorithm(algo) {
     "etchash": ["etchash", "etcfash"],
   };
   
-  // Check if this algorithm matches any known mapping
   for (const [key, variants] of Object.entries(mappings)) {
     if (variants.includes(cleaned) || variants.some(v => cleaned.includes(v) || v.includes(cleaned))) {
       return key;
     }
   }
-  
   return cleaned;
 }
 
-// Get display name for algorithm
 function getAlgoDisplayName(algo) {
   const displayNames = {
     "cryptonight": "CryptoNight",
@@ -64,10 +60,10 @@ function HeroMinersTable({
   sortConfig,
   onSort,
 }) {
+  const { openCoinModal } = useCoinPrice(); // <-- hook
+
   const rows = useMemo(() => {
     const list = Array.isArray(stats) ? [...stats] : [];
-    
-    // Group by algorithm to sum miners and combine BTC/day
     const groupedByAlgo = new Map();
     
     list.forEach((coin) => {
@@ -81,17 +77,9 @@ function HeroMinersTable({
         existing.miners += Number(coin.miners) || 0;
         existing.btcPerDay += parseFloat(coin.btcPerDay || 0);
         existing.usdPerDay += parseFloat(coin.usdPerDay || 0);
-        // Add coin if not already in the set
-        if (coinName) {
-          existing.coinsSet.add(coinName);
-        }
-        // Also try to get from raw
-        if (coin.raw?.coin) {
-          existing.coinsSet.add(coin.raw.coin);
-        }
-        if (coin.raw?.symbol) {
-          existing.coinsSet.add(coin.raw.symbol);
-        }
+        if (coinName) existing.coinsSet.add(coinName);
+        if (coin.raw?.coin) existing.coinsSet.add(coin.raw.coin);
+        if (coin.raw?.symbol) existing.coinsSet.add(coin.raw.symbol);
         existing.rawAlgos.push(rawAlgo);
       } else {
         const coinsSet = new Set();
@@ -117,7 +105,6 @@ function HeroMinersTable({
       coins: Array.from(item.coinsSet).filter(Boolean).sort(),
     }));
     
-    // Apply Mining Only filter
     if (filterMiningOnly && activeAlgos.size > 0) {
       groupedList = groupedList.filter((item) => {
         const normalizedItem = item.normalized;
@@ -133,11 +120,8 @@ function HeroMinersTable({
       });
     }
 
-    // Sort
     return groupedList.sort((a, b) => {
-      let aVal;
-      let bVal;
-
+      let aVal, bVal;
       if (sortConfig.key === "usdPerDay") {
         aVal = a.usdPerDay || 0;
         bVal = b.usdPerDay || 0;
@@ -154,7 +138,6 @@ function HeroMinersTable({
         aVal = String(a[sortConfig.key] || "").toLowerCase();
         bVal = String(b[sortConfig.key] || "").toLowerCase();
       }
-
       if (aVal < bVal) return sortConfig.direction === "asc" ? -1 : 1;
       if (aVal > bVal) return sortConfig.direction === "asc" ? 1 : -1;
       return 0;
@@ -236,8 +219,9 @@ function HeroMinersTable({
                     gap: "4px"
                   }}>
                     {item.coins.slice(0, 8).map((coin) => (
-                      <span
+                      <button
                         key={coin}
+                        onClick={() => openCoinModal(coin)}
                         style={{
                           border: "1px solid rgba(96,165,250,0.22)",
                           color: "#bfdbfe",
@@ -245,10 +229,20 @@ function HeroMinersTable({
                           borderRadius: "999px",
                           padding: "1px 6px",
                           fontSize: "9px",
+                          cursor: "pointer",
+                          transition: "all 0.2s",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.target.style.background = "rgba(37,99,235,0.25)";
+                          e.target.style.borderColor = "rgba(96,165,250,0.5)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.target.style.background = "rgba(37,99,235,0.12)";
+                          e.target.style.borderColor = "rgba(96,165,250,0.22)";
                         }}
                       >
                         {coin}
-                      </span>
+                      </button>
                     ))}
                     {item.coins.length > 8 && (
                       <span style={{ color: "#64748b", fontSize: "9px" }}>
@@ -287,52 +281,34 @@ export default function HeroMinersCard({ onCall, pollInterval = 30000 }) {
   const pollTimerRef = useRef(null);
   const { rentedRigs } = useRentedRigs();
 
-  // Extract active algorithms from rented rigs
   const activeAlgos = useMemo(() => {
     const algos = new Set();
-    
-    if (!rentedRigs || rentedRigs.length === 0) {
-      return algos;
-    }
-    
+    if (!rentedRigs || rentedRigs.length === 0) return algos;
     rentedRigs.forEach((rig) => {
-      // Try multiple possible fields
       const algoFields = [
-        rig.algo,
-        rig.algorithm,
-        rig.type,
-        rig.rig?.algo,
-        rig.rig?.algorithm,
-        rig.rig?.type,
-        rig.hashrate?.algo,
-        rig.hashrate?.algorithm,
-        rig.name,
-        rig.rig?.name,
+        rig.algo, rig.algorithm, rig.type,
+        rig.rig?.algo, rig.rig?.algorithm, rig.rig?.type,
+        rig.hashrate?.algo, rig.hashrate?.algorithm,
+        rig.name, rig.rig?.name,
       ];
-      
       for (const field of algoFields) {
         if (field) {
           const algoStr = String(field);
-          // Split by common separators
           const parts = algoStr.split(/[,;\s|/]+/);
           parts.forEach(part => {
             const cleaned = part.trim();
-            if (cleaned && cleaned.length > 1) {
-              algos.add(cleaned);
-            }
+            if (cleaned && cleaned.length > 1) algos.add(cleaned);
           });
         }
       }
     });
-    
     return algos;
   }, [rentedRigs]);
 
   const requestSort = useCallback((key) => {
     setSortConfig((current) => ({
       key,
-      direction:
-        current.key === key && current.direction === "desc" ? "asc" : "desc",
+      direction: current.key === key && current.direction === "desc" ? "asc" : "desc",
     }));
   }, []);
 
@@ -363,13 +339,9 @@ export default function HeroMinersCard({ onCall, pollInterval = 30000 }) {
   }, []);
 
   useEffect(() => {
-    queueMicrotask(() => {
-      void fetchHeroMiners();
-    });
+    queueMicrotask(() => void fetchHeroMiners());
     if (pollInterval > 0) {
-      pollTimerRef.current = setInterval(() => {
-        void fetchHeroMiners();
-      }, pollInterval);
+      pollTimerRef.current = setInterval(() => void fetchHeroMiners(), pollInterval);
     }
     return () => {
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
@@ -379,9 +351,7 @@ export default function HeroMinersCard({ onCall, pollInterval = 30000 }) {
   const refreshData = useCallback(() => {
     if (pollTimerRef.current) {
       clearInterval(pollTimerRef.current);
-      pollTimerRef.current = setInterval(() => {
-        void fetchHeroMiners();
-      }, pollInterval);
+      pollTimerRef.current = setInterval(() => void fetchHeroMiners(), pollInterval);
     }
     void fetchHeroMiners(true);
   }, [fetchHeroMiners, pollInterval]);

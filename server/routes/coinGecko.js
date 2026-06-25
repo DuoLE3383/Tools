@@ -1,6 +1,6 @@
 // routes/coinGecko.js
 import { asyncHandler } from "../utils.js";
-import { getCmcPrices } from "../cmcClient.js";
+import { getCmcPrices } from "./cmcClient.js";
 
 let coinGeckoCache = {
   data: null,
