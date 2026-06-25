@@ -63,7 +63,6 @@ export const TelegramTemplates = {
     adv,          // 8  ← This is the 8th parameter
     cur,          // 9  ← This is the 9th parameter
     target,       // 10
-    extra,        // 11
     client,       // 12
     info          // 13
   ) => {
@@ -90,7 +89,7 @@ export const TelegramTemplates = {
       `📡 Cur: <code>${escapeHtml(finalCurDisplay)}</code> | 📈 Avg: <code>${escapeHtml(avgDisplay)}</code>\n` +
       `📢 Adv: <code>${escapeHtml(advDisplay)}</code> | 📊 Eff: <b>${typeof efficiency === "number" ? efficiency.toFixed(2) : efficiency}%</b>\n` +
       `💰 Paid: <b><code>${escapeHtml(info.price?.paid || "0.00")}</code> ${escapeHtml(info.price?.currency || "BTC")}</b>\n` +
-      `${extra}${divider}\n`
+      `${divider}\n`
     );
   },
 

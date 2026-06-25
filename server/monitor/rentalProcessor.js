@@ -356,11 +356,10 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
         remStr_s,                     // 4: remaining
         efficiency,                   // 5: efficiency (Correct)
         orderDiff,                    // 6: roi (Correct)
-        currentDisplay,               // 7: cur (now with fallback)
-        avgDisplay,                   // 8: avg
-        advDisplay,                   // 9: ads
+        avgDisplay,                   // 7: avg
+        advDisplay,                   // 8: ads
+        currentDisplay,               // 9: cur (now with fallback)
         displayTarget,                // 10: target
-        "",                           // 11: extra
         acct,                         // 12: client
         info                          // 13: info
     );
