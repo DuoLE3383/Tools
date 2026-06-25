@@ -1,5 +1,5 @@
 // MiningCoin.jsx - Add import and price modal
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState } from "react";
 import { btcValue, compactNumber, percentValue } from "./miningWorkspaceData";
 import { useMiningWorkspace } from "./MiningWorkspaceProvider";
 import CoinPriceModal from "./CoinPriceModal"; // <-- Add this import
@@ -16,22 +16,6 @@ export default function MiningCoin({ onCall, nhClient = "BT" }) {
   const [onlyProfitable, setOnlyProfitable] = useState(true);
   const [selectedCoin, setSelectedCoin] = useState(null);
   const [priceModalOpen, setPriceModalOpen] = useState(false);
-  const [telegramStatus, setTelegramStatus] = useState(null);
-
-  // Check Telegram status
-  useEffect(() => {
-    const checkTelegram = async () => {
-      try {
-        const result = await onCall("/api/v2/telegram/status", { silent: true });
-        setTelegramStatus(result);
-      } catch {
-        setTelegramStatus({ error: "Failed to check" });
-      }
-    };
-    checkTelegram();
-    const interval = setInterval(checkTelegram, 30000);
-    return () => clearInterval(interval);
-  }, [onCall]);
 
   const visibleRows = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -52,7 +36,7 @@ export default function MiningCoin({ onCall, nhClient = "BT" }) {
         row.nicehashAlgo,
         row.mrrAlgo,
         row.bestSource,
-        ...(row.heroCoins || []),
+        ...row.heroCoins,
       ].some((value) =>
         String(value || "")
           .toLowerCase()
@@ -80,7 +64,6 @@ export default function MiningCoin({ onCall, nhClient = "BT" }) {
       style={{ display: "grid", gap: "14px" }}
     >
       {/* ... header section ... */}
-      {/* Header with Telegram status */}
       <div
         style={{
           display: "flex",
@@ -104,29 +87,6 @@ export default function MiningCoin({ onCall, nhClient = "BT" }) {
             flexWrap: "wrap",
           }}
         >
-          {/* Telegram Status Indicator */}
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "4px",
-              padding: "2px 10px",
-              borderRadius: "12px",
-              background: telegramStatus?.enabled 
-                ? "rgba(52,211,153,0.1)" 
-                : "rgba(148,163,184,0.05)",
-              border: `1px solid ${telegramStatus?.enabled ? "rgba(52,211,153,0.2)" : "rgba(148,163,184,0.1)"}`,
-            }}
-          >
-            <span style={{ fontSize: "12px" }}>📢</span>
-            <span style={{ 
-              fontSize: "10px", 
-              color: telegramStatus?.enabled ? "#34d399" : "#94a3b8",
-            }}>
-              {telegramStatus?.enabled ? "Telegram Online" : "Telegram Offline"}
-            </span>
-          </div>
-
           <label
             style={{
               display: "flex",
@@ -246,7 +206,6 @@ export default function MiningCoin({ onCall, nhClient = "BT" }) {
               <HeaderCell>Spread</HeaderCell>
               <HeaderCell>HeroMiners</HeaderCell>
               <HeaderCell align="left">Coins</HeaderCell>
-              <HeaderCell align="left">Coins ({combinedRows.reduce((sum, r) => sum + (r.heroCoins?.length || 0), 0)})</HeaderCell>
             </tr>
           </thead>
           <tbody>
@@ -334,41 +293,52 @@ export default function MiningCoin({ onCall, nhClient = "BT" }) {
                       style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}
                     >
                       {row.heroCoins && row.heroCoins.length > 0 ? (
-                        <>
-                          {row.heroCoins.slice(0, 10).map((coin) => (
-                            <button
-                              key={coin}
-                              onClick={() => handleCoinClick(coin)}
-                              style={{
-                                border: "1px solid rgba(96,165,250,0.22)",
-                                color: "#bfdbfe",
-                                background: "rgba(37,99,235,0.12)",
-                                borderRadius: "999px",
-                                padding: "2px 8px",
-                                fontSize: "10px",
-                                cursor: "pointer",
-                                transition: "all 0.2s",
-                              }}
-                              onMouseEnter={(e) => {
-                                e.target.style.background = "rgba(37,99,235,0.25)";
-                                e.target.style.borderColor = "rgba(96,165,250,0.5)";
-                              }}
-                              onMouseLeave={(e) => {
-                                e.target.style.background = "rgba(37,99,235,0.12)";
-                                e.target.style.borderColor = "rgba(96,165,250,0.22)";
-                              }}
-                            >
-                              {coin} 💰
-                            </button>
-                          ))}
-                          {row.heroCoins.length > 10 && (
-                            <span style={{ color: "#64748b", fontSize: "9px", padding: "2px 4px" }}>
-                              +{row.heroCoins.length - 10} more
-                            </span>
-                          )}
-                        </>
+                        row.heroCoins.map((coin) => (
+                          <button
+                            key={coin}
+                            onClick={() => handleCoinClick(coin)}
+                            style={{
+                              border: "1px solid rgba(96,165,250,0.22)",
+                              color: "#bfdbfe",
+                              background: "rgba(37,99,235,0.12)",
+                              borderRadius: "999px",
+                              padding: "2px 8px",
+                              fontSize: "10px",
+                              cursor: "pointer",
+                              transition: "all 0.2s",
+                            }}
+                            onMouseEnter={(e) => {
+                              e.target.style.background =
+                                "rgba(37,99,235,0.25)";
+                              e.target.style.borderColor =
+                                "rgba(96,165,250,0.5)";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.target.style.background =
+                                "rgba(37,99,235,0.12)";
+                              e.target.style.borderColor =
+                                "rgba(96,165,250,0.22)";
+                            }}
+                          >
+                            {coin} 💰
+                          </button>
+                        ))
                       ) : (
-                        <span style={{ color: "#64748b", fontSize: "10px" }}>No coins</span>
+                        <span style={{ color: "#64748b", fontSize: "10px" }}>
+                          No coins
+                        </span>
+                      )}
+                      {/* Show count if many coins */}
+                      {row.heroCoins && row.heroCoins.length > 10 && (
+                        <span
+                          style={{
+                            color: "#64748b",
+                            fontSize: "9px",
+                            padding: "2px 4px",
+                          }}
+                        >
+                          +{row.heroCoins.length - 10} more
+                        </span>
                       )}
                     </div>
                   </BodyCell>
@@ -385,6 +355,7 @@ export default function MiningCoin({ onCall, nhClient = "BT" }) {
         onClose={() => setPriceModalOpen(false)}
         coin={selectedCoin}
         onCall={onCall}
+        priceSource="coingecko"
       />
     </section>
   );

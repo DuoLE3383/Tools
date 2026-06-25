@@ -10,7 +10,7 @@ import { registerRoutes } from './routes.js';
 import { corsMiddleware, logRequestMiddleware } from './utils.js';
 import { logger } from './logger.js';
 import { runRentalMonitor } from './monitor.js';
-import { startMiningOpportunityScanner } from './mining/miningOpportunities.js';
+import { startMiningOpportunityScanner } from './miningOpportunityNotifier.js';
 import { authMiddleware, generateToken } from './auth.js';
 import authRoutes from './auth.js';
 
