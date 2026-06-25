@@ -1,0 +1,77 @@
+[2026-06-25T00:43:42.038Z] INFO: 📁 Using database: C:\Coding\Tools\data\stats.db
+[2026-06-25T00:43:42.063Z] INFO: 🔄 Starting full price update...
+[2026-06-25T00:43:42.064Z] INFO: 📡 Fetching coin list from CoinGecko (max: 50000)...
+[2026-06-25T00:43:42.129Z] INFO: 📡 Fetching coin list from CoinMarketCap (max: 50000)...
+[2026-06-25T00:43:42.564Z] ERROR: ❌ Failed to fetch from CMC: Request failed with status code 400
+[2026-06-25T00:43:42.569Z] DEBUG:   ✓ CG: fetched 100 coins (total: 100)
+[2026-06-25T00:43:42.570Z] INFO: ✅ Found 100 coins from CoinGecko
+[2026-06-25T00:43:42.570Z] INFO: 🔄 Updating database...
+[2026-06-25T00:43:42.571Z] DEBUG:   Processing CMC coins...
+[2026-06-25T00:43:42.571Z] DEBUG:   Processing CoinGecko coins (skipping duplicates)...
+[2026-06-25T00:43:42.603Z] DEBUG:   ✅ Processed 50 coins total...
+[2026-06-25T00:43:42.775Z] DEBUG:   ✅ Processed 100 coins total...
+[2026-06-25T00:43:42.776Z] INFO: ✅ Updated 100 coins (CMC: 0, CG: 100, Skipped duplicates: 0, Errors: 0)
+[2026-06-25T00:43:42.777Z] INFO: 📄 Log saved to C:\Coding\Tools\data\logs\price-update-2026-06-25.log
+[2026-06-25T00:43:42.777Z] INFO: 🏁 Update complete.
+[2026-06-25T00:43:59.592Z] INFO: 📁 Using database: C:\Coding\Tools\data\stats.db
+[2026-06-25T00:43:59.615Z] INFO: 🔄 Starting full price update...
+[2026-06-25T00:43:59.615Z] INFO: 📡 Fetching coin list from CoinGecko (max: 50000)...
+[2026-06-25T00:43:59.670Z] INFO: 📡 Fetching coin list from CoinMarketCap (max: 50000)...
+[2026-06-25T00:43:59.830Z] DEBUG:   ✓ CG: fetched 100 coins (total: 100)
+[2026-06-25T00:43:59.830Z] INFO: ✅ Found 100 coins from CoinGecko
+[2026-06-25T00:44:00.393Z] DEBUG:   ✓ CMC: fetched 500 coins (total: 500)
+[2026-06-25T00:44:04.206Z] DEBUG:   ✓ CMC: fetched 500 coins (total: 1000)
+[2026-06-25T00:44:07.568Z] DEBUG:   ✓ CMC: fetched 500 coins (total: 1500)
+[2026-06-25T00:44:10.919Z] DEBUG:   ✓ CMC: fetched 500 coins (total: 2000)
+[2026-06-25T00:44:14.721Z] DEBUG:   ✓ CMC: fetched 500 coins (total: 2500)
+[2026-06-25T00:44:18.303Z] DEBUG:   ✓ CMC: fetched 500 coins (total: 3000)
+[2026-06-25T00:44:21.667Z] DEBUG:   ✓ CMC: fetched 500 coins (total: 3500)
+[2026-06-25T00:44:25.033Z] DEBUG:   ✓ CMC: fetched 500 coins (total: 4000)
+[2026-06-25T00:44:28.409Z] DEBUG:   ✓ CMC: fetched 500 coins (total: 4500)
+[2026-06-25T00:44:32.003Z] DEBUG:   ✓ CMC: fetched 500 coins (total: 5000)
+[2026-06-25T00:44:35.366Z] DEBUG:   ✓ CMC: fetched 500 coins (total: 5500)
+[2026-06-25T00:44:39.116Z] DEBUG:   ✓ CMC: fetched 500 coins (total: 6000)
+[2026-06-25T00:44:42.477Z] DEBUG:   ✓ CMC: fetched 500 coins (total: 6500)
+[2026-06-25T00:44:45.842Z] DEBUG:   ✓ CMC: fetched 500 coins (total: 7000)
+[2026-06-25T00:44:49.208Z] DEBUG:   ✓ CMC: fetched 500 coins (total: 7500)
+[2026-06-25T00:44:52.568Z] DEBUG:   ✓ CMC: fetched 500 coins (total: 8000)
+[2026-06-25T00:44:55.880Z] DEBUG:   ✓ CMC: fetched 109 coins (total: 8109)
+[2026-06-25T00:44:55.882Z] INFO: ✅ Found 6946 coins from CMC
+[2026-06-25T00:44:55.882Z] INFO: 🔄 Updating database...
+[2026-06-25T00:44:55.883Z] DEBUG:   Processing CMC coins...
+[2026-06-25T00:45:09.621Z] DEBUG:   Processing CoinGecko coins (skipping duplicates)...
+[2026-06-25T00:45:09.634Z] DEBUG:   ✅ Processed 6950 coins total...
+[2026-06-25T00:45:09.866Z] INFO: ✅ Updated 6999 coins (CMC: 6923, CG: 76, Skipped duplicates: 46, Errors: 0)
+[2026-06-25T00:45:09.868Z] INFO: 📄 Log saved to C:\Coding\Tools\data\logs\price-update-2026-06-25.log
+[2026-06-25T00:45:09.868Z] INFO: 🏁 Update complete.
+[2026-06-25T00:45:10.479Z] INFO: 📁 Using database: C:\Coding\Tools\data\stats.db
+[2026-06-25T00:45:10.501Z] INFO: 🔄 Starting full price update...
+[2026-06-25T00:45:10.501Z] INFO: 📡 Fetching coin list from CoinGecko (max: 50000)...
+[2026-06-25T00:45:10.556Z] INFO: 📡 Fetching coin list from CoinMarketCap (max: 50000)...
+[2026-06-25T00:45:10.707Z] DEBUG:   ✓ CG: fetched 100 coins (total: 100)
+[2026-06-25T00:45:10.707Z] INFO: ✅ Found 100 coins from CoinGecko
+[2026-06-25T00:45:11.137Z] DEBUG:   ✓ CMC: fetched 500 coins (total: 500)
+[2026-06-25T00:45:14.932Z] DEBUG:   ✓ CMC: fetched 500 coins (total: 1000)
+[2026-06-25T00:45:18.736Z] DEBUG:   ✓ CMC: fetched 500 coins (total: 1500)
+[2026-06-25T00:45:22.117Z] DEBUG:   ✓ CMC: fetched 500 coins (total: 2000)
+[2026-06-25T00:45:25.511Z] DEBUG:   ✓ CMC: fetched 500 coins (total: 2500)
+[2026-06-25T00:45:28.869Z] DEBUG:   ✓ CMC: fetched 500 coins (total: 3000)
+[2026-06-25T00:45:32.423Z] DEBUG:   ✓ CMC: fetched 500 coins (total: 3500)
+[2026-06-25T00:45:35.866Z] DEBUG:   ✓ CMC: fetched 500 coins (total: 4000)
+[2026-06-25T00:45:39.547Z] DEBUG:   ✓ CMC: fetched 500 coins (total: 4500)
+[2026-06-25T00:45:42.921Z] DEBUG:   ✓ CMC: fetched 500 coins (total: 5000)
+[2026-06-25T00:45:46.479Z] DEBUG:   ✓ CMC: fetched 500 coins (total: 5500)
+[2026-06-25T00:45:49.841Z] DEBUG:   ✓ CMC: fetched 500 coins (total: 6000)
+[2026-06-25T00:45:53.208Z] DEBUG:   ✓ CMC: fetched 500 coins (total: 6500)
+[2026-06-25T00:45:56.774Z] DEBUG:   ✓ CMC: fetched 500 coins (total: 7000)
+[2026-06-25T00:46:00.807Z] DEBUG:   ✓ CMC: fetched 500 coins (total: 7500)
+[2026-06-25T00:46:04.399Z] DEBUG:   ✓ CMC: fetched 500 coins (total: 8000)
+[2026-06-25T00:46:07.747Z] DEBUG:   ✓ CMC: fetched 109 coins (total: 8109)
+[2026-06-25T00:46:07.748Z] INFO: ✅ Found 6944 coins from CMC
+[2026-06-25T00:46:07.749Z] INFO: 🔄 Updating database...
+[2026-06-25T00:46:07.750Z] DEBUG:   Processing CMC coins...
+[2026-06-25T00:46:23.177Z] DEBUG:   Processing CoinGecko coins (skipping duplicates)...
+[2026-06-25T00:46:23.340Z] DEBUG:   ✅ Processed 6950 coins total...
+[2026-06-25T00:46:23.362Z] INFO: ✅ Updated 6997 coins (CMC: 6921, CG: 76, Skipped duplicates: 46, Errors: 0)
+[2026-06-25T00:46:23.363Z] INFO: 📄 Log saved to C:\Coding\Tools\data\logs\price-update-2026-06-25.log
+[2026-06-25T00:46:23.364Z] INFO: 🏁 Update complete.

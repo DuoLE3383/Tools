@@ -135,7 +135,7 @@ async function fetchAllCoinsFromCMC() {
   try {
     let allCoins = {};
     let start = 1;
-    const limit = 50000;
+    const limit = 500;
     let totalFetched = 0;
     
     while (totalFetched < CMC_MAX) {

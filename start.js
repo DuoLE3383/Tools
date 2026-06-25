@@ -1,4 +1,4 @@
-// start.js - Complete working version
+// start.js - Complete working version with all coins from CoinGecko and CoinMarketCap
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -8,7 +8,9 @@ import cron from 'node-cron';
 import fetch from 'node-fetch';
 import dotenv from 'dotenv';
 
-dotenv.config(); 
+// Load environment variables
+dotenv.config();
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -34,7 +36,15 @@ const CONFIG = {
   // Retry settings
   MAX_RETRIES: 3,
   RETRY_DELAY_MS: 5000,
+  BATCH_SIZE: 100, // CMC batch size for quotes
+  MAP_LIMIT: 5000, // CMC map page size
 };
+
+// Debug: Show API key status
+console.log(`📊 CMC API Key loaded: ${CONFIG.COINMARKETCAP_ENABLED ? '✅ YES' : '❌ NO'}`);
+if (CONFIG.COINMARKETCAP_ENABLED) {
+  console.log(`   Key: ${CONFIG.COINMARKETCAP_API_KEY.substring(0, 8)}...`);
+}
 
 // Ensure data directory exists
 const dataDir = path.join(__dirname, 'data');
@@ -130,7 +140,7 @@ function initDatabase() {
           }
         });
 
-        // Create indexes
+        // Create indexes for faster queries
         db.run('CREATE INDEX IF NOT EXISTS idx_coingecko_symbol ON coingecko_coins(symbol)');
         db.run('CREATE INDEX IF NOT EXISTS idx_cmc_symbol ON cmc_coins(symbol)');
         db.run('CREATE INDEX IF NOT EXISTS idx_cmc_rank ON cmc_coins(cmc_rank)');
@@ -239,6 +249,7 @@ async function fetchWithRetry(url, options = {}, maxRetries = CONFIG.MAX_RETRIES
     try {
       const response = await fetch(url, options);
       
+      // If rate limited, wait and retry
       if (response.status === 429) {
         const retryAfter = response.headers.get('retry-after');
         const waitTime = retryAfter ? parseInt(retryAfter) * 1000 : delay;
@@ -276,7 +287,7 @@ async function fetchCoinGeckoData() {
     
     // Get market data for top coins
     const marketResponse = await fetchWithRetry(
-      `${CONFIG.COINGECKO_API}/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=50000&page=1&sparkline=false`
+      `${CONFIG.COINGECKO_API}/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=500&page=1&sparkline=false`
     );
     if (!marketResponse.ok) {
       throw new Error(`CoinGecko market API error: ${marketResponse.status}`);
@@ -372,11 +383,11 @@ async function fetchCoinGeckoData() {
 }
 
 // ============================================================
-// COINMARKETCAP FETCHER
+// COINMARKETCAP FETCHER - GET ALL COINS
 // ============================================================
 async function fetchCoinMarketCapData() {
   if (!CONFIG.COINMARKETCAP_ENABLED) {
-    console.log('⚠️ CoinMarketCap disabled (no API key set or key is empty)');
+    console.log('⚠️ CoinMarketCap disabled (no API key set)');
     console.log('   To enable, set CMC_API_KEY in your .env file');
     return 0;
   }
@@ -392,12 +403,11 @@ async function fetchCoinMarketCapData() {
     
     let allCoins = [];
     let start = 1;
-    const limit = 10000;
+    const mapLimit = CONFIG.MAP_LIMIT;
     let hasMore = true;
     
     while (hasMore) {
-      const mapUrl = `${CONFIG.COINMARKETCAP_API}/cryptocurrency/map?limit=${limit}&start=${start}`;
-      console.log(`   Fetching map page: start=${start}, limit=${limit}`);
+      const mapUrl = `${CONFIG.COINMARKETCAP_API}/cryptocurrency/map?limit=${mapLimit}&start=${start}`;
       
       const mapResponse = await fetchWithRetry(
         mapUrl,
@@ -430,14 +440,14 @@ async function fetchCoinMarketCapData() {
       console.log(`   Got ${coins.length} coins (total: ${allCoins.length})`);
       
       // Check if we got less than the limit (last page)
-      if (coins.length < limit) {
+      if (coins.length < mapLimit) {
         hasMore = false;
       } else {
-        start += limit;
+        start += mapLimit;
       }
       
       // Rate limit - wait a bit between requests
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise(resolve => setTimeout(resolve, 500));
     }
     
     console.log(`   Total coins in map: ${allCoins.length}`);
@@ -452,14 +462,16 @@ async function fetchCoinMarketCapData() {
     // ============================================================
     console.log('   Fetching quotes for all coins...');
     
-    const batchSize = 100; // CMC allows up to 100 IDs per request
+    const batchSize = CONFIG.BATCH_SIZE;
     const allCoinData = [];
+    const totalBatches = Math.ceil(allCoins.length / batchSize);
     
     for (let i = 0; i < allCoins.length; i += batchSize) {
       const batch = allCoins.slice(i, i + batchSize);
       const ids = batch.map(coin => coin.id).join(',');
+      const batchNum = Math.floor(i / batchSize) + 1;
       
-      console.log(`   Fetching quotes batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(allCoins.length / batchSize)} (${batch.length} coins)...`);
+      console.log(`   Fetching quotes batch ${batchNum}/${totalBatches} (${batch.length} coins)...`);
       
       const quoteUrl = `${CONFIG.COINMARKETCAP_API}/cryptocurrency/quotes/latest?id=${ids}&convert=USD`;
       
@@ -474,7 +486,7 @@ async function fetchCoinMarketCapData() {
       
       if (!quoteResponse.ok) {
         const errorText = await quoteResponse.text();
-        console.warn(`   Quote API error for batch ${i}: ${quoteResponse.status} - ${errorText}`);
+        console.warn(`   ⚠️ Quote API error for batch ${batchNum}: ${quoteResponse.status}`);
         continue;
       }
       
@@ -482,7 +494,7 @@ async function fetchCoinMarketCapData() {
       
       // Check for API errors
       if (quoteData.status?.error_code !== undefined && quoteData.status.error_code !== 0) {
-        console.warn(`   Quote API error: ${quoteData.status.error_message || 'Unknown error'}`);
+        console.warn(`   ⚠️ Quote API error: ${quoteData.status.error_message || 'Unknown error'}`);
         continue;
       }
       
@@ -496,7 +508,7 @@ async function fetchCoinMarketCapData() {
       }
       
       // Rate limit - wait between batches
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise(resolve => setTimeout(resolve, 300));
     }
     
     console.log(`   Total coins with quotes: ${allCoinData.length}`);
@@ -509,6 +521,8 @@ async function fetchCoinMarketCapData() {
     // ============================================================
     // STEP 3: Store in database
     // ============================================================
+    console.log('   Storing coins in database...');
+    
     await dbRunAsync('BEGIN TRANSACTION');
     
     // Clear existing data
@@ -516,8 +530,9 @@ async function fetchCoinMarketCapData() {
     
     // Insert new data in batches
     let insertedCount = 0;
-    for (let i = 0; i < allCoinData.length; i += batchSize) {
-      const batch = allCoinData.slice(i, i + batchSize);
+    const insertBatchSize = 100;
+    for (let i = 0; i < allCoinData.length; i += insertBatchSize) {
+      const batch = allCoinData.slice(i, i + insertBatchSize);
       for (const coin of batch) {
         const quote = coin.quote?.USD || {};
         
@@ -563,6 +578,10 @@ async function fetchCoinMarketCapData() {
     
   } catch (error) {
     console.error('❌ CoinMarketCap fetch error:', error.message);
+    if (error.message.includes('API key')) {
+      console.error('   Please check your CMC_API_KEY environment variable');
+      console.error('   Get a free API key at: https://coinmarketcap.com/api/');
+    }
     await dbRunAsync('ROLLBACK').catch(() => {});
     return 0;
   }
@@ -575,18 +594,21 @@ async function fetchAllCoinData() {
   console.log('\n🔄 Fetching coin data...');
   console.log(`📊 CoinGecko: ${CONFIG.COINGECKO_ENABLED ? 'ENABLED' : 'DISABLED'}`);
   console.log(`📊 CoinMarketCap: ${CONFIG.COINMARKETCAP_ENABLED ? 'ENABLED' : 'DISABLED'}`);
+  if (CONFIG.COINMARKETCAP_ENABLED) {
+    console.log(`   (This may take a while as we fetch all coins from CMC)`);
+  }
   
   const startTime = Date.now();
   
   let coingeckoCount = 0;
   let cmcCount = 0;
   
-  // Fetch CoinGecko
+  // Fetch CoinGecko (fast, ~1-2 seconds)
   if (CONFIG.COINGECKO_ENABLED) {
     coingeckoCount = await fetchCoinGeckoData();
   }
   
-  // Fetch CoinMarketCap
+  // Fetch CoinMarketCap (slow, ~30-60 seconds for all coins)
   if (CONFIG.COINMARKETCAP_ENABLED) {
     cmcCount = await fetchCoinMarketCapData();
   }
@@ -659,6 +681,7 @@ export function getCoinPrice(symbol) {
 function startScheduler() {
   // Run immediately on startup
   setTimeout(async () => {
+    console.log('\n⏰ Running initial fetch...');
     await fetchAllCoinData();
   }, 5000);
   
@@ -753,8 +776,10 @@ try {
   // Show coin source status
   console.log(`📊 Coin Sources:`);
   console.log(`   CoinGecko: ${CONFIG.COINGECKO_ENABLED ? '✅ ENABLED' : '❌ DISABLED'}`);
-  console.log(`   CoinMarketCap: ${CONFIG.COINMARKETCAP_ENABLED ? '✅ ENABLED' : '❌ DISABLED (no API key)'}`);
-  if (!CONFIG.COINMARKETCAP_ENABLED) {
+  console.log(`   CoinMarketCap: ${CONFIG.COINMARKETCAP_ENABLED ? '✅ ENABLED' : '❌ DISABLED'}`);
+  if (CONFIG.COINMARKETCAP_ENABLED) {
+    console.log(`   💡 CMC will fetch ALL coins (this may take 30-60 seconds on first run)`);
+  } else {
     console.log(`   💡 To enable CMC, set CMC_API_KEY in your .env file`);
   }
   
@@ -856,5 +881,9 @@ console.log('💡 Press Ctrl+C to stop all services.');
 // ============================================================
 export { 
   db, 
-  fetchAllCoinData
+  fetchAllCoinData,
+  getCoinData,
+  getAllCoins,
+  getCoinPrice,
+  setupCoinRoutes
 };
