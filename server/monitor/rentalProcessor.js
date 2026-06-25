@@ -233,11 +233,17 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
     // ============================================================
     // FORMAT HASHRATE VALUES FOR DISPLAY
     // ============================================================
+    // BUGFIX: If current is 0 but average is non-zero, the rig IS hashing.
+    // The current value is just stale (e.g. empty 15-min window).
+    // Show the average as the "current" for display, and only show
+    // the warning when BOTH current AND average are 0 (truly stalled).
     let currentDisplay;
     if (current > 0) {
       currentDisplay = formatHashrate(current, suffix);
+    } else if (average > 0) {
+      currentDisplay = formatHashrate(average, suffix);
     } else {
-      currentDisplay = "⚠️ 0 H/s"; // Only show warning if both are zero
+      currentDisplay = "⚠️ 0 H/s";
     }
 
     const avgDisplay = average > 0 ? formatHashrate(average, suffix) : "0 H/s";
