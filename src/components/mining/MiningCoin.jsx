@@ -2,8 +2,7 @@
 import { useMemo, useState } from "react";
 import { btcValue, compactNumber, percentValue } from "./miningWorkspaceData";
 import { useMiningWorkspace } from "./MiningWorkspaceProvider";
-import CoinPriceModal from "./CoinPriceModal"; // <-- Add this import
-
+import CoinPriceModal from "./CoinPriceModal"; 
 export default function MiningCoin({ onCall, nhClient = "VN" }) {
   const {
     routes: combinedRows,
