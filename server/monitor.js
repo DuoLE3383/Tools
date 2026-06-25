@@ -1,716 +1,884 @@
-// start.js
-import { spawn } from 'child_process';
-import { fileURLToPath } from 'url';
-import path from 'path';
-import fs from 'fs';
-import sqlite3 from 'sqlite3';
-import cron from 'node-cron';
-import fetch from 'node-fetch';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+import { db } from "./db.js";
+import { mrrApiCall, mrrConfigs } from "./mrr.js";
+import { isAggregate } from "./nh.js";
+import { extractRentalInfo, extractRigInfo } from "./utils.js";
+import { logger } from "./logger.js";
+import { TELEGRAM_CONFIG, TelegramTemplates } from "../src/core/telegram.js";
+import { ALGO_DISPLAY_NAMES, getAlgoDisplayName } from "../src/core/mapping.js";
+import { dbGetAsync, dbRunAsync, dbAllAsync } from "./monitor/dbHelpers.js";
+import { extractArray, sendTelegramInternal, getTelegramStatus, setTelegramStatus } from "./monitor/helpers.js";
+import { processRental, isRealRental } from "./monitor/rentalProcessor.js";
 
 // ============================================================
-// CONFIGURATION
+// ADD THIS MISSING FUNCTION
 // ============================================================
-const CONFIG = {
-  // CoinGecko API - Free tier allows ~50 calls/minute
-  COINGECKO_API: 'https://api.coingecko.com/api/v3',
-  COINGECKO_ENABLED: true,
-  
-  // CoinMarketCap API - Requires API key
-  COINMARKETCAP_API: 'https://pro-api.coinmarketcap.com/v1',
-  COINMARKETCAP_API_KEY: process.env.CMC_API_KEY || '',
-  COINMARKETCAP_ENABLED: !!process.env.CMC_API_KEY,
-  
-  // Database path
-  DB_PATH: path.join(__dirname, 'data', 'stats.db'),
-  
-  // Fetch interval in minutes (60 = every hour)
-  FETCH_INTERVAL_MINUTES: 60,
-  
-  // Retry settings for 429 rate limiting
-  RETRY_DELAY_MS: 60000, // 1 minute initial delay
-  MAX_RETRIES: 5,
-  RETRY_BACKOFF_MULTIPLIER: 2, // Double delay each retry
-};
+async function sendTelegramNotification(message, options = {}) {
+    const text = String(message || "").trim();
+    if (!text) return;
 
-// Ensure data directory exists
-const dataDir = path.join(__dirname, 'data');
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
+    try {
+        await sendTelegramInternal(text);
+        if (options.onSuccess) await options.onSuccess();
+    } catch (err) {
+        if (options.onFailure) await options.onFailure(err);
+    }
 }
 
-// ============================================================
-// DATABASE SETUP
-// ============================================================
-let db;
+// Re-export for backward compatibility with other modules
+export { sendTelegramInternal, getTelegramStatus, setTelegramStatus };
 
-async function initDatabase() {
-  return new Promise((resolve, reject) => {
-    db = new sqlite3.Database(CONFIG.DB_PATH, (err) => {
-      if (err) {
-        reject(err);
-        return;
-      }
-      
+const resolveRentalAlgo = (r, info) =>
+  info?.algo ||
+  r?.algo ||
+  r?.algorithm ||
+  r?.miningAlgorithm ||
+  r?.rig?.type ||
+  r?.rig?.algo ||
+  r?.type ||
+  "N/A";
+
+function getRentalIdFromRig(rig) {
+  const candidates = [
+    rig?.status?.rentalid,
+    rig?.status?.rental_id,
+    rig?.status?.rentalId,
+    rig?.rentalid,
+    rig?.rental_id,
+    rig?.rentalId,
+    rig?.current_rental_id,
+    rig?.currentRentalId,
+    rig?.rental?.id,
+  ];
+
+  const found = candidates.find(
+    (value) =>
+      value !== undefined &&
+      value !== null &&
+      String(value).trim() !== "" &&
+      String(value).trim() !== "0",
+  );
+  return found === undefined ? "" : String(found).trim();
+}
+
+function getRigLookupKeys(rental, fallbackId = "") {
+  return [
+    rental?.id,
+    rental?.rentalid,
+    rental?.rental_id,
+    rental?.rentalId,
+    rental?.rigid,
+    rental?.rig_id,
+    rental?.rigId,
+    rental?.rig?.id,
+    fallbackId,
+  ]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
+}
+
+function isRentalFinished(now, endTs, sourceRig) {
+  if (endTs > 0) return now >= endTs;
+
+  const statusRaw = sourceRig?.status;
+  const status = String(
+    typeof statusRaw === "object" ? statusRaw.status : statusRaw || "",
+  ).toLowerCase();
+  const hasLiveRentalId = Boolean(getRentalIdFromRig(sourceRig));
+  const rentedFlag = Boolean(sourceRig?.status?.rented);
+
+  return !(
+    rentedFlag ||
+    hasLiveRentalId ||
+    status.includes("rented") ||
+    status.includes("active")
+  );
+}
+
+function hasInactiveRentalStatus(rental) {
+  const statusCandidates = [
+    rental?.status,
+    rental?.state,
+    rental?.rental_status,
+    rental?.rentalStatus,
+    rental?.rig?.status,
+  ];
+  const status =
+    statusCandidates
+      .map((value) =>
+        String(
+          typeof value === "object" ? value?.status : value || "",
+        ).toLowerCase(),
+      )
+      .find(Boolean) || "";
+
+  return [
+    "finished",
+    "complete",
+    "completed",
+    "cancelled",
+    "canceled",
+    "expired",
+    "ended",
+  ].some((token) => status.includes(token));
+}
+
+function isRentalActive(now, endTs, sourceRig, rental) {
+  if (hasInactiveRentalStatus(rental)) return false;
+  if (endTs > 0) return now < endTs;
+
+  const statusRaw =
+    sourceRig?.status ??
+    rental?.status ??
+    rental?.state ??
+    rental?.rental_status ??
+    rental?.rentalStatus;
+  const status = String(
+    typeof statusRaw === "object" ? statusRaw.status : statusRaw || "",
+  ).toLowerCase();
+  const hasLiveRentalId = Boolean(getRentalIdFromRig(sourceRig));
+  const rentedFlag = Boolean(
+    sourceRig?.status?.rented || rental?.status?.rented,
+  );
+
+  return (
+    rentedFlag ||
+    hasLiveRentalId ||
+    status.includes("rented") ||
+    status.includes("active") ||
+    status.includes("running")
+  );
+}
+
+function isLiveRigCurrentlyRented(rig) {
+  if (!rig) return false;
+  const statusRaw = rig?.status;
+  const status = String(
+    typeof statusRaw === "object" ? statusRaw.status : statusRaw || "",
+  ).toLowerCase();
+  return (
+    Boolean(getRentalIdFromRig(rig)) &&
+    (status.includes("rented") ||
+      status.includes("active") ||
+      status.includes("running"))
+  );
+}
+
+// ==========================
+function getRealRentalCount(rentals) {
+  if (!Array.isArray(rentals)) return 0;
+
+  let count = 0;
+  for (const rental of rentals) {
+    const info = extractRentalInfo(rental);
+    if (isRealRental(rental, info)) {
+      count++;
+    }
+  }
+  return count;
+}
+
+/**
+ * Processes rig status changes and sends alerts if necessary.
+ * @param {object} rig - The rig object from MRR.
+ * @param {string} acct - The account name.
+ * @param {number} now - The current timestamp.
+ */
+function handleRigStatusChanges(rig, acct, now) {
+  const statusRaw = rig.status;
+  const status = String(
+    typeof statusRaw === "object" ? statusRaw.status : statusRaw || "",
+  ).toLowerCase();
+  const onlineFlag =
+    typeof rig?.status?.online === "boolean"
+      ? rig.status.online
+      : Boolean(rig?.online);
+
+  const isOffline = status.includes("offline") || !onlineFlag;
+  const isDisabled = status.includes("disabled");
+  const isWarning = status.includes("warning");
+
+  const currentStatus = isOffline
+    ? "OFFLINE"
+    : isDisabled
+      ? "DISABLED"
+      : isWarning
+        ? "WARNING"
+        : "OK";
+
+  const rigIdKey = `rig_state_${acct}_${rig.id}`;
+  const prevStatus = lastRigStates.get(rigIdKey);
+  const isStatusChanged = prevStatus !== undefined && prevStatus !== currentStatus;
+  const isCriticalChange = currentStatus === "WARNING";
+
+  if (isStatusChanged && isCriticalChange) {
+    const rigAlertKey = `alert_${rigIdKey}_${currentStatus}`;
+    const lastRigAlert = lastAlertTimes.get(rigAlertKey) || 0;
+
+    if (now - lastRigAlert > ALERT_COOLDOWN_MS) {
+      const rigMsg = TelegramTemplates.rigStatusWarning(
+        acct,
+        rig,
+        resolveRentalAlgo(rig),
+      );
+      sendTelegramInternal(rigMsg, { label: `Rig warning ${acct}`, type: "RIG WARNING" });
+      lastAlertTimes.set(rigAlertKey, now);
+    }
+  }
+  lastRigStates.set(rigIdKey, currentStatus);
+}
+
+// ==========================
+//  Global State (Persisted in DB)
+// ==========================
+
+let isMonitorRunning = false;
+const monitorInitTracker = new Set();
+async function maybeDelay(key) {
+  if (!monitorInitTracker.has(key)) {
+    logger.debug(`[Monitor] First-time load delay (1s) for: ${key}`);
+    await new Promise((r) => setTimeout(r, 1000));
+    monitorInitTracker.add(key);
+  }
+}
+
+// ==========================
+//  Constants
+// ==========================
+
+const { ALERT_COOLDOWN_MS, WARNING_RIG_THRESHOLD } = TELEGRAM_CONFIG;
+
+const RENTED_HEARTBEAT_MS = 15 * 60 * 1000;
+
+const lastAlertTimes = new Map([["global_summary", 0]]);
+const lastRigStates = new Map();
+
+// ==========================
+//  Main monitoring function
+// ==========================
+export async function runRentalMonitor(
+  forceNotify = false,
+  clientScope = "ALL",
+) {
+  if (isMonitorRunning) {
+    logger.debug(
+      `[Monitor] Run already in progress (force=${forceNotify}), skipping to prevent nonce collisions...`,
+    );
+    return { notifications: [], summary: { error: "Monitor already running" } };
+  }
+  isMonitorRunning = true;
+  try {
+    await maybeDelay("runRentalMonitor");
+    const requestedScope = String(clientScope || "ALL")
+      .trim()
+      .toUpperCase();
+    const scopeList = requestedScope.split(",").map((s) => s.trim());
+
+    const allConfiguredAccts = Object.keys(mrrConfigs).filter(
+      (k) => mrrConfigs[k].apiKey && mrrConfigs[k].apiSecret,
+    );
+
+    const mrrAccts =
+      scopeList.includes("ALL") ||
+      scopeList.includes("VN") ||
+      scopeList.some((s) => isAggregate(s))
+        ? allConfiguredAccts
+        : allConfiguredAccts.filter((acct) =>
+            scopeList.includes(acct.toUpperCase()),
+          );
+
+    const now = Date.now();
+    const notifications = [];
+    const activeRentalLines = [];
+    const accountMetrics = [];
+    const allRentedRigs = [];
+    const currentActiveRentalIds = new Set();
+    const globalRentalsMap = new Map();
+    const notifiedRentalIdsThisRun = new Set();
+    const queuedTelegramMessages = []; // Add this missing declaration
+
+    const queueTelegramMessage = (message, options = {}) => {
+      const text = String(message || "").trim();
+      if (!text) return;
+      queuedTelegramMessages.push({
+        message: text,
+        label: options.label || "Monitor",
+        type: options.type || options.label || "Monitor",
+        summary: options.summary || null,
+        onSuccess: options.onSuccess,
+        onFailure: options.onFailure,
+      });
+    };
+
+    await new Promise((resolve) => {
       db.serialize(() => {
-        // ============================================================
-        // CREATE TABLES WITH PROPER SCHEMA
-        // ============================================================
-        
-        // CoinGecko table
-        db.run(`
-          CREATE TABLE IF NOT EXISTS coingecko_coins (
-            id TEXT PRIMARY KEY,
-            symbol TEXT,
-            name TEXT,
-            price_usd REAL,
-            market_cap_usd REAL,
-            volume_24h_usd REAL,
-            change_24h REAL,
-            change_7d REAL,
-            change_30d REAL,
-            change_60d REAL,
-            change_200d REAL,
-            change_1y REAL,
-            ath REAL,
-            ath_change_percentage REAL,
-            ath_date TEXT,
-            atl REAL,
-            atl_change_percentage REAL,
-            atl_date TEXT,
-            circulating_supply REAL,
-            total_supply REAL,
-            max_supply REAL,
-            last_updated TEXT,
-            full_data TEXT
-          )
-        `, (err) => {
-          if (err) console.error('❌ Failed to create coingecko_coins table:', err.message);
-        });
+        db.run(
+          `CREATE TABLE IF NOT EXISTS rentals (
+        id TEXT PRIMARY KEY, name TEXT, client TEXT, start_time INTEGER, end_time INTEGER, algo TEXT,
+        target_100 REAL, order_diff REAL, last_updated INTEGER, last_notified INTEGER,
+        low_hashrate_start INTEGER, zero_hashrate_start INTEGER, current_hashrate TEXT,
+        average_hashrate TEXT, advertised_hashrate TEXT, price_paid TEXT
+      )`,
+          (err) => {
+            if (err)
+              logger.error(
+                `[monitor:db] Failed to create rentals table: ${err.message}`,
+              );
+          },
+        );
 
-        // CoinMarketCap table
-        db.run(`
-          CREATE TABLE IF NOT EXISTS cmc_coins (
-            id INTEGER PRIMARY KEY,
-            name TEXT,
-            symbol TEXT,
-            slug TEXT,
-            cmc_rank INTEGER,
-            price_usd REAL,
-            market_cap_usd REAL,
-            volume_24h_usd REAL,
-            percent_change_1h REAL,
-            percent_change_24h REAL,
-            percent_change_7d REAL,
-            percent_change_30d REAL,
-            percent_change_60d REAL,
-            percent_change_90d REAL,
-            circulating_supply REAL,
-            total_supply REAL,
-            max_supply REAL,
-            last_updated TEXT,
-            full_data TEXT
-          )
-        `, (err) => {
-          if (err) console.error('❌ Failed to create cmc_coins table:', err.message);
-        });
+        db.run(
+          `CREATE TABLE IF NOT EXISTS rental_history (id TEXT PRIMARY KEY, start_time INTEGER)`,
+          (err) => {
+            if (err)
+              logger.error(
+                `[monitor:db] Failed to create rental_history table: ${err.message}`,
+              );
+          },
+        );
 
-        // ============================================================
-        // FIX: Properly create coin_metadata with correct columns
-        // ============================================================
-        db.run(`
-          CREATE TABLE IF NOT EXISTS coin_metadata (
-            key TEXT PRIMARY KEY,
-            value TEXT,
-            last_updated TEXT
-          )
-        `, (err) => {
-          if (err) {
-            console.error('❌ Failed to create coin_metadata table:', err.message);
-            // If table exists but missing columns, try to add them
-            addMissingMetadataColumns();
-          }
-        });
+        db.run(
+          "DELETE FROM rental_history WHERE start_time < ?",
+          [Date.now() - 172800000],
+          () => resolve(),
+        );
+      });
+    });
 
-        // Function to add missing columns if they don't exist
-        function addMissingMetadataColumns() {
-          db.all("PRAGMA table_info(coin_metadata)", (err, columns) => {
-            if (err) {
-              console.error('❌ Failed to check coin_metadata schema:', err.message);
-              return;
+    const todayStart = new Date();
+    todayStart.setUTCHours(0, 0, 0, 0);
+    const todayStartTs = todayStart.getTime();
+
+    if (mrrAccts.length === 0) {
+      logger.warn(
+        `[${new Date().toLocaleTimeString()}] No accounts for scope: ${requestedScope}`,
+      );
+      return {
+        notifications: [],
+        summary: { error: "No accounts configured" },
+      };
+    }
+
+    logger.info(
+      `[${new Date().toLocaleTimeString()}] Starting check for ${mrrAccts.length} accounts...`,
+    );
+
+    // ------------------------------------------------------------------
+    //  Process each MRR account
+    // ------------------------------------------------------------------
+
+    let totalAll = 0;
+    let availableAll = 0;
+    let rentedAll = 0;
+    let offlineAll = 0;
+    let disabledAll = 0;
+    let warningAll = 0;
+    let onlineAll = 0;
+
+    const successfulAccts = [];
+    const globalOnlineAlgos = new Map();
+
+    await Promise.all(
+      mrrAccts.map(async (acct) => {
+        const harvestedRentalIds = new Set();
+        const rigLookupByRentalId = new Map();
+
+        const metric = {
+          name: acct,
+          total: 0,
+          online: 0,
+          rented: 0,
+          offline: 0,
+          disabled: 0,
+          warning: 0,
+          error: false,
+        };
+
+        try {
+          const [rigsRes, boughtRes, soldRes] = await Promise.all([
+            mrrApiCall({ endpoint: "/rig/mine", clientNameRaw: acct }),
+            mrrApiCall({
+              endpoint: "/rental",
+              query: { type: "bought" },
+              clientNameRaw: acct,
+            }),
+            mrrApiCall({
+              endpoint: "/rental",
+              query: { type: "sold" },
+              clientNameRaw: acct,
+            }),
+          ]);
+
+          if (rigsRes.statusCode === 200 && rigsRes.data?.success) {
+            const rigList = extractArray(rigsRes.data);
+            const rentedRigs = [];
+            let availableCount = 0;
+            let offlineCount = 0;
+            let disabledCount = 0;
+            let warningCount = 0;
+            let onlineCount = 0;
+
+            for (const rig of rigList) {
+              const statusRaw = rig.status;
+              const status = String(
+                typeof statusRaw === "object"
+                  ? statusRaw.status
+                  : statusRaw || "",
+              ).toLowerCase();
+              const rentedFlag = Boolean(rig?.status?.rented);
+              const rentalId = getRentalIdFromRig(rig);
+              const onlineFlag =
+                typeof rig?.status?.online === "boolean"
+                  ? rig.status.online
+                  : Boolean(rig?.online);
+
+              const isRented =
+                rentedFlag ||
+                status.includes("rented") ||
+                status.includes("active") ||
+                (rentalId && rentalId !== "0");
+              const isDisabled = status.includes("disabled");
+              const isOffline = status.includes("offline") || !onlineFlag;
+              const isWarning = status.includes("warning");
+              const isAvailable =
+                !isRented &&
+                !isDisabled &&
+                onlineFlag &&
+                (status.includes("available") ||
+                  status.includes("online") ||
+                  status === "");
+
+              handleRigStatusChanges(rig, acct, now);
+
+              if (isRented) {
+                rentedRigs.push(rig);
+                const detailKey = rentalId || String(rig.id || "").trim();
+                if (!detailKey) continue;
+                harvestedRentalIds.add(detailKey);
+                rigLookupByRentalId.set(detailKey, rig);
+                rigLookupByRentalId.set(String(rig.id), rig);
+              }
+              if (isAvailable) availableCount++;
+              if (isOffline) offlineCount++;
+              if (isDisabled) disabledCount++;
+              if (isWarning) warningCount++;
+              if (onlineFlag) {
+                onlineCount++;
+                const algoName = (rig.algo || rig.type || "N/A").toUpperCase();
+                globalOnlineAlgos.set(
+                  algoName,
+                  (globalOnlineAlgos.get(algoName) || 0) + 1,
+                );
+              }
             }
-            
-            const columnNames = columns.map(c => c.name);
-            const neededColumns = ['key', 'value', 'last_updated'];
-            
-            for (const col of neededColumns) {
-              if (!columnNames.includes(col)) {
-                db.run(`ALTER TABLE coin_metadata ADD COLUMN ${col} TEXT`, (err) => {
-                  if (err) {
-                    console.error(`❌ Failed to add column ${col}:`, err.message);
-                  } else {
-                    console.log(`✅ Added missing column: ${col} to coin_metadata`);
-                  }
+
+            if (warningCount >= WARNING_RIG_THRESHOLD) {
+              const alertKeyWarn = `${acct}_warn`;
+              const lastWarnAlert = lastAlertTimes.get(alertKeyWarn) || 0;
+              if (now - lastWarnAlert > ALERT_COOLDOWN_MS) {
+                const warnMsg = TelegramTemplates.highWarningCount(
+                  acct,
+                  warningCount,
+                );
+                sendTelegramInternal(warnMsg, {
+                  type: "SYSTEM ALERT",
+                  label: `High warning count ${acct}`,
+                  onFailure: (e) =>
+                    logger.error(`[monitor] Warn alert failed: ${e.message}`),
                 });
+                lastAlertTimes.set(alertKeyWarn, now);
+              }
+            }
+
+            metric.total = rigList.length;
+            metric.online = onlineCount;
+            metric.offline = offlineCount;
+            metric.disabled = disabledCount;
+            metric.warning = warningCount;
+
+            totalAll += rigList.length;
+            availableAll += availableCount;
+            offlineAll += offlineCount;
+            disabledAll += disabledCount;
+            warningAll += warningCount;
+            onlineAll += onlineCount;
+            allRentedRigs.push(...rentedRigs.map((r) => ({ ...r, acct })));
+            successfulAccts.push(acct);
+          } else if (rigsRes.data) {
+            const errMsg =
+              rigsRes.data.data?.message ||
+              rigsRes.data.message ||
+              rigsRes.data.error ||
+              "Unknown";
+            logger.warn(
+              `[${new Date().toLocaleTimeString()}] Account ${acct} rig list failed: ${errMsg}`,
+            );
+            metric.error = true;
+          }
+
+          const soldRentalsRaw = extractArray(soldRes.data || {}).map((r) => ({
+            ...r,
+            __rentalSide: "sold",
+          }));
+          const boughtRentalsRaw = extractArray(boughtRes.data || {}).map(
+            (r) => ({ ...r, __rentalSide: "bought" }),
+          );
+          const allRentalsRaw = [...boughtRentalsRaw, ...soldRentalsRaw];
+          logger.info(
+            `[monitor:${acct}] rentals fetched: sold=${soldRentalsRaw.length}, bought=${boughtRentalsRaw.length}, rig-rented-flags=${harvestedRentalIds.size}`,
+          );
+
+          if (boughtRentalsRaw.length > 0) {
+            logger.info(
+              `[monitor:${acct}] Ignoring ${boughtRentalsRaw.length} bought rental(s) for seller heartbeat; only sold rentals affect ROI/active detail.`,
+            );
+          }
+
+          const rentalsMap = new Map();
+          allRentalsRaw.forEach((r) => {
+            if (r && r.id) {
+              rentalsMap.set(String(r.id), r);
+              globalRentalsMap.set(String(r.id), r);
+              for (const key of getRigLookupKeys(r)) {
+                if (!rentalsMap.has(key)) rentalsMap.set(key, r);
+                if (!globalRentalsMap.has(key)) globalRentalsMap.set(key, r);
               }
             }
           });
+
+          const missingIds = Array.from(harvestedRentalIds).filter(
+            (hid) => !rentalsMap.has(hid),
+          );
+          if (missingIds.length > 0) {
+            await Promise.all(
+              missingIds.map(async (hid) => {
+                try {
+                  const hRes = await mrrApiCall({
+                    endpoint: `/rental/${hid}`,
+                    clientNameRaw: acct,
+                  });
+                  const hData = hRes.data?.data || hRes.data;
+                  if (hRes.statusCode === 200 && hData && !hData.error) {
+                    if (!hData.id) hData.id = hid;
+                    rentalsMap.set(hid, hData);
+                    globalRentalsMap.set(hid, hData);
+                  }
+                } catch (err) {}
+              }),
+            );
+          }
+
+          for (const [rid, rig] of rigLookupByRentalId.entries()) {
+            if (!rentalsMap.has(rid)) {
+              rentalsMap.set(rid, {
+                id: rid,
+                name: rig.name,
+                status: rig.status,
+                hashrate: { current: rig.hashrate || 0 },
+                rig: { id: rig.id, type: rig.algo || rig.type },
+              });
+              globalRentalsMap.set(rid, rentalsMap.get(rid));
+            }
+          }
+
+          const rentals = Array.from(
+            new Map(
+              Array.from(rentalsMap.values()).map((r) => [
+                String(r?.id || r?.rentalid || r?.rental_id || ""),
+                r,
+              ]),
+            ).values(),
+          ).filter((r) => r && (r.id || r.rentalid || r.rental_id));
+
+          let realRentalCount = 0;
+          for (const rental of rentals) {
+            const liveRig = getRigLookupKeys(rental).map((key) => rigLookupByRentalId.get(key)).find(Boolean);
+            const info = extractRentalInfo(rental);
+            const parseUtc = (d) => {
+                if (!d) return 0;
+                const s = String(d);
+                return new Date(s.endsWith("UTC") || s.endsWith("Z") || s.includes("+") ? s : s + " UTC").getTime();
+            };
+            const endT = parseUtc(info.endTime);
+            if (!isRentalActive(now, endT, liveRig, rental)) {
+                await dbRunAsync(`DELETE FROM rentals WHERE id = ?`, [String(rental.id)]).catch(() => {});
+                continue;
+            }
+
+            const activeRentalId = String(rental.id || rental.rentalid || rental.rental_id || "").trim();
+            if (activeRentalId) currentActiveRentalIds.add(activeRentalId);
+
+            const result = await processRental(rental, acct, now, forceNotify, notifiedRentalIdsThisRun, notifications, liveRig);
+
+            if (result.isValid) {
+                realRentalCount++;
+                if (result.activeRentalLine) {
+                    activeRentalLines.push(result.activeRentalLine);
+                }
+            }
+          }
+
+          metric.rented = realRentalCount;
+          accountMetrics.push(metric);
+          if (!metric.error) successfulAccts.push(acct);
+        } catch (err) {
+          logger.error(
+            `[${new Date().toLocaleTimeString()}] [monitor:error] Client ${acct}: ${err.message}`,
+          );
+          metric.error = true;
+          accountMetrics.push(metric);
         }
-
-        // Create indexes for faster queries
-        db.run('CREATE INDEX IF NOT EXISTS idx_coingecko_symbol ON coingecko_coins(symbol)');
-        db.run('CREATE INDEX IF NOT EXISTS idx_cmc_symbol ON cmc_coins(symbol)');
-        db.run('CREATE INDEX IF NOT EXISTS idx_cmc_rank ON cmc_coins(cmc_rank)');
-        
-        resolve();
-      });
-    });
-  });
-}
-
-// ============================================================
-// DATABASE HELPERS
-// ============================================================
-function dbRunAsync(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    db.run(sql, params, function(err) {
-      if (err) reject(err);
-      else resolve(this);
-    });
-  });
-}
-
-function dbAllAsync(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    db.all(sql, params, (err, rows) => {
-      if (err) reject(err);
-      else resolve(rows);
-    });
-  });
-}
-
-function dbGetAsync(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    db.get(sql, params, (err, row) => {
-      if (err) reject(err);
-      else resolve(row);
-    });
-  });
-}
-
-// ============================================================
-// RATE LIMIT HANDLER WITH RETRY
-// ============================================================
-async function fetchWithRetry(url, options = {}, maxRetries = CONFIG.MAX_RETRIES) {
-  let lastError = null;
-  let delay = CONFIG.RETRY_DELAY_MS;
-  
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      const response = await fetch(url, options);
-      
-      // If 429 (Rate Limit), retry with backoff
-      if (response.status === 429) {
-        const retryAfter = response.headers.get('retry-after');
-        const waitTime = retryAfter ? parseInt(retryAfter) * 1000 : delay;
-        
-        console.log(`⚠️ Rate limited (429). Retrying in ${waitTime/1000}s... (attempt ${attempt}/${maxRetries})`);
-        
-        // Wait before retrying
-        await new Promise(resolve => setTimeout(resolve, waitTime));
-        
-        // Increase delay for next retry (exponential backoff)
-        delay *= CONFIG.RETRY_BACKOFF_MULTIPLIER;
-        continue;
-      }
-      
-      return response;
-      
-    } catch (error) {
-      lastError = error;
-      console.log(`⚠️ Request failed: ${error.message}. Retrying in ${delay/1000}s... (attempt ${attempt}/${maxRetries})`);
-      
-      // Wait before retrying
-      await new Promise(resolve => setTimeout(resolve, delay));
-      delay *= CONFIG.RETRY_BACKOFF_MULTIPLIER;
-    }
-  }
-  
-  throw new Error(`Failed after ${maxRetries} retries: ${lastError?.message || 'Unknown error'}`);
-}
-
-// ============================================================
-// COINGECKO FETCHER
-// ============================================================
-async function fetchCoinGeckoData() {
-  console.log('🪙 Fetching CoinGecko data...');
-  
-  try {
-    // Get list of all coins with retry
-    const listResponse = await fetchWithRetry(`${CONFIG.COINGECKO_API}/coins/list`);
-    if (!listResponse.ok) {
-      throw new Error(`CoinGecko list API error: ${listResponse.status}`);
-    }
-    const coinList = await listResponse.json();
-    
-    // Get market data for top coins with retry
-    const marketResponse = await fetchWithRetry(
-      `${CONFIG.COINGECKO_API}/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=500&page=1&sparkline=false`
+      }),
     );
-    if (!marketResponse.ok) {
-      throw new Error(`CoinGecko market API error: ${marketResponse.status}`);
-    }
-    const marketData = await marketResponse.json();
-    
-    // Create a map of market data by id
-    const marketMap = {};
-    marketData.forEach(coin => {
-      marketMap[coin.id] = coin;
-    });
-    
-    // Merge data
-    const coins = coinList.map(coin => {
-      const market = marketMap[coin.id] || {};
-      return {
-        id: coin.id,
-        symbol: coin.symbol,
-        name: coin.name,
-        price_usd: market.current_price || 0,
-        market_cap_usd: market.market_cap || 0,
-        volume_24h_usd: market.total_volume || 0,
-        change_24h: market.price_change_percentage_24h || 0,
-        change_7d: market.price_change_percentage_7d_in_currency || 0,
-        change_30d: market.price_change_percentage_30d_in_currency || 0,
-        change_60d: market.price_change_percentage_60d_in_currency || 0,
-        change_200d: market.price_change_percentage_200d_in_currency || 0,
-        change_1y: market.price_change_percentage_1y_in_currency || 0,
-        ath: market.ath || 0,
-        ath_change_percentage: market.ath_change_percentage || 0,
-        ath_date: market.ath_date || null,
-        atl: market.atl || 0,
-        atl_change_percentage: market.atl_change_percentage || 0,
-        atl_date: market.atl_date || null,
-        circulating_supply: market.circulating_supply || 0,
-        total_supply: market.total_supply || 0,
-        max_supply: market.max_supply || 0,
-        last_updated: new Date().toISOString(),
-        full_data: JSON.stringify(market)
-      };
-    });
-    
-    // Store in database
-    await dbRunAsync('BEGIN TRANSACTION');
-    
-    // Clear existing data
-    await dbRunAsync('DELETE FROM coingecko_coins');
-    
-    // Insert new data (batch insert for performance)
-    const batchSize = 100;
-    for (let i = 0; i < coins.length; i += batchSize) {
-      const batch = coins.slice(i, i + batchSize);
-      for (const coin of batch) {
-        await dbRunAsync(`
-          INSERT INTO coingecko_coins (
-            id, symbol, name, price_usd, market_cap_usd, volume_24h_usd,
-            change_24h, change_7d, change_30d, change_60d, change_200d, change_1y,
-            ath, ath_change_percentage, ath_date, atl, atl_change_percentage, atl_date,
-            circulating_supply, total_supply, max_supply, last_updated, full_data
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `, [
-          coin.id, coin.symbol, coin.name, coin.price_usd, coin.market_cap_usd, coin.volume_24h_usd,
-          coin.change_24h, coin.change_7d, coin.change_30d, coin.change_60d, coin.change_200d, coin.change_1y,
-          coin.ath, coin.ath_change_percentage, coin.ath_date, coin.atl, coin.atl_change_percentage, coin.atl_date,
-          coin.circulating_supply, coin.total_supply, coin.max_supply, coin.last_updated, coin.full_data
-        ]);
-      }
-    }
-    
-    // Update metadata
-    await dbRunAsync(`
-      INSERT OR REPLACE INTO coin_metadata (key, value, last_updated)
-      VALUES ('coingecko_last_update', ?, ?)
-    `, [coins.length.toString(), new Date().toISOString()]);
-    
-    await dbRunAsync('COMMIT');
-    
-    console.log(`✅ CoinGecko: Stored ${coins.length} coins`);
-    return coins.length;
-    
-  } catch (error) {
-    console.error('❌ CoinGecko fetch error:', error.message);
-    await dbRunAsync('ROLLBACK').catch(() => {});
-    return 0;
-  }
-}
 
-// ============================================================
-// COINMARKETCAP FETCHER
-// ============================================================
-async function fetchCoinMarketCapData() {
-  if (!CONFIG.COINMARKETCAP_ENABLED || !CONFIG.COINMARKETCAP_API_KEY) {
-    console.log('⚠️ CoinMarketCap disabled (no API key set)');
-    return 0;
-  }
-  
-  console.log('🪙 Fetching CoinMarketCap data...');
-  
-  try {
-    // Fetch listings with retry
-    const response = await fetchWithRetry(
-      `${CONFIG.COINMARKETCAP_API}/cryptocurrency/listings/latest?limit=500&convert=USD`,
-      {
-        headers: {
-          'X-CMC_PRO_API_KEY': CONFIG.COINMARKETCAP_API_KEY
-        }
-      }
+    const successfulAcctList = Array.from(new Set(successfulAccts));
+
+    if (currentActiveRentalIds.size > 0 && successfulAcctList.length > 0) {
+      const activePlaceholders = Array.from(currentActiveRentalIds)
+        .map(() => "?")
+        .join(",");
+      const clientPlaceholders = successfulAcctList.map(() => "?").join(",");
+      await dbRunAsync(
+        `DELETE FROM rentals WHERE client IN (${clientPlaceholders}) AND id NOT IN (${activePlaceholders})`,
+        [...successfulAcctList, ...Array.from(currentActiveRentalIds)],
+      ).catch((err) =>
+        logger.warn(
+          `[monitor:db] Failed to prune stale rentals: ${err.message}`,
+        ),
+      );
+    } else if (successfulAcctList.length > 0) {
+      const placeholders = successfulAcctList.map(() => "?").join(",");
+      await dbRunAsync(
+        `DELETE FROM rentals WHERE client IN (${placeholders})`,
+        successfulAcctList,
+      ).catch((err) =>
+        logger.warn(
+          `[monitor:db] Failed to clear stale rentals: ${err.message}`,
+        ),
+      );
+    }
+
+    const rented24hRow = await dbGetAsync(
+      "SELECT COUNT(*) as count FROM rental_history WHERE start_time >= ?",
+      [todayStartTs],
     );
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`CMC API error (${response.status}): ${errorText}`);
-    }
-    
-    const data = await response.json();
-    const coins = data.data || [];
-    
-    // Store in database
-    await dbRunAsync('BEGIN TRANSACTION');
-    
-    // Clear existing data
-    await dbRunAsync('DELETE FROM cmc_coins');
-    
-    // Insert new data (batch insert for performance)
-    const batchSize = 100;
-    for (let i = 0; i < coins.length; i += batchSize) {
-      const batch = coins.slice(i, i + batchSize);
-      for (const coin of batch) {
-        const quote = coin.quote?.USD || {};
-        
-        await dbRunAsync(`
-          INSERT INTO cmc_coins (
-            id, name, symbol, slug, cmc_rank, price_usd, market_cap_usd, volume_24h_usd,
-            percent_change_1h, percent_change_24h, percent_change_7d, percent_change_30d,
-            percent_change_60d, percent_change_90d,
-            circulating_supply, total_supply, max_supply, last_updated, full_data
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `, [
-          coin.id, coin.name, coin.symbol, coin.slug, coin.cmc_rank,
-          quote.price || 0,
-          quote.market_cap || 0,
-          quote.volume_24h || 0,
-          quote.percent_change_1h || 0,
-          quote.percent_change_24h || 0,
-          quote.percent_change_7d || 0,
-          quote.percent_change_30d || 0,
-          quote.percent_change_60d || 0,
-          quote.percent_change_90d || 0,
-          coin.circulating_supply || 0,
-          coin.total_supply || 0,
-          coin.max_supply || 0,
-          new Date().toISOString(),
-          JSON.stringify(coin)
-        ]);
-      }
-    }
-    
-    // Update metadata
-    await dbRunAsync(`
-      INSERT OR REPLACE INTO coin_metadata (key, value, last_updated)
-      VALUES ('cmc_last_update', ?, ?)
-    `, [coins.length.toString(), new Date().toISOString()]);
-    
-    await dbRunAsync('COMMIT');
-    
-    console.log(`✅ CoinMarketCap: Stored ${coins.length} coins`);
-    return coins.length;
-    
-  } catch (error) {
-    console.error('❌ CoinMarketCap fetch error:', error.message);
-    await dbRunAsync('ROLLBACK').catch(() => {});
-    return 0;
-  }
-}
+    const rented24hCount = rented24hRow ? rented24hRow.count : 0;
 
-// ============================================================
-// FETCH ALL DATA
-// ============================================================
-async function fetchAllCoinData() {
-  console.log('\n🔄 Fetching coin data...');
-  const startTime = Date.now();
-  
-  let coingeckoCount = 0;
-  let cmcCount = 0;
-  
-  // Fetch CoinGecko
-  if (CONFIG.COINGECKO_ENABLED) {
-    coingeckoCount = await fetchCoinGeckoData();
-  }
-  
-  // Fetch CoinMarketCap
-  if (CONFIG.COINMARKETCAP_ENABLED) {
-    cmcCount = await fetchCoinMarketCapData();
-  }
-  
-  const duration = ((Date.now() - startTime) / 1000).toFixed(2);
-  console.log(`✅ Coin data fetch completed in ${duration}s`);
-  console.log(`   📊 CoinGecko: ${coingeckoCount} coins`);
-  console.log(`   📊 CoinMarketCap: ${cmcCount} coins`);
-  console.log(`   📁 Database: ${CONFIG.DB_PATH}`);
-  
-  return { coingeckoCount, cmcCount, duration };
-}
+    // ------------------------------------------------------------------
+    //  Detect and notify finished rentals (no longer present in API)
+    // ------------------------------------------------------------------
+    if (successfulAcctList.length > 0) {
+      const placeholders = successfulAcctList.map(() => "?").join(",");
+      const finishedRentals = await dbAllAsync(
+        `SELECT * FROM rentals WHERE last_updated < ? AND client IN (${placeholders})`,
+        [now, ...successfulAcctList],
+      );
 
-// ============================================================
-// GET COIN DATA FROM DATABASE
-// ============================================================
-export function getCoinData(symbol, source = 'coingecko') {
-  return new Promise((resolve, reject) => {
-    const table = source === 'coingecko' ? 'coingecko_coins' : 'cmc_coins';
-    const query = `SELECT * FROM ${table} WHERE UPPER(symbol) = ?`;
-    
-    db.get(query, [symbol.toUpperCase()], (err, row) => {
-      if (err) reject(err);
-      else resolve(row);
-    });
-  });
-}
+      for (const fr of finishedRentals) {
+        const endTs = Number(fr.end_time || 0);
+        const lastUpdatedTs = Number(fr.last_updated || 0);
+        const hadRealEndTime = endTs > 0;
+        const endedRecently =
+          hadRealEndTime && endTs <= now && now - endTs < 6 * 60 * 60 * 1000;
+        const wentMissingRecently =
+          lastUpdatedTs > 0 && now - lastUpdatedTs < 10 * 60 * 1000;
 
-export function getAllCoins(source = 'coingecko', limit = 100) {
-  return new Promise((resolve, reject) => {
-    const table = source === 'coingecko' ? 'coingecko_coins' : 'cmc_coins';
-    const query = `SELECT * FROM ${table} ORDER BY market_cap_usd DESC LIMIT ?`;
-    
-    db.all(query, [limit], (err, rows) => {
-      if (err) reject(err);
-      else resolve(rows);
-    });
-  });
-}
-
-export function getCoinPrice(symbol) {
-  return new Promise((resolve, reject) => {
-    const query = `
-      SELECT 
-        coingecko_coins.symbol,
-        coingecko_coins.price_usd as coingecko_price,
-        coingecko_coins.change_24h as coingecko_change_24h,
-        coingecko_coins.last_updated as coingecko_updated,
-        cmc_coins.price_usd as cmc_price,
-        cmc_coins.percent_change_24h as cmc_change_24h,
-        cmc_coins.last_updated as cmc_updated
-      FROM coingecko_coins
-      LEFT JOIN cmc_coins ON UPPER(cmc_coins.symbol) = UPPER(coingecko_coins.symbol)
-      WHERE UPPER(coingecko_coins.symbol) = ?
-    `;
-    
-    db.get(query, [symbol.toUpperCase()], (err, row) => {
-      if (err) reject(err);
-      else resolve(row);
-    });
-  });
-}
-
-// ============================================================
-// SCHEDULER
-// ============================================================
-function startScheduler() {
-  // Run immediately on startup
-  setTimeout(async () => {
-    await fetchAllCoinData();
-  }, 3000);
-  
-  // Schedule every X minutes
-  const intervalMinutes = CONFIG.FETCH_INTERVAL_MINUTES;
-  const cronExpression = `*/${intervalMinutes} * * * *`;
-  
-  cron.schedule(cronExpression, async () => {
-    console.log(`\n⏰ Scheduled fetch (every ${intervalMinutes} minutes)`);
-    await fetchAllCoinData();
-  });
-  
-  console.log(`⏰ Scheduler started: fetching every ${intervalMinutes} minutes`);
-}
-
-// ============================================================
-// API ENDPOINT FOR EXPRESS
-// ============================================================
-export function setupCoinRoutes(app) {
-  // Get coin price
-  app.get('/api/coin/price/:symbol', async (req, res) => {
-    try {
-      const data = await getCoinPrice(req.params.symbol);
-      if (data) {
-        res.json(data);
-      } else {
-        res.status(404).json({ error: 'Coin not found' });
-      }
-    } catch (error) {
-      res.status(500).json({ error: error.message });
-    }
-  });
-  
-  // Get top coins
-  app.get('/api/coins/top/:source?', async (req, res) => {
-    try {
-      const source = req.params.source || 'coingecko';
-      const limit = parseInt(req.query.limit) || 100;
-      const data = await getAllCoins(source, limit);
-      res.json(data);
-    } catch (error) {
-      res.status(500).json({ error: error.message });
-    }
-  });
-  
-  // Get coin data
-  app.get('/api/coin/:source/:symbol', async (req, res) => {
-    try {
-      const data = await getCoinData(req.params.symbol, req.params.source);
-      if (data) {
-        res.json(data);
-      } else {
-        res.status(404).json({ error: 'Coin not found' });
-      }
-    } catch (error) {
-      res.status(500).json({ error: error.message });
-    }
-  });
-  
-  // Manual fetch endpoint
-  app.post('/api/coins/fetch', async (req, res) => {
-    try {
-      const result = await fetchAllCoinData();
-      res.json({ success: true, ...result });
-    } catch (error) {
-      res.status(500).json({ error: error.message });
-    }
-  });
-  
-  // Get metadata
-  app.get('/api/coins/metadata', async (req, res) => {
-    try {
-      const rows = await dbAllAsync('SELECT * FROM coin_metadata');
-      res.json(rows);
-    } catch (error) {
-      res.status(500).json({ error: error.message });
-    }
-  });
-}
-
-// ============================================================
-// MAIN
-// ============================================================
-console.log('🚀 Starting NiceHash Tool...');
-console.log('📁 Working directory:', __dirname);
-
-// Initialize database first
-console.log('📊 Initializing coin database...');
-
-try {
-  await initDatabase();
-  console.log('✅ Database initialized:', CONFIG.DB_PATH);
-  
-  // Start the coin data scheduler
-  startScheduler();
-} catch (error) {
-  console.error('❌ Database initialization failed:', error.message);
-  process.exit(1);
-}
-
-// ============================================================
-// ORIGINAL PROCESS MANAGEMENT
-// ============================================================
-
-// Function to kill all processes on exit
-let processes = [];
-
-function cleanup() {
-  console.log('\n🛑 Shutting down...');
-  processes.forEach(p => {
-    try {
-      p.kill();
-    } catch (e) {
-      // ignore
-    }
-  });
-  process.exit(0);
-}
-
-process.on('SIGINT', cleanup);
-process.on('SIGTERM', cleanup);
-
-// Start backend
-console.log('📡 Starting backend server...');
-const backend = spawn('node', ['index.js'], {
-  stdio: 'pipe',
-  shell: true,
-  env: { ...process.env }
-});
-
-processes.push(backend);
-
-let backendReady = false;
-
-backend.stdout.on('data', (data) => {
-  const output = data.toString().trim();
-  if (output) console.log('[📡]', output);
-  
-  if (output.includes('Listening on http://127.0.0.1:3000')) {
-    backendReady = true;
-    console.log('✅ Backend ready! Starting frontend...');
-    
-    setTimeout(() => {
-      console.log('🎨 Starting frontend...');
-      
-      const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-      
-      const frontend = spawn(npmCmd, ['run', 'dev'], {
-        stdio: 'inherit',
-        shell: true,
-        env: { ...process.env }
-      });
-      processes.push(frontend);
-      
-      frontend.on('error', (err) => {
-        console.error('❌ Frontend error:', err.message);
-      });
-      
-      frontend.on('close', (code) => {
-        if (code !== 0 && code !== null) {
-          console.error(`❌ Frontend exited with code ${code}`);
+        if (!endedRecently && !wentMissingRecently) {
+          await dbRunAsync(`DELETE FROM rentals WHERE id = ?`, [fr.id]);
+          continue;
         }
-      });
-    }, 1500);
+
+        let enriched = { ...fr };
+        try {
+          const res = await mrrApiCall({
+            endpoint: `/rental/${fr.id}`,
+            clientNameRaw: fr.client,
+            silent: true,
+          });
+          if (res && res.statusCode === 200 && res.data) {
+            const d = res.data.data || res.data;
+            if (d && typeof d === "object") enriched = { ...enriched, ...d };
+          }
+        } catch (e) {}
+
+        const info = extractRentalInfo(enriched);
+        const finishAds =
+          info.niceAdvertisedHashrate ||
+          info.hashrate?.advertised?.nice ||
+          info.hashrate?.advertised ||
+          info.hashrate?.suffix ||
+          "N/A";
+        const finishMsg = TelegramTemplates.finished(
+          { ...enriched, client: fr.client },
+          info,
+          resolveRentalAlgo(enriched, info),
+          finishAds,
+        );
+        sendTelegramNotification(finishMsg, {
+          type: "RENTAL FINISHED",
+          label: `Finished ${fr.client} ${fr.id}`,
+          summary: {
+            account: fr.client,
+            rig: enriched.name || enriched.id,
+            algo: resolveRentalAlgo(enriched, info),
+            paid: `${info.price.paid} ${info.price.currency}`,
+            avg: info.niceAverageHashrate,
+            ads: finishAds,
+            eff: `${parseFloat(info.percent || 0).toFixed(2)}%`,
+          },
+          onSuccess: async () => {
+            notifications.push({
+              id: fr.id,
+              client: fr.client,
+              status: "Sent",
+              type: "Finished",
+              telegram: "ok",
+            });
+            await dbRunAsync(`DELETE FROM rentals WHERE id = ?`, [fr.id]);
+          },
+          onFailure: async (e) => {
+            logger.warn(
+              `[${new Date().toLocaleTimeString()}] [monitor] Finish notice failed for ${fr.id}: ${e.message}`,
+            );
+            notifications.push({
+              id: fr.id,
+              client: fr.client,
+              status: "Failed",
+              type: "Finished",
+              error: e.message,
+            });
+            await dbRunAsync(`DELETE FROM rentals WHERE id = ?`, [fr.id]);
+          },
+        });
+      }
+    }
+
+    const shouldSendCombinedSummary =
+      forceNotify ||
+      now - (lastAlertTimes.get("global_summary") || 0) >= RENTED_HEARTBEAT_MS;
+
+    const totalRealRentals = accountMetrics.reduce(
+      (sum, metric) => sum + (Number(metric.rented) || 0),
+      0,
+    );
+
+    rentedAll =
+      totalRealRentals > 0 ? totalRealRentals : activeRentalLines.length;
+
+    // Log the filtering
+    if (currentActiveRentalIds.size !== rentedAll) {
+      logger.info(
+        `[Monitor] 📊 Real rentals: ${rentedAll} (${currentActiveRentalIds.size - rentedAll} ghost rentals filtered out)`,
+      );
+    }
+
+    if (
+      shouldSendCombinedSummary &&
+      (accountMetrics.length > 0 || activeRentalLines.length > 0)
+    ) {
+      const maxBarLen = 30;
+      const barChart = accountMetrics
+        .map((am) => {
+          const ratio = totalAll > 0 ? am.total / totalAll : 0;
+          const filled = Math.max(1, Math.round(ratio * maxBarLen));
+          const bar = "█".repeat(filled);
+          const statusNote = am.error ? " [ERROR]" : am.total;
+          return `<code>${am.name.padEnd(4)}${bar.padEnd(maxBarLen + 1)}${statusNote}</code>`;
+        })
+        .join("\n");
+
+      const finishTime = new Date().toLocaleTimeString();
+      const onlineAlgoLines = Array.from(globalOnlineAlgos.entries())
+        .sort((a, b) => b[1] - a[1])
+        .map(
+          ([algo, count]) => `• ${getAlgoDisplayName(algo)}: <b>${count}</b>`,
+        );
+
+      try {
+        const summaryBase = (linesSubset) =>
+          TelegramTemplates.heartbeatSummary(
+            barChart,
+            onlineAll, 
+            rentedAll,
+            offlineAll,
+            disabledAll,
+            totalAll,
+            linesSubset,
+            finishTime,
+            rented24hCount,
+            onlineAlgoLines,
+          );
+
+        const summaryChunks = [];
+        let currentLines = [];
+        for (const line of activeRentalLines) {
+          const nextLines = [...currentLines, line];
+          const nextMsg = summaryBase(nextLines);
+          if (currentLines.length > 0 && nextMsg.length > 3600) {
+            summaryChunks.push(summaryBase(currentLines));
+            currentLines = [line];
+          } else {
+            currentLines = nextLines;
+          }
+        }
+        if (currentLines.length > 0 || activeRentalLines.length === 0) {
+          summaryChunks.push(summaryBase(currentLines));
+        }
+
+        for (const msg of summaryChunks) {
+          await sendTelegramInternal(msg);
+        }
+        lastAlertTimes.set("global_summary", now);
+      } catch (e) {
+        logger.error(
+          `[${new Date().toLocaleTimeString()}] [monitor] Summary send failed: ${e.message}`,
+        );
+      }
+    }
+
+    return {
+      notifications,
+      summary: {
+        scope: requestedScope,
+        accounts: mrrAccts,
+        totals: {
+          rigs: totalAll,
+          available: availableAll,
+          rented: rentedAll,
+          offline: offlineAll,
+          disabled: disabledAll,
+          warning: warningAll,
+        },
+        perAccount: accountMetrics,
+        activeRentals: allRentedRigs
+          .filter((r) => {
+            const rentalDetail = globalRentalsMap.get(String(r.id));
+            if (!rentalDetail) return false;
+            const info = extractRentalInfo(rentalDetail, r);
+            const result = isRealRental(rentalDetail, info);
+            if (!result) {
+              logger.debug(
+                `[Monitor] Filtered out ghost rental from summary: ${r.id}`,
+              );
+            }
+            return result;
+          })
+          .map((r) => {
+            const rentalDetail = globalRentalsMap.get(String(r.id));
+            const info = rentalDetail
+              ? extractRentalInfo(rentalDetail)
+              : { percent: 0 };
+            const eff = rentalDetail ? parseFloat(info.percent || 0) : 0;
+            return {
+              account: r.acct,
+              id: r.id,
+              name: r.name || r.id,
+              efficiency: eff,
+              orderDiff: (100 - eff).toFixed(1),
+            };
+          }),
+      },
+    };
+  } finally {
+    isMonitorRunning = false;
   }
-});
-
-backend.stderr.on('data', (data) => {
-  const error = data.toString().trim();
-  if (error && !error.includes('ECONNREFUSED') && !error.includes('DeprecationWarning')) {
-    console.error('[Backend Error]', error);
-  }
-});
-
-backend.on('error', (err) => {
-  console.error('❌ Backend error:', err.message);
-});
-
-backend.on('close', (code) => {
-  if (code !== 0 && code !== null) {
-    console.error(`❌ Backend exited with code ${code}`);
-  }
-  if (!backendReady) {
-    console.log('❌ Backend failed to start. Please check the errors above.');
-  }
-});
-
-console.log('📡 Backend starting... Waiting for ready signal.');
-console.log('💡 Press Ctrl+C to stop all services.');
-
-// ============================================================
-// EXPORTS FOR USE IN OTHER MODULES
-// ============================================================
-export { 
-  db
-};
+}

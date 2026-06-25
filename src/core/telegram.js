@@ -19,7 +19,7 @@ export function formatAccount(account) {
 }
 
 export function formatRig(r) {
-  return `${escapeHtml(r?.name || r?.id || "N/A")} (<code>${escapeHtml(r?.id || "N/A")}</code>)`;
+  return `${escapeHtml(r?.name || r?.id || "N/A")}`;
 }
 
 export function formatHashrate(value, suffix) {
@@ -53,19 +53,19 @@ export const TelegramTemplates = {
   // ACTIVE RENTAL LINE - FIXED PARAMETER ORDER
   // ============================================================
   activeRentalLine: (
-    perfEmoji,
-    algo,
-    name,
-    remaining,
-    efficiency,
-    roi,
-    avg,
-    adv,
-    cur,
-    target,
-    extra,
-    client,
-    info = { price: {} },
+    perfEmoji,    // 1
+    algo,         // 2
+    name,         // 3
+    remaining,    // 4
+    efficiency,   // 5
+    roi,          // 6
+    avg,          // 7  ← This is the 7th parameter
+    adv,          // 8  ← This is the 8th parameter
+    cur,          // 9  ← This is the 9th parameter
+    target,       // 10
+    extra,        // 11
+    client,       // 12
+    info          // 13
   ) => {
     const shortName = String(name || "N/A")
       .replace(/\s+/g, " ")
@@ -75,13 +75,13 @@ export const TelegramTemplates = {
       shortName.length > 18 ? `${shortName.slice(0, 17)}...` : shortName;
 
     // Format all values with proper display
-    const avgDisplay = avg || "0 H/s";
-    const advDisplay = adv || "0 H/s";
-    const curDisplay = cur || "0 H/s";
-    
+    const avgDisplay = avg || "⚠️ H/s";
+    const advDisplay = adv || "⚠️ H/s";
+    const curDisplay = cur || "⚠️ H/s";
+
     // Ensure cur has warning if it's 0
-    const finalCurDisplay = curDisplay === "0 H/s" || curDisplay === "0" 
-      ? "⚠️ 0 H/s" 
+    const finalCurDisplay = curDisplay === "0 H/s" || curDisplay === "0"
+      ? "⚠️ 0 H/s"
       : curDisplay;
 
     return (
@@ -190,7 +190,7 @@ export const TelegramTemplates = {
   perfectEfficiency: (acct, r, efficiency, info, remainingMs, algo) => {
     const remH = Math.floor(remainingMs / 3600000);
     return (
-      `🎊 <b>[PERFECT 100%]</b>\n` +
+      `✅ <b>[PERFECT 100%]</b>\n` +
       `<b>Account:</b> <code>${escapeHtml(formatAccount(acct))}</code>\n` +
       `${divider}\n` +
       `${escapeHtml(formatRig(r))}\n` +

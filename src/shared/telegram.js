@@ -20,7 +20,7 @@ export function formatAccount(account) {
 }
 
 export function formatRig(r) {
-  return `${escapeHtml(r?.name || r?.id || 'N/A')} (<code>${escapeHtml(r?.id || 'N/A')}</code>)`;
+  return `${escapeHtml(r?.name || r?.id || 'N/A')}`;
 }
 
 export function formatHashrate(value, suffix) {

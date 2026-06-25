@@ -30,73 +30,41 @@ export default function CoinPriceModal({
   const [loading, setLoading] = useState(false);
   const [priceData, setPriceData] = useState(null);
   const [error, setError] = useState(null);
-  const [source, setSource] = useState("coingecko"); // default direct
+  const [source, setSource] = useState("coingecko");
 
   const fetchPrice = useCallback(async () => {
     if (!coin) return;
     setLoading(true);
     setError(null);
-
+    
     try {
-      let data = null;
-
-      // 1) Try to fetch from the backend's database (if available)
-      try {
-        const dbResult = await onCall("/api/v2/price/db", {
-          query: { symbol: coin.symbol },
-          silent: true,
-        });
-        if (dbResult?.data) {
-          data = dbResult.data;
-          setSource("database");
-        }
-      } catch (dbErr) {
-        // ignore – fall through to external
-      }
-
-      // 2) If not in DB, fetch directly from CoinGecko (public, no auth)
-      if (!data) {
-        const coinId = coin.coinId || coin.symbol.toLowerCase();
-        const url = `https://api.coingecko.com/api/v3/simple/price?ids=${coinId}&vs_currencies=usd&include_market_cap=true&include_24hr_vol=true&include_24hr_change=true&include_last_updated_at=true`;
-        const res = await fetch(url);
-        if (!res.ok) throw new Error(`CoinGecko API error: ${res.status}`);
-        const json = await res.json();
-        const coinData = json[coinId];
-        if (!coinData) throw new Error(`No data for coin: ${coinId}`);
-
-        data = {
-          price: coinData.usd || 0,
-          marketCap: coinData.usd_market_cap || 0,
-          volume24h: coinData.usd_24h_vol || 0,
-          change24h: coinData.usd_24h_change || 0,
-          high24h: 0, // not available from simple endpoint
-          low24h: 0,
-          supply: 0,
-          lastUpdated: coinData.last_updated_at 
-            ? new Date(coinData.last_updated_at * 1000).toISOString()
-            : new Date().toISOString(),
-        };
-        setSource("coingecko (direct)");
-      }
-
-      // Set the final data
+      const endpoint = source === "coingecko" 
+        ? "/api/v2/price/coingecko"
+        : "/api/v2/price/mcm";
+      
+      const query = source === "coingecko"
+        ? { coinId: coin.coinId || coin.symbol, vs_currency: "usd" }
+        : { symbol: coin.symbol, currency: "USD" };
+      
+      const result = await onCall(endpoint, { query, silent: true });
+      const data = result?.data || result || {};
+      
       setPriceData({
-        price: data.price || 0,
-        marketCap: data.marketCap || 0,
-        volume24h: data.volume24h || 0,
-        change24h: data.change24h || 0,
-        high24h: data.high24h || 0,
-        low24h: data.low24h || 0,
-        supply: data.supply || 0,
-        lastUpdated: data.lastUpdated || new Date().toISOString(),
+        price: data.price || data.usd || data.current_price || 0,
+        marketCap: data.marketCap || data.market_cap || 0,
+        volume24h: data.volume24h || data.total_volume || 0,
+        change24h: data.change24h || data.price_change_percentage_24h || 0,
+        high24h: data.high24h || data.high_24h || 0,
+        low24h: data.low24h || data.low_24h || 0,
+        supply: data.supply || data.circulating_supply || 0,
+        lastUpdated: data.lastUpdated || data.last_updated || new Date().toISOString(),
       });
-      setError(null);
     } catch (err) {
       setError(err.message || "Failed to fetch price");
     } finally {
       setLoading(false);
     }
-  }, [coin, onCall]);
+  }, [coin, onCall, source]);
 
   useEffect(() => {
     if (isOpen && coin) fetchPrice();
@@ -132,24 +100,41 @@ export default function CoinPriceModal({
         }}
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "20px" }}>
           <div>
             <h2 style={{ margin: 0, color: "#e2e8f0", fontSize: "20px" }}>
               {coin?.symbol?.toUpperCase() || "Coin"} Price
             </h2>
-            <div style={{ color: "#94a3b8", fontSize: "12px" }}>
-              {source === "database" ? "Cached" : "Live (CoinGecko)"}
-            </div>
+            <div style={{ color: "#94a3b8", fontSize: "12px" }}>{source.toUpperCase()}</div>
           </div>
           <button onClick={onClose} style={{ background: "none", border: "none", color: "#94a3b8", fontSize: "24px", cursor: "pointer" }}>×</button>
         </div>
 
-        {/* Refresh button */}
-        <div style={{ display: "flex", gap: "8px", marginBottom: "16px", flexWrap: "wrap" }}>
+        {/* Source Toggle */}
+        <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
+          {["coingecko", "mcm"].map((s) => (
+            <button
+              key={s}
+              onClick={() => setSource(s)}
+              style={{
+                padding: "4px 16px",
+                borderRadius: "20px",
+                border: source === s ? "1px solid rgba(56,189,248,0.4)" : "1px solid rgba(148,163,184,0.2)",
+                background: source === s ? "rgba(56,189,248,0.15)" : "transparent",
+                color: source === s ? "#38bdf8" : "#94a3b8",
+                cursor: "pointer",
+                fontSize: "12px",
+              }}
+            >
+              {s.toUpperCase()}
+            </button>
+          ))}
           <button
             onClick={fetchPrice}
             disabled={loading}
             style={{
+              marginLeft: "auto",
               padding: "4px 16px",
               borderRadius: "20px",
               border: "1px solid rgba(52,211,153,0.3)",
@@ -164,6 +149,7 @@ export default function CoinPriceModal({
           </button>
         </div>
 
+        {/* Content */}
         {loading && <div style={{ textAlign: "center", padding: "40px", color: "#94a3b8" }}>Loading...</div>}
         
         {error && !loading && (
@@ -175,6 +161,7 @@ export default function CoinPriceModal({
 
         {!loading && !error && priceData && (
           <div>
+            {/* Main Price */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "16px" }}>
               <div style={{ padding: "16px", borderRadius: "12px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(148,163,184,0.1)", textAlign: "center" }}>
                 <div style={{ color: "#64748b", fontSize: "10px", textTransform: "uppercase" }}>Price</div>
@@ -186,6 +173,7 @@ export default function CoinPriceModal({
               </div>
             </div>
 
+            {/* Details */}
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
               <tbody>
                 {[

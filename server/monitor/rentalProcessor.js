@@ -3,10 +3,10 @@ import { dbRunAsync, dbGetAsync } from "./dbHelpers.js";
 import { logger } from "../logger.js";
 import { TELEGRAM_CONFIG, TelegramTemplates } from "../../src/core/telegram.js";
 import {
-  normalizeAlgoForNiceHash,
-  getMrrAlgorithmUnit,
-  calculatePriceComparison,
-  getAlgoDisplayName,
+    normalizeAlgoForNiceHash,
+    getMrrAlgorithmUnit,
+    calculatePriceComparison,
+    getAlgoDisplayName,
 } from "../../src/core/mapping.js";
 import { getBtcPriceData } from "../../src/core/priceUtils.js";
 import { getMonitorNhActiveOrders, sendTelegramInternal } from "../monitor/helpers.js";
@@ -23,18 +23,18 @@ const monitorNhPriceErrorCache = new Map();
 // HELPER: Format hashrate for display
 // ============================================================
 function formatHashrate(value, suffix) {
-  const num = Number.parseFloat(value || 0);
-  if (!Number.isFinite(num) || num <= 0) return "0 H/s";
-  
-  const units = ["H/s", "KH/s", "MH/s", "GH/s", "TH/s", "PH/s", "EH/s", "ZH/s"];
-  let idx = 0;
-  let scaled = num;
-  while (scaled >= 1000 && idx < units.length - 1) {
-    scaled /= 1000;
-    idx += 1;
-  }
-  const unit = suffix || units[idx] || "H/s";
-  return `${scaled.toFixed(2)}${unit.toUpperCase()}`;
+    const num = Number.parseFloat(value || 0);
+    if (!Number.isFinite(num) || num <= 0) return "0 H/s";
+
+    const units = ["H/s", "KH/s", "MH/s", "GH/s", "TH/s", "PH/s", "EH/s", "ZH/s"];
+    let idx = 0;
+    let scaled = num;
+    while (scaled >= 1000 && idx < units.length - 1) {
+        scaled /= 1000;
+        idx += 1;
+    }
+    const unit = suffix || units[idx] || "H/s";
+    return `${scaled.toFixed(2)}${unit.toUpperCase()}`;
 }
 
 /**
@@ -213,7 +213,7 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
     const remainingMs = endT > 0 ? Math.max(0, endT - now) : 0;
 
     // ============================================================
-    // EXTRACT HASHRATE VALUES - KEEP CURRENT AND AVERAGE SEPARATE
+    // EXTRACT HASHRATE VALUES
     // ============================================================
     const advertised = parseFloat(info.hashrate?.advertised || 0);
     const average = parseFloat(info.hashrate?.average || 0);
@@ -226,15 +226,15 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
     // ============================================================
     // FORMAT HASHRATE VALUES FOR DISPLAY
     // ============================================================
-    const currentDisplay = current > 0 
+    const currentDisplay = current > 0
         ? formatHashrate(current, suffix)
         : "0 H/s";
 
-    const avgDisplay = average > 0 
+    const avgDisplay = average > 0
         ? formatHashrate(average, suffix)
         : "0 H/s";
 
-    const advDisplay = advertised > 0 
+    const advDisplay = advertised > 0
         ? formatHashrate(advertised, suffix)
         : "0 H/s";
 
@@ -349,9 +349,6 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
     if (current > 0) {
         // Current has data - use it
         speedStatus = currentDisplay;
-    } else if (average > 0) {
-        // Current is 0 but average has data - rental IS mining, use average
-        speedStatus = avgDisplay;
     } else {
         // Both are 0 - truly stalled
         speedStatus = "⚠️ 0 H/s";
@@ -363,22 +360,22 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
     // ============================================================
     // BUILD ACTIVE RENTAL LINE WITH CORRECT PARAMETER ORDER
     // ============================================================
+    // CORRECT - parameter order matches template
     const activeRentalLine = TelegramTemplates.activeRentalLine(
-        perfEmoji,                    // 1: perfEmoji
-        getAlgoDisplayName(info.algo), // 2: algo
-        liveRig?.name || rental.name || rental.id, // 3: name
-        remStr_s,                     // 4: remaining
-        efficiency,                   // 5: efficiency
-        orderDiff,                    // 6: roi
-        speedStatus,                  // 9: cur (current hashrate - uses average as fallback)
-        advDisplay,                   // 8: ads (advertised hashrate)
-        avgDisplay,                   // 7: avg (average hashrate)
-        displayTarget,                // 10: target
-        "",                           // 11: extra
-        acct,                         // 12: client
-        info                          // 13: info
+        perfEmoji,        // 1: perfEmoji ✓
+        getAlgoDisplayName(info.algo), // 2: algo ✓
+        liveRig?.name || rental.name || rental.id, // 3: name ✓
+        remStr_s,         // 4: remaining ✓
+        efficiency,       // 5: efficiency ✓
+        orderDiff,        // 6: roi ✓
+        avgDisplay,       // 7: avg (should be cur) ✗
+        advDisplay,       // 8: ads (should be adv) ✗
+        speedStatus,      // 9: cur (should be avg) ✗
+        displayTarget,    // 10: target ✓
+        "",               // 11: extra ✓
+        acct,             // 12: client ✓
+        info              // 13: info ✓
     );
-
     return {
         isValid: true,
         activeRentalLine,
