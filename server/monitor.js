@@ -897,7 +897,7 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
               const startupKey = `${r.id}_startup_50`;
               const lastAlert = lastAlertTimes.get(startupKey) || 0;
               if (now - lastAlert > ALERT_COOLDOWN_MS) {
-                const msg = TelegramTemplates.startup(acct, r, info, efficiency, displayTarget, resolveRentalAlgo(r, info));
+                const msg = TelegramTemplates.startup(acct, r, info, ads, efficiency, displayTarget, resolveRentalAlgo(r, info));
                 queueTelegramMessage(msg, {
                   type: 'STARTUP ALERT',
                   label: `Startup alert ${acct} ${r.id}`,

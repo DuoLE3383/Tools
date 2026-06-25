@@ -62,7 +62,7 @@ export const TelegramTemplates = {
       `📡 Cur: <b>${cur}</b> | ` +
       `📊 Eff: <code>${typeof efficiency === "number" ? efficiency.toFixed(2) : efficiency}%</code>\n` +
       `📈 Avg: <code>${avg}</code> | Adv: <code>${ads}</code>\n` +
-      `💰 Paid: <b>${escapeHtml(info.price?.paid)} ${escapeHtml(info.price?.currency)}</b>\n` +
+      `💰 Paid: <code>${escapeHtml(info.price?.paid)} </code> <b> ${escapeHtml(info.price?.currency)}</b>\n` +
       `${extra}${divider}\n`
     );
   },
@@ -76,7 +76,7 @@ export const TelegramTemplates = {
       `<b>Algo:</b> <code>${escapeHtml(algo)}</code>\n` +
       `<b>Time:</b> ${formatTimeRange(info.startTime, info.endTime)}\n` +
       `${divider}\n` +
-      `<b>Paid:</b> <code>${info.price.paid} ${info.price.currency}</code>\n` +
+      `💰 Paid: <code>${escapeHtml(info.price?.paid)} </code> <b> ${escapeHtml(info.price?.currency)}</b>\n` +
       `<b>Efficiency:</b> <b>${info.percent}%</b> (Diff: ${diff}%)\n` +
       `Adv: <code>${ads}</code>\n` +
       `<b>Remaining:</b> ${rem}\n` +
@@ -111,7 +111,7 @@ export const TelegramTemplates = {
     );
   },
 
-  startup: (acct, r, info, efficiency, target, algo, ads) => {
+  startup: (acct, r, info, ads, efficiency, target, algo) => {
     return (
       `⏱ <b>[STARTUP ALERT]</b>\n` +
       `<b>Account:</b> <code>${formatAccount(acct)}</code>\n` +
@@ -120,7 +120,7 @@ export const TelegramTemplates = {
       `<b>Algo:</b> <code>${escapeHtml(algo)}</code>\n` +
       `<b>Initial Eff:</b> ${efficiency}%\n` +
       `Adv: <code>${ads}</code>\n` +
-      `<b>Paid:</b> ${info.price.paid} ${info.price.currency}\n` +
+      `💰 Paid: <code>${escapeHtml(info.price?.paid)} </code> <b> ${escapeHtml(info.price?.currency)}</b>\n` +
       `<b>Time:</b> ${formatTimeRange(info.startTime)}\n` +
       `<b>Target:</b> ${target.toFixed(2)} ${info.hashrate.suffix || ""}`
     );
@@ -156,7 +156,7 @@ export const TelegramTemplates = {
       `<b>Algo:</b> <code>${escapeHtml(algo)}</code>\n` +
       `<b>Avg Speed:</b> ${avg} ${suffix}\n` +
       `<b>Final Efficiency:</b> <b>${parseFloat(efficiency).toFixed(2)}%</b>\n` +
-      `<b>Paid:</b> ${escapeHtml(info.price?.paid)} ${escapeHtml(info.price?.currency)}`
+      `💰 Paid: <code>${escapeHtml(info.price?.paid)} </code> <b> ${escapeHtml(info.price?.currency)}</b>\n` +
     );
   },
 
@@ -170,7 +170,7 @@ export const TelegramTemplates = {
       `<b>Algo:</b> <code>${escapeHtml(algo)}</code>\n` +
       `<b>Status:</b> Running perfectly at ${efficiency}%\n` +
       `<b>Remaining:</b> ~${remH}h\n` +
-      `<b>Cost:</b> ${info.price.paid} ${info.price.currency}`
+      `💰 Paid: <code>${escapeHtml(info.price?.paid)} </code> <b> ${escapeHtml(info.price?.currency)}</b>\n` +
     );
   },
 
@@ -183,7 +183,7 @@ export const TelegramTemplates = {
       `<b>Algo:</b> <code>${escapeHtml(algo)}</code>\n` +
       `<b>Final Avg:</b> ${info.niceAverageHashrate}\n` +
       `<b>Final Eff:</b> <b>${info.percent}%</b>\n` +
-      `<b>Total Paid:</b> ${info.price.paid} ${info.price.currency}`
+      `<b>Total 💰 Paid: <code>${escapeHtml(info.price?.paid)} </code> <b> ${escapeHtml(info.price?.currency)}</b>`
     );
   },
 
