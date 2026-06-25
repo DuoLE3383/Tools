@@ -86,20 +86,14 @@ export default function Dashboard({
               </button>
               <button
                 className="btn-pro secondary"
-                onClick={() => {
-                  window.history.pushState({}, "", "/cryptorate");
-                  dispatch({ type: "SET_VIEW", payload: "cryptorate" });
-                }}
+                onClick={() => window.open("/cryptorate", "_blank")}
                 style={{ fontSize: "10px" }}
               >
                 Live Rates
               </button>
               <button
                 className="btn-pro secondary"
-                onClick={() => {
-                  window.history.pushState({}, "", "/mining");
-                  window.dispatchEvent(new PopStateEvent("popstate"));
-                }}
+                onClick={() => window.open("/mining", "_blank")}
                 style={{ fontSize: "10px" }}
               >
                 Mining

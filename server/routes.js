@@ -1,5 +1,5 @@
 // routes.js – main entry
-import { registerCoinGeckoRoutes } from "./routes/coinGecko.js";
+import { registerCoinGeckoRoutes } from "./coinGecko/coinGecko.js";
 import { registerNiceHashRoutes } from "./routes/nicehash.js";
 import { registerMrrRoutes } from "./routes/mrr.js";
 import { registerMiscRoutes } from "./routes/misc.js";

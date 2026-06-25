@@ -156,6 +156,12 @@ export function extractRentalInfo(rental, liveRig = null) {
     logger.debug('[utils:extractRentalInfo] No rental provided');
     return {};
   }
+  
+  // ============================================================
+  // DEBUG: Log the full incoming payloads
+  // ============================================================
+  logger.debug(`[extractRentalInfo] Processing rental ID: ${rental.id || 'N/A'}`);
+  logger.debug(`[extractRentalInfo] PAYLOAD (rental): ${JSON.stringify(rental, null, 2)}`);
 
   // Merge data
   const merged = { ...rental };
