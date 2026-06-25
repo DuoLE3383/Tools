@@ -21,6 +21,26 @@ import {
   isAsicBoost,
 } from "../../core/mapping.js";
 
+// ─── Helper: Format hashrate with unit ──────────────────────────────────
+function formatHashrateWithUnit(value, unit) {
+  if (!value || value <= 0) return "0H";
+  const cleanUnit = cleanHashrateUnit(unit || "H");
+  const multiplier = HASHRATE_SUFFIXES[cleanUnit] || 1;
+  const rawH = value * multiplier;
+  const units = ["H", "K", "M", "G", "T", "P", "E"];
+  const mults = [1, 1e3, 1e6, 1e9, 1e12, 1e15, 1e18];
+  let idx = 0;
+  for (let i = mults.length - 1; i >= 0; i--) {
+    if (rawH >= mults[i]) {
+      idx = i;
+      break;
+    }
+  }
+  const val = rawH / mults[idx];
+  return `${val.toFixed(2)}${units[idx]}`;
+}
+
+// ─── Other helpers ──────────────────────────────────────────────────────
 const formatPercent = (value) => {
   const num = Number(value);
   if (!Number.isFinite(num)) return "N/A";
@@ -35,13 +55,12 @@ const normalizeOrderAlgo = (order) => {
       return value.algorithm || value.displayName || value.name || "";
     return value;
   };
-
   return normalizeAlgoForNiceHash(
     order?.algo ||
-    pick(order?.algorithm) ||
-    rawOrder?.algo ||
-    pick(rawOrder?.algorithm) ||
-    rawOrder?.type,
+      pick(order?.algorithm) ||
+      rawOrder?.algo ||
+      pick(rawOrder?.algorithm) ||
+      rawOrder?.type,
   );
 };
 
@@ -53,10 +72,7 @@ const COINGECKO_BY_CURRENCY = {
   ETH: "ethereum",
   ETC: "ethereum-classic",
 };
-
 const PRICE_CURRENCIES = ["BTC", "ETH", "LTC", "DOGE", "BCH"];
-
-/** Client-side fallback BTC rates when CoinGecko API is unavailable */
 const FALLBACK_BTC_RATES = {
   ETH: 0.052,
   LTC: 0.00078,
@@ -67,35 +83,25 @@ const FALLBACK_BTC_RATES = {
 
 const resolvePaidPrice = (priceSource, convertedSource) => {
   const primary = getPriceDataLocal(priceSource);
-  if (primary.value > 0) {
+  if (primary.value > 0)
     return {
       amount: primary.value,
       currency: String(primary.currency || "BTC").toUpperCase(),
     };
-  }
-
   if (priceSource && typeof priceSource === "object") {
     for (const currency of PRICE_CURRENCIES) {
       const nested = priceSource[currency];
       if (!nested || typeof nested !== "object") continue;
       const nestedPrice = getPriceDataLocal(nested);
-      if (nestedPrice.value > 0) {
-        return {
-          amount: nestedPrice.value,
-          currency,
-        };
-      }
+      if (nestedPrice.value > 0) return { amount: nestedPrice.value, currency };
     }
   }
-
   const converted = getPriceDataLocal(convertedSource);
-  if (converted.value > 0) {
+  if (converted.value > 0)
     return {
       amount: converted.value,
       currency: String(converted.currency || "BTC").toUpperCase(),
     };
-  }
-
   return { amount: 0, currency: "BTC" };
 };
 
@@ -108,23 +114,20 @@ const convertPaidToBtc = (
   const upperCurrency = String(currency || "BTC").toUpperCase();
   if (!amount || amount <= 0) return 0;
   if (upperCurrency === "BTC") return amount;
-
   const coinId = COINGECKO_BY_CURRENCY[upperCurrency];
   const apiBtcRate = coinId
     ? Number.parseFloat(coinPrices?.[coinId]?.btc || 0)
     : 0;
   if (apiBtcRate > 0) return amount * apiBtcRate;
-
   const fallbackRate = FALLBACK_BTC_RATES[upperCurrency];
   if (fallbackRate !== undefined) return amount * fallbackRate;
-
   return Number.isFinite(fallbackBtc) && fallbackBtc > 0 ? fallbackBtc : 0;
 };
 
 const cleanHashrateUnit = (unit) => {
   const match = String(unit || "")
     .toUpperCase()
-    .match(/GSOL|MSOL|KSOL|SOL|EH|PH|TH|GH|MH|KH|H/);
+    .match(/GSOL|MSOL|KSOL|SOL|E|P|T|G|M|K|H/);
   return match?.[0] || "H";
 };
 
@@ -134,6 +137,7 @@ const convertHashrateValue = (value, fromUnit, toUnit) => {
   return (value * fromMultiplier) / toMultiplier;
 };
 
+// ─── Main Component ──────────────────────────────────────────────────────
 const MrrRigCard = ({
   rig,
   algoName,
@@ -154,53 +158,57 @@ const MrrRigCard = ({
   setEnrichedInfo,
   mrrClient,
 }) => {
-  // ==========================================
-  // 1. Basic state and derived values
-  // ==========================================
+  // ── Basic state ──
   const statusStr = String(
     typeof rig.status === "object" ? rig.status.status : rig.status || "",
   ).toLowerCase();
   const rentalId = rig.rentalid || rig.current_rental_id || rig.rental_id;
-  const isRented = statusStr.includes("rented") || statusStr.includes("active") || Boolean(rentalId);
+  const isRented =
+    statusStr.includes("rented") ||
+    statusStr.includes("active") ||
+    Boolean(rentalId);
   const displayId = isRented && rentalId ? rentalId : rig.id;
   const idLabel = isRented && rentalId ? "Rental" : "Rig";
   const [nowMs, setNowMs] = useState(0);
+  const rawCur = info?.rawCur || rig.hashrate?.current || 0;
+  const cur = Number.isFinite(parseFloat(rawCur)) ? parseFloat(rawCur) : 0;
 
-  // ==========================================
-  // 2. Algorithm and unit definitions (defined ONCE)
-  // ==========================================
-  const rawAlgo = info?.algo || rig.algo || rig.algorithm || rig.type || algoName;
-  const normalizedAlgo = normalizeAlgoForNiceHash(rawAlgo || algoName);
+  // ── Algorithm & units ──
+  const rawAlgo =
+    info?.algo ||
+    info?.normalized?.algo ||
+    rig.algo ||
+    rig.algorithm ||
+    rig.type ||
+    algoName;
+  const normalizedAlgo = normalizeAlgoForNiceHash(rawAlgo);
   const mrrUnit = getMrrAlgorithmUnit(normalizedAlgo || rawAlgo);
   const mrrApiKey = getMrrAlgoKey(normalizedAlgo);
   const isAsicBoostAlgo = isAsicBoost(normalizedAlgo);
 
-  // ==========================================
-  // 3. State for MRR rate
-  // ==========================================
+  // ── MRR rate state ──
   const [mrrMarketRate, setMrrMarketRate] = useState(0);
   const [isLoadingMrrRate, setIsLoadingMrrRate] = useState(false);
   const [mrrRateError, setMrrRateError] = useState(null);
-  const [mrrUsedKey, setMrrUsedKey] = useState(''); // ✅ NEW: track which key actually succeeded
+  const [mrrUsedKey, setMrrUsedKey] = useState("");
 
-  // ==========================================
-  // 4. Helper functions
-  // ==========================================
-  const getUsdPrice = useCallback((currency) => {
-    const map = {
-      'BTC': 'bitcoin',
-      'ETH': 'ethereum',
-      'LTC': 'litecoin',
-      'DOGE': 'dogecoin',
-      'BCH': 'bitcoin-cash',
-    };
-    const id = map[String(currency).toUpperCase()];
-    return coinPrices?.[id]?.usd || 0;
-  }, [coinPrices]);
+  // ── USD price helper ──
+  const getUsdPrice = useCallback(
+    (currency) => {
+      const map = {
+        BTC: "bitcoin",
+        ETH: "ethereum",
+        LTC: "litecoin",
+        DOGE: "dogecoin",
+        BCH: "bitcoin-cash",
+      };
+      const id = map[String(currency).toUpperCase()];
+      return coinPrices?.[id]?.usd || 0;
+    },
+    [coinPrices],
+  );
 
-  // ==========================================
-  // 5. useEffect hooks (mrrUnit is already defined)
-  // ==========================================
+  // ── Timer ──
   useEffect(() => {
     if (!isRented) return undefined;
     const updateNow = () => setNowMs(Date.now());
@@ -209,86 +217,13 @@ const MrrRigCard = ({
     return () => clearInterval(timer);
   }, [isRented]);
 
-  const effectiveMrrClient = mrrClient || rig?.mrrClient || null;
-
+  // ── MRR rate fetch ──
   useEffect(() => {
-  const rawAlgo = info?.algo || rig.algo || rig.algorithm || rig.type || algoName;
-  const normalizedAlgo = normalizeAlgoForNiceHash(rawAlgo || algoName);
+    const rawAlgo =
+      info?.algo || rig.algo || rig.algorithm || rig.type || algoName;
+    const normalizedAlgo = normalizeAlgoForNiceHash(rawAlgo || algoName);
 
-  if (!normalizedAlgo || normalizedAlgo === "UNKNOWN") {
-    // Try calculated fallback
-    if (info?.price?.paid && info?.hashrate?.advertised) {
-      const paid = parseFloat(info.price.paid);
-      const advertised = parseFloat(info.hashrate.advertised);
-      const duration = parseFloat(info.duration || 0);
-      if (paid > 0 && advertised > 0 && duration > 0) {
-        const calculatedRate = paid / (duration / 24) / advertised;
-        setMrrMarketRate(calculatedRate);
-        setMrrUsedKey('calculated');
-        console.log(`✅ Using calculated MRR rate: ${calculatedRate}`);
-      }
-    }
-    return;
-  }
-
-  const fetchRate = async () => {
-    setIsLoadingMrrRate(true);
-    setMrrRateError(null);
-
-    const primaryKey = getMrrAlgoKey(normalizedAlgo);
-    const keysToTry = [primaryKey];
-    if (normalizedAlgo === "SHA256ASICBOOST" || normalizedAlgo === "SHA256AB") {
-      if (primaryKey !== "sha256") keysToTry.push("sha256");
-    }
-
-    let rate = 0;
-    let usedKey = '';
-
-    for (const key of keysToTry) {
-      try {
-        // ✅ Use backend proxy instead of direct fetch
-        const url = `/api/v2/mrr/market/algos/${key}`;
-        console.log(`🔍 Fetching MRR rate for ${key} via proxy...`);
-        const response = await fetch(url);
-        if (!response.ok) throw new Error(`Proxy returned ${response.status}`);
-        const data = await response.json();
-        console.log(`📊 MRR API response for ${key}:`, data);
-
-        let foundRate = 0;
-        if (data.success && data.data) {
-          if (data.data.suggested_price?.amount) {
-            foundRate = parseFloat(data.data.suggested_price.amount);
-          } else if (data.data.stats?.prices?.lowest?.price) {
-            foundRate = parseFloat(data.data.stats.prices.lowest.price);
-          } else if (data.data.price) {
-            foundRate = parseFloat(data.data.price);
-          } else if (data.data.BTC) {
-            foundRate = parseFloat(data.data.BTC);
-          }
-        } else if (data.price) {
-          foundRate = parseFloat(data.price);
-        } else if (data.BTC) {
-          foundRate = parseFloat(data.BTC);
-        }
-
-        if (foundRate > 0) {
-          rate = foundRate;
-          usedKey = key;
-          console.log(`✅ MRR rate for ${key}: ${rate} BTC/${mrrUnit}/Day`);
-          break;
-        }
-      } catch (err) {
-        console.warn(`⚠️ Failed to fetch MRR rate for ${key}:`, err.message);
-      }
-    }
-
-    if (rate > 0) {
-      setMrrMarketRate(rate);
-      setMrrUsedKey(usedKey);
-      setMrrRateError(null);
-    } else {
-      // 🔄 Fallback: calculate from rental data (more robust)
-      console.warn(`⚠️ No API rate, trying calculated fallback`);
+    if (!normalizedAlgo || normalizedAlgo === "UNKNOWN") {
       if (info?.price?.paid && info?.hashrate?.advertised) {
         const paid = parseFloat(info.price.paid);
         const advertised = parseFloat(info.hashrate.advertised);
@@ -296,36 +231,98 @@ const MrrRigCard = ({
         if (paid > 0 && advertised > 0 && duration > 0) {
           const calculatedRate = paid / (duration / 24) / advertised;
           setMrrMarketRate(calculatedRate);
-          setMrrUsedKey('calculated');
-          setMrrRateError(null);
-          console.log(`✅ Using calculated MRR rate: ${calculatedRate}`);
-        } else {
-          // Also try using rawAds from info or rig
-          const rawAds = info?.rawAds || getRawHashrate(rig.hashrate?.advertised || rig.advertised);
-          if (paid > 0 && rawAds > 0 && duration > 0) {
-            const calculatedRate = paid / (duration / 24) / rawAds;
+          setMrrUsedKey("calculated");
+        }
+      }
+      return;
+    }
+
+    const fetchRate = async () => {
+      setIsLoadingMrrRate(true);
+      setMrrRateError(null);
+
+      const primaryKey = getMrrAlgoKey(normalizedAlgo);
+      const keysToTry = [primaryKey];
+      if (
+        normalizedAlgo === "SHA256ASICBOOST" ||
+        normalizedAlgo === "SHA256AB"
+      ) {
+        if (primaryKey !== "sha256") keysToTry.push("sha256");
+      }
+
+      let rate = 0;
+      let usedKey = "";
+
+      for (const key of keysToTry) {
+        try {
+          const url = `/api/v2/mrr/market/algos/${key}`;
+          const response = await fetch(url);
+          if (!response.ok)
+            throw new Error(`Proxy returned ${response.status}`);
+          const data = await response.json();
+
+          let foundRate = 0;
+          if (data.success && data.data) {
+            if (data.data.suggested_price?.amount)
+              foundRate = parseFloat(data.data.suggested_price.amount);
+            else if (data.data.stats?.prices?.lowest?.price)
+              foundRate = parseFloat(data.data.stats.prices.lowest.price);
+            else if (data.data.price) foundRate = parseFloat(data.data.price);
+            else if (data.data.BTC) foundRate = parseFloat(data.data.BTC);
+          } else if (data.price) foundRate = parseFloat(data.price);
+          else if (data.BTC) foundRate = parseFloat(data.BTC);
+
+          if (foundRate > 0) {
+            rate = foundRate;
+            usedKey = key;
+            break;
+          }
+        } catch (err) {
+          console.warn(`⚠️ Failed to fetch MRR rate for ${key}:`, err.message);
+        }
+      }
+
+      if (rate > 0) {
+        setMrrMarketRate(rate);
+        setMrrUsedKey(usedKey);
+        setMrrRateError(null);
+      } else {
+        // Fallback to calculated
+        if (info?.price?.paid && info?.hashrate?.advertised) {
+          const paid = parseFloat(info.price.paid);
+          const advertised = parseFloat(info.hashrate.advertised);
+          const duration = parseFloat(info.duration || 0);
+          if (paid > 0 && advertised > 0 && duration > 0) {
+            const calculatedRate = paid / (duration / 24) / advertised;
             setMrrMarketRate(calculatedRate);
-            setMrrUsedKey('calculated');
+            setMrrUsedKey("calculated");
             setMrrRateError(null);
-            console.log(`✅ Using calculated MRR rate (rawAds): ${calculatedRate}`);
           } else {
             setMrrRateError("No rate available");
           }
+        } else {
+          setMrrRateError("No rate available");
         }
-      } else {
-        setMrrRateError("No rate available");
       }
-    }
-    setIsLoadingMrrRate(false);
-  };
+      setIsLoadingMrrRate(false);
+    };
 
-  fetchRate();
-}, [info?.algo, info?.price?.paid, info?.hashrate?.advertised, info?.duration,
-    rig.algo, rig.algorithm, rig.type, algoName, mrrUnit, info?.rawAds, rig.hashrate?.advertised]);
+    fetchRate();
+  }, [
+    info?.algo,
+    info?.price?.paid,
+    info?.hashrate?.advertised,
+    info?.duration,
+    rig.algo,
+    rig.algorithm,
+    rig.type,
+    algoName,
+    mrrUnit,
+    info?.rawAds,
+    rig.hashrate?.advertised,
+  ]);
 
-  // ==========================================
-  // 6. Computed values (useMemo)
-  // ==========================================
+  // ── Computed values ──
   const adsVal = useMemo(
     () =>
       info?.rawAds ||
@@ -333,7 +330,6 @@ const MrrRigCard = ({
       0,
     [info?.rawAds, rig.hashrate?.advertised, rig.advertised],
   );
-
   const avgVal = useMemo(
     () =>
       info?.rawAvg ||
@@ -349,7 +345,7 @@ const MrrRigCard = ({
     (typeof rig.status === "object" ? rig.status.end : null);
   const startT = new Date(
     rentalStartTime +
-    (String(rentalStartTime || "").endsWith("UTC") ? "" : " UTC"),
+      (String(rentalStartTime || "").endsWith("UTC") ? "" : " UTC"),
   ).getTime();
   const endT = new Date(
     rentalEndTime + (String(rentalEndTime || "").endsWith("UTC") ? "" : " UTC"),
@@ -359,11 +355,11 @@ const MrrRigCard = ({
   const durationHoursFromDates = totalMs > 0 ? totalMs / 3600000 : 0;
   const durationHoursExplicit = parseFloat(
     info?.duration ??
-    info?.hours ??
-    rig.duration ??
-    rig.hours ??
-    rig.length ??
-    0,
+      info?.hours ??
+      rig.duration ??
+      rig.hours ??
+      rig.length ??
+      0,
   );
   const durationHours =
     durationHoursExplicit > 0 ? durationHoursExplicit : durationHoursFromDates;
@@ -397,14 +393,12 @@ const MrrRigCard = ({
     fallbackBtc,
   );
 
-  // ✅ Calculate USD value directly using CoinGecko
   const usdValue = useMemo(() => {
     if (!paidAmount || paidAmount <= 0) return 0;
     const price = getUsdPrice(paidCurrency);
     return paidAmount * price;
   }, [paidAmount, paidCurrency, getUsdPrice]);
 
-  // Direct USDT conversion
   const getUsdtAmountDirect = (amount, currency, coinPrices) => {
     const upperCurrency = String(currency || "").toUpperCase();
     if (upperCurrency === "USDT") return 0;
@@ -414,7 +408,6 @@ const MrrRigCard = ({
     if (typeof usdPrice !== "number" || usdPrice <= 0) return 0;
     return amount * usdPrice;
   };
-
   const paidUsdtAmount = useMemo(
     () => getUsdtAmountDirect(paidAmount, paidCurrency, coinPrices),
     [paidAmount, paidCurrency, coinPrices],
@@ -431,10 +424,8 @@ const MrrRigCard = ({
     adsVal > 0 ? convertHashrateValue(adsVal, advertisedUnit, mrrUnit) : 0;
   const durationDays = durationHours > 0 ? durationHours / 24 : 0;
 
-  // 1. Try API rate
   const mrrDailyRate = mrrMarketRate > 0 ? mrrMarketRate : 0;
 
-  // 2. Try calculated rate from rental data
   const calculatedMrrRate = useMemo(() => {
     if (paidBtcAmount > 0 && adsInMrrUnit > 0 && durationDays > 0) {
       return paidBtcAmount / durationDays / adsInMrrUnit;
@@ -442,14 +433,11 @@ const MrrRigCard = ({
     return 0;
   }, [paidBtcAmount, adsInMrrUnit, durationDays]);
 
-  // 3. Try to get rate from info object
-  const infoMrrRate = useMemo(() => {
-    if (info?.mrrRate) return info.mrrRate;
-    if (info?.price?.rate) return info.price.rate;
-    return 0;
-  }, [info]);
+  const infoMrrRate = useMemo(
+    () => info?.mrrRate || info?.price?.rate || 0,
+    [info],
+  );
 
-  // Use the best available rate
   const finalMrrRate = useMemo(() => {
     if (mrrMarketRate > 0) return mrrMarketRate;
     if (calculatedMrrRate > 0) return calculatedMrrRate;
@@ -457,34 +445,30 @@ const MrrRigCard = ({
     return 0;
   }, [mrrMarketRate, calculatedMrrRate, infoMrrRate]);
 
-  // ✅ FIXED: Show the actual key that was used (mrrUsedKey) or fallback to mrrApiKey
-  const mrrDailyRateSource = mrrMarketRate > 0
-    ? `MRR API (${mrrUsedKey || mrrApiKey})`
-    : calculatedMrrRate > 0
-      ? "Calculated from MRR sold rental"
-      : infoMrrRate > 0
-        ? "From rental info"
-        : isLoadingMrrRate
-          ? "Loading MRR API..."
-          : "No MRR rate available";
+  const mrrDailyRateSource =
+    mrrMarketRate > 0
+      ? `MRR API (${mrrUsedKey || mrrApiKey})`
+      : calculatedMrrRate > 0
+        ? ""
+        : infoMrrRate > 0
+          ? "From rental info"
+          : isLoadingMrrRate
+            ? "Loading MRR API..."
+            : "No MRR rate available";
 
   const normalizedCardAlgo = normalizeAlgoForNiceHash(algoName || rawAlgo);
   const nhOrder = [...(nhOrders || [])]
     .sort(
       (a, b) =>
         Number(
-          Boolean(
-            b?.isActive ||
+          b?.isActive ||
             b?.rawOrder?.status?.code === "ACTIVE" ||
             b?.rawOrder?.status === "ACTIVE",
-          ),
         ) -
         Number(
-          Boolean(
-            a?.isActive ||
+          a?.isActive ||
             a?.rawOrder?.status?.code === "ACTIVE" ||
             a?.rawOrder?.status === "ACTIVE",
-          ),
         ),
     )
     .find((order) => normalizeOrderAlgo(order) === normalizedCardAlgo);
@@ -504,40 +488,36 @@ const MrrRigCard = ({
   );
 
   const marketPriceData = algoMarketPrices?.[algoName];
-  const marketPriceValue = marketPriceData ? getNiceHashPriceValue(marketPriceData) : 0;
-  const niceHashSourcePrice = marketPriceValue > 0 ? marketPriceValue : buyNhPriceWithFee;
+  const marketPriceValue = marketPriceData
+    ? getNiceHashPriceValue(marketPriceData)
+    : 0;
+  const niceHashSourcePrice =
+    marketPriceValue > 0 ? marketPriceValue : buyNhPriceWithFee;
 
-  // Convert to MRR unit
   const fromMultiplier = HASHRATE_SUFFIXES[cleanHashrateUnit(myNhUnit)] || 1;
   const toMultiplier = HASHRATE_SUFFIXES[cleanHashrateUnit(mrrUnit)] || 1;
-  const niceHashPriceInMrrUnit = niceHashSourcePrice > 0
-    ? niceHashSourcePrice * (toMultiplier / fromMultiplier)
-    : 0;
+  const niceHashPriceInMrrUnit =
+    niceHashSourcePrice > 0
+      ? niceHashSourcePrice * (toMultiplier / fromMultiplier)
+      : 0;
 
-  // ============================================================
-  // FIXED: ROI calculation using final rate
-  // ============================================================
   const roiPercent = useMemo(() => {
     if (niceHashSourcePrice > 0 && finalMrrRate > 0) {
-      const result = calculatePriceComparison(
+      return calculatePriceComparison(
         finalMrrRate,
         mrrUnit,
         niceHashSourcePrice,
         myNhUnit,
       );
-      return result;
     }
     return null;
   }, [finalMrrRate, mrrUnit, niceHashSourcePrice, myNhUnit]);
 
   const roiLabel = useMemo(() => {
-    if (roiPercent !== null) {
-      return formatPercent(roiPercent);
-    }
+    if (roiPercent !== null) return formatPercent(roiPercent);
     if (niceHashSourcePrice > 0) {
-      if (finalMrrRate <= 0) {
+      if (finalMrrRate <= 0)
         return isLoadingMrrRate ? "Loading..." : "No MRR rate";
-      }
       return "Waiting for data";
     }
     return "No NH price";
@@ -553,10 +533,17 @@ const MrrRigCard = ({
   const targetHashrate =
     totalMs - elapsedMs > 0
       ? (adsVal * (totalMs / 1000) - avgVal * (elapsedMs / 1000)) /
-      ((totalMs - elapsedMs) / 1000)
+        ((totalMs - elapsedMs) / 1000)
       : 0;
   const isBehind = targetHashrate > adsVal;
-  const hSuffix = rig.hashrate?.suffix || rig.hashrate?.advertised?.type || "";
+  const hSuffix =
+    info?.hashrate?.suffix ||
+    rig.hashrate?.advertised?.type ||
+    info?.hashrate_unit ||
+    info?.unit ||
+    mrrUnit ||
+    myNhUnit ||
+    "";
 
   const getEfficiencyAccent = (efficiency) => {
     if (!Number.isFinite(efficiency)) return "rgba(148, 163, 184, 0.18)";
@@ -569,6 +556,7 @@ const MrrRigCard = ({
 
   const accent = getEfficiencyAccent(effNum);
 
+  // ── Styles ──
   const shellStyle = {
     background: `radial-gradient(circle at top right, ${accent} 0%, transparent 88%)`,
     border: `1.5px solid ${accent}`,
@@ -589,8 +577,8 @@ const MrrRigCard = ({
   const sectionStyle = {
     background: "rgba(255,255,255,0.035)",
     border: "1px solid rgba(255,255,255,0.06)",
-    borderRadius: "10px",
-    padding: "6px",
+    borderRadius: "8px",
+    padding: "2px",
   };
 
   const asicBoostBadge = isAsicBoostAlgo ? (
@@ -605,13 +593,12 @@ const MrrRigCard = ({
         marginLeft: "4px",
         border: "1px solid rgba(245, 158, 11, 0.3)",
       }}
-    >
-      AB
-    </span>
+    ></span>
   ) : null;
 
   return (
     <article className="rig-card" style={shellStyle}>
+      {/* ─── Header ─── */}
       <div
         style={{
           display: "flex",
@@ -719,29 +706,16 @@ const MrrRigCard = ({
             |
             {paidLabel && (
               <span
-                style={{
-                  color: "#fbbf24",
-                  fontWeight: 900,
-                  fontSize: "11px",
-                }}
+                style={{ color: "#fbbf24", fontWeight: 900, fontSize: "11px" }}
               >
                 Paid {paidLabel}
               </span>
             )}
           </div>
-          {mrrMarketRate <= 0 && !isLoadingMrrRate && mrrRateError && (
-            <div
-              style={{
-                fontSize: "7px",
-                color: "#f87171",
-                opacity: 0.7,
-              }}
-            >
-              MRR API: {mrrRateError}
-            </div>
-          )}
+          {/* ❌ Removed the error message block */}
         </div>
 
+        {/* ROI Badge */}
         <div
           style={{
             display: "flex",
@@ -790,6 +764,7 @@ const MrrRigCard = ({
         </div>
       </div>
 
+      {/* ─── Main Grid ─── */}
       <div
         style={{
           display: "grid",
@@ -797,6 +772,7 @@ const MrrRigCard = ({
           gap: "6px",
         }}
       >
+        {/* ─── Left Column: Price & Rates ─── */}
         <section style={sectionStyle}>
           <div
             style={{
@@ -817,6 +793,7 @@ const MrrRigCard = ({
             )}
           </div>
 
+          {/* Rental Paid */}
           <div
             style={{
               marginBottom: "6px",
@@ -861,24 +838,26 @@ const MrrRigCard = ({
                   ~ {paidBtcAmount.toFixed(8)} BTC
                 </div>
               )}
-            {usdValue > 0 && String(paidCurrency || "").toUpperCase() !== "USD" && (
-              <div
-                style={{
-                  color: "#86efac",
-                  fontWeight: 700,
-                  fontSize: "9px",
-                  marginTop: "3px",
-                }}
-              >
-                ~ ${usdValue.toFixed(2)} USD
-              </div>
-            )}
+            {usdValue > 0 &&
+              String(paidCurrency || "").toUpperCase() !== "USD" && (
+                <div
+                  style={{
+                    color: "#86efac",
+                    fontWeight: 700,
+                    fontSize: "9px",
+                    marginTop: "3px",
+                  }}
+                >
+                  ~ ${usdValue.toFixed(2)} USD
+                </div>
+              )}
           </div>
 
+          {/* MRR & NiceHash Rates */}
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+              gridTemplateColumns: "1fr 1fr",
               gap: "5px",
               fontSize: "9px",
             }}
@@ -898,30 +877,6 @@ const MrrRigCard = ({
                 }}
               >
                 MRR Rate
-                {mrrMarketRate > 0 && (
-                  <span
-                    style={{
-                      marginLeft: "4px",
-                      fontSize: "6px",
-                      opacity: 0.5,
-                      color: "#34d399",
-                    }}
-                  >
-                    ✓ API
-                  </span>
-                )}
-                {calculatedMrrRate > 0 && mrrMarketRate === 0 && (
-                  <span
-                    style={{
-                      marginLeft: "4px",
-                      fontSize: "6px",
-                      opacity: 0.5,
-                      color: "#fbbf24",
-                    }}
-                  >
-                    ✓ Calc
-                  </span>
-                )}
               </div>
               <div
                 style={{ color: "#fbbf24", fontWeight: 800, marginTop: "3px" }}
@@ -929,7 +884,10 @@ const MrrRigCard = ({
                 {finalMrrRate > 0 ? (
                   <>
                     {finalMrrRate.toFixed(8)}
-                    <span style={{ opacity: 0.5 }}> BTC/{mrrUnit}/Day</span>
+                    <span style={{ opacity: 0.5, fontSize: "8px" }}>
+                      {" "}
+                      BTC/{mrrUnit}/Day
+                    </span>
                     {mrrMarketRate > 0 && (
                       <span
                         style={{
@@ -972,7 +930,10 @@ const MrrRigCard = ({
                 {niceHashPriceInMrrUnit > 0 ? (
                   <>
                     {niceHashPriceInMrrUnit.toFixed(8)}
-                    <span style={{ opacity: 0.5 }}> BTC/{mrrUnit}/Day</span>
+                    <span style={{ opacity: 0.5, fontSize: "8px" }}>
+                      {" "}
+                      BTC/{myNhUnit}/Day
+                    </span>
                   </>
                 ) : (
                   "N/A"
@@ -980,26 +941,26 @@ const MrrRigCard = ({
               </div>
             </div>
           </div>
-
-          <div
+          {/* Time Start*/}
+          <span
             style={{
-              marginTop: "6px",
+              alignItems: "flex-end",
+              marginTop: "5px",
               display: "flex",
               justifyContent: "space-between",
-              fontSize: "9px",
+              fontSize: "10px",
               color: "#94a3b8",
-              padding: "4px 0",
+              padding: "3px 0",
             }}
           >
-            <span>🕐 {formatRentalStartTime(rentalStartTime)}</span>
-            <span>
-              ⏳ <CountdownTimer endTime={info?.endTime || rig.end} />
-            </span>
-          </div>
+            🕐 Started: {formatRentalStartTime(rentalStartTime)}
+          </span>
         </section>
 
+        {/* ─── Right Column: Efficiency & Hashrates ─── */}
         <section style={sectionStyle}>
-          <div style={{ display: "grid", gap: "6px" }}>
+          <div style={{ display: "grid", gap: "4px" }}>
+            {/* Efficiency Bar */}
             <div>
               <div
                 style={{
@@ -1014,6 +975,8 @@ const MrrRigCard = ({
                 </span>
                 <span
                   style={{
+                    fontSize: "16px",
+                    fontWeight: 800,
                     color:
                       effNum >= 100
                         ? "#22d3ee"
@@ -1022,7 +985,6 @@ const MrrRigCard = ({
                           : effNum > 50
                             ? "#fbbf24"
                             : "#ef4444",
-                    fontWeight: 800,
                   }}
                 >
                   {eff}%
@@ -1031,7 +993,7 @@ const MrrRigCard = ({
               <div
                 style={{
                   width: "100%",
-                  height: "5px",
+                  height: "4px",
                   background: "rgba(255,255,255,0.08)",
                   borderRadius: "999px",
                   overflow: "hidden",
@@ -1047,6 +1009,7 @@ const MrrRigCard = ({
                 />
               </div>
             </div>
+            {/* Progress Bar */}
             <div>
               <div
                 style={{
@@ -1057,21 +1020,37 @@ const MrrRigCard = ({
                 }}
               >
                 <span style={{ opacity: 0.55, textTransform: "uppercase" }}>
-                  Rental Progress
+                  Progress
                 </span>
                 <span
                   style={{
-                    color: timeProgress > 90 ? "#f87171" : "#8b5cf6",
+                    fontSize: "16px",
                     fontWeight: 800,
+                    color: timeProgress > 90 ? "#f87171" : "#8b5cf6",
                   }}
                 >
-                  {timeProgress.toFixed(1)}%
+                  {timeProgress.toFixed(2)}%
                 </span>
               </div>
+              {/* Time End */}
+              <span
+                style={{
+                  alignItems: "flex-end",
+                  marginTop: "5px",
+                  display: "flex",
+                  justifyContent: "end",
+                  fontSize: "10px",
+                  color: "#94a3b8",
+                  padding: "3px 0",
+                }}
+              >
+                <CountdownTimer endTime={info?.endTime || rig.end} />
+              </span>
+
               <div
                 style={{
                   width: "100%",
-                  height: "5px",
+                  height: "4px",
                   background: "rgba(255,255,255,0.08)",
                   borderRadius: "999px",
                   overflow: "hidden",
@@ -1087,111 +1066,152 @@ const MrrRigCard = ({
                 />
               </div>
             </div>
-
+            {/* Hashrates Grid: Current, Average, Advertised, Target */}
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                gap: "5px",
-                fontSize: "8px",
+                gridTemplateColumns: "1fr 1fr",
+                gap: "4px",
+                marginTop: "4px",
               }}
             >
               <div
                 style={{
                   background: "rgba(255,255,255,0.03)",
-                  borderRadius: "9px",
-                  padding: "6px",
+                  borderRadius: "6px",
+                  padding: "4px 6px",
                 }}
               >
-                <div style={{ opacity: 0.55, textTransform: "uppercase" }}>
+                <div
+                  style={{
+                    opacity: 0.55,
+                    textTransform: "uppercase",
+                    fontSize: "7px",
+                  }}
+                >
+                  Current
+                </div>
+                <div
+                  style={{
+                    color: "#e2e8f0",
+                    fontWeight: 700,
+                    fontSize: "10px",
+                  }}
+                >
+                  {info?.current ||
+                    (cur > 0
+                      ? formatHashrateWithUnit(
+                          cur,
+                          rig.hashrate?.suffix ||
+                            rig.hashrate?.current?.type ||
+                            "H",
+                        )
+                      : "0 H/s")}
+                </div>
+              </div>
+              <div
+                style={{
+                  background: "rgba(255,255,255,0.03)",
+                  borderRadius: "6px",
+                  padding: "4px 6px",
+                }}
+              >
+                <div
+                  style={{
+                    opacity: 0.55,
+                    textTransform: "uppercase",
+                    fontSize: "7px",
+                  }}
+                >
                   Average
                 </div>
                 <div
                   style={{
                     color: "#e2e8f0",
                     fontWeight: 700,
-                    marginTop: "3px",
+                    fontSize: "10px",
                   }}
                 >
-                  {info?.average || "0 N/A"}
+                  {info?.average ||
+                    (avgVal > 0
+                      ? formatHashrateWithUnit(
+                          avgVal,
+                          rig.hashrate?.suffix ||
+                            rig.hashrate?.average?.type ||
+                            "H",
+                        )
+                      : "0 N/A")}
+                </div>
+              </div>
+              <div
+                style={{
+                  background: "rgba(63, 82, 255, 0.34)",
+                  borderRadius: "6px",
+                  padding: "4px 6px",
+                }}
+              >
+                <div
+                  style={{
+                    opacity: 0.55,
+                    textTransform: "uppercase",
+                    fontSize: "7px",
+                  }}
+                >
+                  Advertised
+                </div>
+                <div
+                  style={{
+                    color: "#ffca1d",
+                    fontWeight: 700,
+                    fontSize: "11px",
+                  }}
+                >
+                  {info?.advertised ||
+                    (adsVal > 0
+                      ? formatHashrateWithUnit(
+                          adsVal,
+                          rig.hashrate?.suffix ||
+                            rig.hashrate?.advertised?.type ||
+                            "H",
+                        )
+                      : "0 N/A")}
                 </div>
               </div>
               <div
                 style={{
                   background: "rgba(255,255,255,0.03)",
-                  borderRadius: "9px",
-                  padding: "6px",
+                  borderRadius: "6px",
+                  padding: "4px 6px",
                 }}
               >
-                <div style={{ opacity: 0.55, textTransform: "uppercase" }}>
-                  Advertised
+                <div
+                  style={{
+                    opacity: 0.55,
+                    textTransform: "uppercase",
+                    fontSize: "7px",
+                  }}
+                >
+                  Target
                 </div>
                 <div
                   style={{
-                    color: "#e2e8f0",
+                    color: isBehind ? "#f87171" : "#34d399",
                     fontWeight: 700,
-                    marginTop: "3px",
+                    fontSize: "10px",
                   }}
                 >
-                  {info?.advertised || "0 N/A"}
+                  {Math.max(0, targetHashrate).toFixed(2)}{" "}
+                  <small style={{ opacity: 0.5, fontSize: "8px" }}>
+                    {String(hSuffix).toUpperCase()}
+                  </small>
                 </div>
-              </div>
-            </div>
-            <div
-              style={{
-                background: "rgba(255,255,255,0.03)",
-                borderRadius: "9px",
-                padding: "6px",
-              }}
-            >
-              <div
-                style={{
-                  opacity: 0.6,
-                  textTransform: "uppercase",
-                  fontSize: "8px",
-                }}
-              >
-                Efficiency
-              </div>
-              <div
-                style={{ color: "#34d399", fontWeight: 800, marginTop: "3px" }}
-              >
-                {eff}%
-              </div>
-            </div>
-            <div
-              style={{
-                background: "rgba(255,255,255,0.03)",
-                borderRadius: "9px",
-                padding: "6px",
-              }}
-            >
-              <div
-                style={{
-                  opacity: 0.6,
-                  textTransform: "uppercase",
-                  fontSize: "8px",
-                }}
-              >
-                Target
-              </div>
-              <div
-                style={{
-                  color: isBehind ? "#f87171" : "#34d399",
-                  fontWeight: 800,
-                  marginTop: "3px",
-                }}
-              >
-                {Math.max(0, targetHashrate).toFixed(2)}{" "}
-                <small style={{ opacity: 0.5 }}>
-                  {String(hSuffix).toUpperCase()}
-                </small>
               </div>
             </div>
           </div>
         </section>
       </div>
 
+      {/* ─── Pools (unchanged) ─── */}
       {expandedPools.has(rig.id) && (info || rig.host) && (
         <div
           className="rig-pool-summary"
@@ -1257,6 +1277,7 @@ const MrrRigCard = ({
         </div>
       )}
 
+      {/* ─── Buttons (unchanged) ─── */}
       <div
         style={{
           display: "flex",
