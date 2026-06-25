@@ -261,7 +261,7 @@ export const TelegramTemplates = {
   },
 
   rigStatusWarning: (acct, rig, algo) =>
-    `⚠️ <b>[RIG WARNING]</b>\n<b>MRR:</b> ${formatAccount(acct)}\n<b>Rig:</b> ${formatRig(rig)}\n<b>Algo:</b> <code>${escapeHtml(algo)}</code>\n<b>Status:</b> <code>${rig.status?.status || rig.status}</code>`,
+    `⚠️ <b>[RIG WARNING]</b>\n<b>MRR:</b> ${formatAccount(acct)}\n${formatRig(rig)}\n<b>Algo:</b> <code>${escapeHtml(algo)}</code>\n<b>Status:</b> <code>${rig.status?.status || rig.status}</code>`,
 
   highWarningCount: (acct, count) =>
     `⚠️ <b>[SYSTEM ALERT]</b>\n<b>MRR:</b> ${formatAccount(acct)}\n<b>High Warning Count:</b> <b>${count}</b> rigs in warning state.`,
