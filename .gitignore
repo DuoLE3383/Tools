@@ -57,3 +57,6 @@ mrr_monitor.db-wal
 worker/index.js
 worker/index.js
 wrangler.jsonc
+worker/index.js
+wrangler.jsonc
+worker/index.js
