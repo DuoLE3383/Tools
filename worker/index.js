@@ -1,4 +1,4 @@
-const TUNNEL_URL = 'https://these-bacterial-italiano-pavilion.trycloudflare.com'; // <-- your URL
+const TUNNEL_URL = 'https://book-chef-excluded-olive.trycloudflare.com'; // <-- your URL
 
 export default {
   async fetch(request, env) {
