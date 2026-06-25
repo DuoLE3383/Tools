@@ -78,7 +78,7 @@ export const TelegramTemplates = {
       `<b>Efficiency:</b> <b>${info.percent}%</b> (Diff: ${diff}%)\n` +
       `Adv: <code>${ads}</code>\n` +
       `<b>Remaining:</b> ${rem}\n` +
-      `<b>Target to 100%:</b> ${info.targetHashrate || "N/A"}/n` +
+      `<b>Target to 100%:</b> ${info.targetHashrate || "N/A"}\n` +
       `${divider}\n`
     );
   },
