@@ -19,7 +19,7 @@ export async function fetchMarketPrice(callApi, algo, market, client) {
       `/api/v2/hashpower/orderBook/${nhAlgo}/${marketParam}`,
       {
         query: {
-          client: client || "BT",
+          client: client || "VN",
         },
         silent: true,
       },

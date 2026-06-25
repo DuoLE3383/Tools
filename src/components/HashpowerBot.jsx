@@ -57,7 +57,7 @@ export default function HashpowerBot({
   algorithm,
   market,
   onCall,
-  nhClient = "BT",
+  nhClient = "VN",
   setNhClient,
 }) {
   const [isRunning, setIsRunning] = useState(false);

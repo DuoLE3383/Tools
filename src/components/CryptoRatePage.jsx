@@ -75,10 +75,10 @@ export default function CryptoRatePage({ onCall, onPriceUpdate }) {
   // ✅ Function to format prices for MrrRigCard
   const formatPricesForRigCard = useCallback((data) => {
     const formatted = {};
-    Object.keys(data).forEach(key => {
+    Object.keys(data).forEach((key) => {
       const coinData = data[key];
       // Find the matching COIN entry
-      const coin = COINS.find(c => c.id === key);
+      const coin = COINS.find((c) => c.id === key);
       const symbol = coin?.symbol || key.toUpperCase();
 
       formatted[symbol] = {
@@ -102,7 +102,9 @@ export default function CryptoRatePage({ onCall, onPriceUpdate }) {
         silent: true,
       });
 
-      const data = res?.data || (res && typeof res === "object" && !res.error ? res : null);
+      const data =
+        res?.data ||
+        (res && typeof res === "object" && !res.error ? res : null);
 
       if (data && (data.bitcoin || data.BTC || data.btc)) {
         setPrices(data);
@@ -120,8 +122,8 @@ export default function CryptoRatePage({ onCall, onPriceUpdate }) {
               ? "Cloudflare Intercept"
               : `API Error: ${res.slice(0, 100)}`
             : res?.error ||
-            res?.message ||
-            `Format Mismatch (Keys: ${res ? Object.keys(res).join(",") : "null"})`;
+              res?.message ||
+              `Format Mismatch (Keys: ${res ? Object.keys(res).join(",") : "null"})`;
 
         if (isSystemConfig) setWsEnabled(false);
         if (!prices) setError(`Market data unavailable. ${detail}`);
@@ -218,7 +220,11 @@ export default function CryptoRatePage({ onCall, onPriceUpdate }) {
 
   const getCoinData = (id) => {
     const coin = COINS.find((c) => c.id === id);
-    return prices?.[id] || prices?.[coin?.symbol] || prices?.[coin?.symbol?.toLowerCase()];
+    return (
+      prices?.[id] ||
+      prices?.[coin?.symbol] ||
+      prices?.[coin?.symbol?.toLowerCase()]
+    );
   };
 
   const getPrice = (data) => data?.usd || (typeof data === "number" ? data : 0);
@@ -226,7 +232,8 @@ export default function CryptoRatePage({ onCall, onPriceUpdate }) {
   const results = useMemo(() => {
     const currentInput = parseFloat(amounts[baseCoin]) || 0;
     const baseData = baseCoin === "usd" ? null : getCoinData(baseCoin);
-    const usdValue = baseCoin === "usd" ? currentInput : currentInput * getPrice(baseData);
+    const usdValue =
+      baseCoin === "usd" ? currentInput : currentInput * getPrice(baseData);
 
     return COINS.map((coin) => {
       const data = getCoinData(coin.id);
@@ -254,7 +261,7 @@ export default function CryptoRatePage({ onCall, onPriceUpdate }) {
         overflow: "hidden",
         boxSizing: "border-box",
         width: "600px",
-        height: "500px"
+        height: "500px",
       }}
     >
       {/* Header */}
@@ -294,7 +301,9 @@ export default function CryptoRatePage({ onCall, onPriceUpdate }) {
           </span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <span style={{ fontSize: "1rem", color: "#60a5fa", fontWeight: "700" }}>
+          <span
+            style={{ fontSize: "1rem", color: "#60a5fa", fontWeight: "700" }}
+          >
             $
           </span>
           <input
@@ -352,8 +361,14 @@ export default function CryptoRatePage({ onCall, onPriceUpdate }) {
             key={coin.id}
             style={{
               aspectRatio: "2 / 1",
-              background: baseCoin === coin.id ? "rgba(96,165,250,0.06)" : "rgba(30,41,59,0.12)",
-              border: baseCoin === coin.id ? "1px solid rgba(96,165,250,0.15)" : "1px solid rgba(255,255,255,0.03)",
+              background:
+                baseCoin === coin.id
+                  ? "rgba(96,165,250,0.06)"
+                  : "rgba(30,41,59,0.12)",
+              border:
+                baseCoin === coin.id
+                  ? "1px solid rgba(96,165,250,0.15)"
+                  : "1px solid rgba(255,255,255,0.03)",
               borderRadius: "10px",
               padding: "14px 12px 12px",
               display: "flex",
@@ -362,8 +377,20 @@ export default function CryptoRatePage({ onCall, onPriceUpdate }) {
               transition: "all 0.2s ease",
             }}
           >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontWeight: "800", color: "#d660fa", fontSize: "0.85rem" }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
+              <span
+                style={{
+                  fontWeight: "800",
+                  color: "#d660fa",
+                  fontSize: "0.85rem",
+                }}
+              >
                 {coin.symbol}
               </span>
               <span
@@ -373,7 +400,8 @@ export default function CryptoRatePage({ onCall, onPriceUpdate }) {
                   fontSize: "0.85rem",
                 }}
               >
-                {coin.change >= 0 ? "▲" : "▼"} {Math.abs(coin.change).toFixed(1)}%
+                {coin.change >= 0 ? "▲" : "▼"}{" "}
+                {Math.abs(coin.change).toFixed(1)}%
               </span>
             </div>
 
@@ -383,7 +411,9 @@ export default function CryptoRatePage({ onCall, onPriceUpdate }) {
                 value={
                   baseCoin === coin.id
                     ? amounts[coin.id]
-                    : coin.calculated > 0 ? coin.calculated.toFixed(6) : "0.000000"
+                    : coin.calculated > 0
+                      ? coin.calculated.toFixed(6)
+                      : "0.000000"
                 }
                 onChange={(e) => onValueChange(coin.id, e.target.value)}
                 style={{
@@ -410,7 +440,7 @@ export default function CryptoRatePage({ onCall, onPriceUpdate }) {
                 textAlign: "center",
               }}
             >
-              $ {coin.price.toFixed(2)}
+            $ {(coin.price || 0).toFixed(2)}
             </div>
           </div>
         ))}

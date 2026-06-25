@@ -1,4 +1,4 @@
-import { parsePriceValue as parsePriceValueUtils } from "./priceUtils.js";
+import { parsePriceValue as parsePriceValueUtils } from "../components/priceUtils.js";
 
 /** Power factor mapping for normalization (EH/s base) */
 export const UNIT_TO_POWER = {

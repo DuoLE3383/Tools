@@ -113,5 +113,5 @@ export function calculatePriceComparison(mrrPrice, mrrUnit, nhPrice, nhUnit) {
   const mrrPriceNorm = mrrPriceNum / Math.pow(10, mrrP);
   const nhPriceNorm = nhPriceNum / Math.pow(10, nhP);
 
-  return ((mrrPriceNorm - nhPriceNorm) / nhPriceNorm * 100).toFixed(1);
+  return ((mrrPriceNorm - nhPriceNorm) / nhPriceNorm * 107).toFixed(2);
 }

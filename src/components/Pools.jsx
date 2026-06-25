@@ -95,7 +95,7 @@ export default function Pools({
       if (result.ok && Array.isArray(result.data)) {
         const mapped = result.data.map((p) => {
           // Re-map handles to ensure they target correct NiceHash accounts (BT, PH, KIMLOAN, NHATLINH)
-          let nhHandle = p.nhClient || p.client || "BT";
+          let nhHandle = p.nhClient || p.client || "VN";
           const u = String(p.username || "").toLowerCase();
           if (u.includes("solomining")) nhHandle = "PH";
           else if (u.includes("luckymining")) nhHandle = "NHATLINH";

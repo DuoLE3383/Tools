@@ -419,10 +419,10 @@ export default function MrrPoolManager({
                         className="btn-pro secondary"
                         style={{ fontSize: "10px", color: "#fbbf24" }}
                         onClick={() =>
-                          runWebSocketFetch("miningpooldutch", rig)
+                          runWebSocketFetch("miningdutch", rig)
                         }
                       >
-                        Fetch MiningPoolDutch
+                        Fetch miningdutch
                       </button>
                       <div
                         style={{

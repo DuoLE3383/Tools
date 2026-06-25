@@ -1,4 +1,4 @@
-// MiningPage.jsx
+// MiningPage.jsx - fully upgraded with CoinPriceProvider
 import HeroMinersCard from "./HeroMinersCard.jsx";
 import MiningCoin, { HeaderCell, BodyCell } from "./MiningCoin.jsx";
 import { RentedRigProvider } from "../mrr/RentedRigContext.jsx";
@@ -8,7 +8,9 @@ import {
 } from "./MiningWorkspaceProvider";
 import { btcValue, compactNumber, percentValue } from "./miningWorkspaceData";
 import { useState, useEffect, useMemo, useCallback } from "react";
+import { CoinPriceProvider, useCoinPrice } from "./CoinPriceContext.jsx";
 
+// ===== Stat Cards =====
 function StatCard({ label, value, accent }) {
   return (
     <div
@@ -83,6 +85,7 @@ function MiniStat({ label, value, tone }) {
   );
 }
 
+// ===== Main Route Hero =====
 function MiningRouteHero() {
   const {
     routes,
@@ -93,7 +96,10 @@ function MiningRouteHero() {
     error,
     lastUpdated,
     refresh,
+    priceFetchStatus,
   } = useMiningWorkspace();
+  const { openCoinModal } = useCoinPrice();
+
   const bestRoute = routes[0] || null;
   const activeRouteCount = routes.filter(
     (route) => route.miningDutchBtcPerDay > 0 || route.heroMiners > 0,
@@ -103,6 +109,7 @@ function MiningRouteHero() {
 
   return (
     <section style={{ display: "grid", gap: "10px", marginBottom: "12px" }}>
+      {/* Stats */}
       <div
         style={{
           display: "grid",
@@ -132,6 +139,7 @@ function MiningRouteHero() {
         />
       </div>
 
+      {/* Best Route & Top Candidates */}
       <div
         style={{
           display: "grid",
@@ -356,6 +364,7 @@ function MiningRouteHero() {
         </div>
       </div>
 
+      {/* Opportunity Finder */}
       <div
         style={{
           padding: "12px",
@@ -489,6 +498,41 @@ function MiningRouteHero() {
           </div>
         )}
 
+        {priceFetchStatus && Object.keys(priceFetchStatus).length > 0 && (
+          <div
+            style={{
+              marginTop: "12px",
+              padding: "10px",
+              borderRadius: "8px",
+              background: "rgba(15,23,42,0.5)",
+              border: "1px solid rgba(148,163,184,0.12)",
+            }}
+          >
+            <details>
+              <summary
+                style={{
+                  color: "#94a3b8",
+                  fontSize: "11px",
+                  cursor: "pointer",
+                }}
+              >
+                Price Fetch Status ({Object.keys(priceFetchStatus).length}{" "}
+                algos)
+              </summary>
+              <div style={{ marginTop: "8px", fontSize: "10px" }}>
+                {Object.entries(priceFetchStatus).map(([algo, status]) => (
+                  <div
+                    key={algo}
+                    style={{ color: "#64748b", padding: "2px 0" }}
+                  >
+                    <span style={{ color: "#e2e8f0" }}>{algo}:</span> {status}
+                  </div>
+                ))}
+              </div>
+            </details>
+          </div>
+        )}
+
         <div style={{ overflowX: "auto" }}>
           <table
             style={{
@@ -586,9 +630,10 @@ function MiningRouteHero() {
                     <div
                       style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}
                     >
-                      {row.heroCoins.slice(0, 4).map((coin) => (
-                        <span
+                      {row.heroCoins.map((coin) => (
+                        <button
                           key={coin}
+                          onClick={() => openCoinModal(coin)}
                           style={{
                             border: "1px solid rgba(96,165,250,0.22)",
                             color: "#bfdbfe",
@@ -596,10 +641,20 @@ function MiningRouteHero() {
                             borderRadius: "999px",
                             padding: "2px 6px",
                             fontSize: "10px",
+                            cursor: "pointer",
+                            transition: "all 0.2s",
+                          }}
+                          onMouseEnter={(e) => {
+                            e.target.style.background = "rgba(37,99,235,0.25)";
+                            e.target.style.borderColor = "rgba(96,165,250,0.5)";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.target.style.background = "rgba(37,99,235,0.12)";
+                            e.target.style.borderColor = "rgba(96,165,250,0.22)";
                           }}
                         >
                           {coin}
-                        </span>
+                        </button>
                       ))}
                     </div>
                   </BodyCell>
@@ -613,211 +668,7 @@ function MiningRouteHero() {
   );
 }
 
-// --- NEW: Stratum Connection Helper component ---
-function StratumConnectionHelper({ onCall }) {
-  const [heroAlgos, setHeroAlgos] = useState([]);
-  const [dutchPoolStatus, setDutchPoolStatus] = useState(null);
-  const [dutchMultiport, setDutchMultiport] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  // Fetch HeroMiners algorithms – we can reuse the existing fetchMiningStats
-  // but for simplicity we call the same endpoint that HeroMinersCard uses.
-  const fetchHeroAlgos = useCallback(async () => {
-    try {
-      const response = await onCall("/api/v2/mining-stats/herominers_global", {
-        query: { client: "BT" },
-        silent: true,
-      });
-      if (response?.success && Array.isArray(response.coinStats)) {
-        // Extract unique algorithms and map to subdomain
-        const algoSet = new Set();
-        response.coinStats.forEach((coin) => {
-          if (coin.algorithm) algoSet.add(coin.algorithm);
-        });
-        const algoList = Array.from(algoSet)
-          .filter(Boolean)
-          .map((algo) => {
-            // Build subdomain: lowercased and remove spaces/dots? 
-            // Common pattern: algo.herominers.com
-            // For some like "Equihash 192/7" we need to map to "equihash" maybe? 
-            // We'll simplify: just lowercase and replace spaces with dash.
-            let subdomain = algo.toLowerCase().replace(/\s+/g, '-');
-            // Overrides for known mappings (optional)
-            // e.g., "ZelHash" -> "zelhash", "BeamV3" -> "beam"
-            // We'll keep it simple, but we can add a mapping if needed.
-            return { algorithm: algo, subdomain: subdomain + ".herominers.com" };
-          });
-        setHeroAlgos(algoList);
-      } else {
-        throw new Error("Failed to fetch HeroMiners algorithms");
-      }
-    } catch (err) {
-      setError(err.message);
-    }
-  }, [onCall]);
-
-  // Fetch Mining-Dutch pool status and multiport
-  const fetchDutchData = useCallback(async () => {
-    try {
-      const [statusRes, multiportRes] = await Promise.all([
-        onCall("/api/v2/mining-dutch/poolstatus", { silent: true }),
-        onCall("/api/v2/mining-dutch/multiport", {
-          query: { method: "nowmining" },
-          silent: true,
-        }),
-      ]);
-      if (statusRes?.success) setDutchPoolStatus(statusRes);
-      else setDutchPoolStatus(null);
-      if (multiportRes?.success) setDutchMultiport(multiportRes);
-      else setDutchMultiport(null);
-    } catch (err) {
-      setError(err.message);
-    }
-  }, [onCall]);
-
-  const fetchAll = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    await Promise.all([fetchHeroAlgos(), fetchDutchData()]);
-    setLoading(false);
-  }, [fetchHeroAlgos, fetchDutchData]);
-
-  useEffect(() => {
-    queueMicrotask(() => void fetchAll());
-  }, [fetchAll]);
-
-  return (
-    <details
-      style={{
-        marginTop: "12px",
-        borderRadius: "12px",
-        border: "1px solid rgba(148,163,184,0.12)",
-        background: "rgba(15,23,42,0.72)",
-        boxShadow: "0 18px 40px rgba(0,0,0,0.20)",
-      }}
-    >
-      <summary
-        style={{
-          cursor: "pointer",
-          padding: "12px 16px",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          listStyle: "none",
-          color: "#e2e8f0",
-          fontWeight: 700,
-          fontSize: "14px",
-        }}
-      >
-        <span>🔌 Stratum Connection Helper</span>
-        <span style={{ color: "#64748b", fontSize: "12px" }}>
-          {loading ? "Loading..." : `${heroAlgos.length} algos · ${dutchMultiport?.ports?.length || 0} ports`}
-        </span>
-      </summary>
-      <div style={{ padding: "0 16px 16px" }}>
-        {error && (
-          <div style={{ color: "#f87171", marginBottom: "12px" }}>{error}</div>
-        )}
-        {loading ? (
-          <div style={{ color: "#94a3b8", padding: "12px 0" }}>Fetching stratum data...</div>
-        ) : (
-          <div style={{ display: "grid", gap: "16px" }}>
-            {/* HeroMiners */}
-            <div>
-              <h4 style={{ color: "#38bdf8", margin: "0 0 8px", fontSize: "13px" }}>
-                HeroMiners – Algorithms & Subdomains
-              </h4>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))",
-                  gap: "6px",
-                }}
-              >
-                {heroAlgos.length > 0 ? (
-                  heroAlgos.map((item) => (
-                    <div
-                      key={item.algorithm}
-                      style={{
-                        padding: "6px 10px",
-                        borderRadius: "6px",
-                        background: "rgba(255,255,255,0.02)",
-                        border: "1px solid rgba(148,163,184,0.08)",
-                        display: "flex",
-                        justifyContent: "space-between",
-                        gap: "8px",
-                        fontSize: "12px",
-                      }}
-                    >
-                      <span style={{ color: "#e2e8f0" }}>{item.algorithm}</span>
-                      <span style={{ color: "#94a3b8", wordBreak: "break-all" }}>
-                        {item.subdomain}
-                      </span>
-                    </div>
-                  ))
-                ) : (
-                  <div style={{ color: "#64748b", fontSize: "12px" }}>
-                    No algorithms found.
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Mining-Dutch */}
-            <div>
-              <h4 style={{ color: "#fbbf24", margin: "0 0 8px", fontSize: "13px" }}>
-                Mining-Dutch – Stratum Endpoints
-              </h4>
-              {dutchMultiport && dutchMultiport.ports && Array.isArray(dutchMultiport.ports) ? (
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
-                    gap: "6px",
-                  }}
-                >
-                  {dutchMultiport.ports.map((portInfo) => (
-                    <div
-                      key={portInfo.port}
-                      style={{
-                        padding: "6px 10px",
-                        borderRadius: "6px",
-                        background: "rgba(255,255,255,0.02)",
-                        border: "1px solid rgba(148,163,184,0.08)",
-                        display: "flex",
-                        justifyContent: "space-between",
-                        gap: "8px",
-                        fontSize: "12px",
-                      }}
-                    >
-                      <span style={{ color: "#e2e8f0" }}>
-                        {portInfo.algorithm || "Unknown"}
-                      </span>
-                      <span style={{ color: "#94a3b8" }}>
-                        stratum.mining-dutch.nl:{portInfo.port}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div style={{ color: "#64748b", fontSize: "12px" }}>
-                  No port data available.
-                </div>
-              )}
-              {dutchPoolStatus && (
-                <div style={{ marginTop: "8px", fontSize: "11px", color: "#64748b" }}>
-                  Pool status: {dutchPoolStatus.message || "OK"}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-    </details>
-  );
-}
-
+// ===== Shell =====
 function MiningWorkspaceShell({ onNavigateHome, onCall, nhClient }) {
   return (
     <div
@@ -855,7 +706,6 @@ function MiningWorkspaceShell({ onNavigateHome, onCall, nhClient }) {
           >
             <h3>Mining Workspace</h3>
           </div>
-
           <p
             className="subtitle"
             style={{ margin: "4px 0 0", maxWidth: "760px", fontSize: "12px" }}
@@ -864,7 +714,6 @@ function MiningWorkspaceShell({ onNavigateHome, onCall, nhClient }) {
             current pool stats, and profitability comparison.
           </p>
         </div>
-
         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
           <button className="btn-pro secondary" onClick={onNavigateHome}>
             Back to Dashboard
@@ -913,16 +762,12 @@ function MiningWorkspaceShell({ onNavigateHome, onCall, nhClient }) {
         </aside>
       </section>
 
-      {/* NEW: Stratum Connection Helper section */}
-      <StratumConnectionHelper onCall={onCall} />
-
-      {/* <section style={{ marginTop: '12px' }}>
-        <TelegramManager onCall={onCall} mrrClient="VN" />
-      </section> */}
+      {/* Stratum Connection Helper removed – endpoints not available on backend */}
     </div>
   );
 }
 
+// ===== Main Export =====
 export default function MiningPage({
   onCall,
   nhClient = "BT",
@@ -931,11 +776,13 @@ export default function MiningPage({
   return (
     <RentedRigProvider callApi={onCall}>
       <MiningWorkspaceProvider onCall={onCall} nhClient={nhClient}>
-        <MiningWorkspaceShell
-          onNavigateHome={onNavigateHome}
-          onCall={onCall}
-          nhClient={nhClient}
-        />
+        <CoinPriceProvider onCall={onCall}>
+          <MiningWorkspaceShell
+            onNavigateHome={onNavigateHome}
+            onCall={onCall}
+            nhClient={nhClient}
+          />
+        </CoinPriceProvider>
       </MiningWorkspaceProvider>
     </RentedRigProvider>
   );

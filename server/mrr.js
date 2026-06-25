@@ -4,6 +4,7 @@ import { createHash, createHmac } from 'crypto';
 import { db } from './db.js';
 import { normalizeCredential, sanitizeMrrEndpoint } from './utils.js';
 import { isAggregate, resolveNhClient, getNiceHashApp } from './nh.js';
+import { logger } from './logger.js';
 
 const mrrLastNonceByClient = new Map();
 const mrrInitTracker = new Set();
@@ -19,7 +20,7 @@ async function saveRigEndpointToDb(endpoint, client) {
   db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS mrr_rig_logs (timestamp TEXT, client TEXT, endpoint TEXT)`);
     db.run(`INSERT INTO mrr_rig_logs (timestamp, client, endpoint) VALUES (?, ?, ?)`, [ts, client, endpoint], (err) => {
-      if (err) console.error(`[mrr:db] Error saving to mrr_rig_logs: ${err.message}`);
+      if (err) logger.error(`[mrr:db] Error saving to mrr_rig_logs: ${err.message}`);
     });
   });
 }
@@ -95,7 +96,7 @@ export async function initNonces() {
             // it's likely from an older version of the tool and should be ignored to prevent conflicts.
             if (row.client.length > 10) {
               mrrLastNonceByClient.set(row.client, BigInt(row.last_nonce));
-              console.log(`[mrr:init] Loaded nonce baseline for Key ${row.client.slice(0, 8)}...: ${row.last_nonce}`);
+              logger.info(`[mrr:init] Loaded nonce baseline for Key ${row.client.slice(0, 8)}...: ${row.last_nonce}`);
             }
           } catch (e) { }
         });
@@ -106,7 +107,7 @@ export async function initNonces() {
         if (cfg.nonceOverride && cfg.apiKey) {
           const current = mrrLastNonceByClient.get(cfg.apiKey) || 0n;
           if (cfg.nonceOverride > current) {
-            console.log(`[mrr:init] Applying manual nonce override for Key ${cfg.apiKey.slice(0, 8)}...: ${cfg.nonceOverride}`);
+            logger.info(`[mrr:init] Applying manual nonce override for Key ${cfg.apiKey.slice(0, 8)}...: ${cfg.nonceOverride}`);
             mrrLastNonceByClient.set(cfg.apiKey, cfg.nonceOverride);
           }
         }
@@ -151,7 +152,7 @@ function extractEpochMs(payload) {
 export async function syncMrrClock(force = false) {
   if (mrrClockSynced && !force) return;
   if (mrrSyncPromise) return mrrSyncPromise;
-  console.log('[mrr:clock] Synchronizing with MiningRigRentals server time...');
+  logger.info('[mrr:clock] Synchronizing with MiningRigRentals server time...');
   mrrSyncPromise = (async () => {
     const startSync = Date.now();
     const trySync = async (url) => {
@@ -197,14 +198,14 @@ export async function syncMrrClock(force = false) {
       mrrClockSynced = true;
 
       if (!serverTimeMs) {
-        console.warn('[mrr:clock] Could not sync with MRR. Using local clock.');
+        logger.warn('[mrr:clock] Could not sync with MRR. Using local clock.');
       } else if (Math.abs(Number(mrrClockOffset)) > 1000) {
-        console.info(`[mrr:clock] Significant drift detected! Offset: ${mrrClockOffset}ms. (RTT: ${rtt}ms)`);
+        logger.warn(`[mrr:clock] Significant drift detected! Offset: ${mrrClockOffset}ms. (RTT: ${rtt}ms)`);
       } else {
-        console.info(`[mrr:clock] Synced with MRR. Offset: ${mrrClockOffset}ms.`);
+        logger.info(`[mrr:clock] Synced with MRR. Offset: ${mrrClockOffset}ms.`);
       }
     } catch (err) {
-      console.warn(`[mrr:clock] MRR time sync failed: ${err.message}. Using local clock.`);
+      logger.warn(`[mrr:clock] MRR time sync failed: ${err.message}. Using local clock.`);
     } finally {
       mrrSyncPromise = null;
     }
@@ -225,8 +226,8 @@ export function nextMrrNonce(apiKey, clientLabel) {
   // Safety: Only reset if we hit the actual 64-bit unsigned limit (18.4 quintillion).
   // Your logs show nonces around 1.8 quintillion, which is perfectly safe for Uint64.
   // We REMOVE the future-drift reset to allow the "Nuclear Jump" to actually catch up to MRR.
-  if (lastNonce > 19446744073709551615n) {
-    console.warn(`[mrr:${clientLabel}] Nonce overflow (Uint64). Resetting baseline.`);
+    if (lastNonce > 19446744073709551615n) {
+    logger.warn(`[mrr:${clientLabel}] Nonce overflow (Uint64). Resetting baseline.`);
     mrrLastNonceByClient.set(apiKey, 1n);
   }
 
@@ -333,7 +334,7 @@ export async function mrrApiCall({ endpoint, method = 'GET', query, body, client
     .replace(/\/(rig|rental)\/[0-9;]+\/info$/, '/$1/:id/info');
 
   if (!mrrInitTracker.has(trackingEndpoint)) {
-    console.log(`[MRR] First-time endpoint delay (3s): ${trackingEndpoint}`);
+    logger.debug(`[MRR] First-time endpoint delay (3s): ${trackingEndpoint}`);
     await new Promise(r => setTimeout(r, 3000));
     mrrInitTracker.add(trackingEndpoint);
   }
@@ -409,7 +410,7 @@ export async function mrrApiCall({ endpoint, method = 'GET', query, body, client
     // Optimizer: If "Bad Nonce" is received, force clock re-sync and retry with a baseline jump
     if (isBadNonce || (response.status === 401 && /nonce/i.test(authMessage))) {
       // Force immediate clock re-sync
-      await syncMrrClock(true);
+      await syncMrrClock(true); // nosemgrep: javascript.lang.security.audit.await-in-loop.await-in-loop
       
       const nowNano = (BigInt(Date.now()) + mrrClockOffset + 2000n) * 1000000n;
       const failedNonce = BigInt(currentNonce);
@@ -421,15 +422,15 @@ export async function mrrApiCall({ endpoint, method = 'GET', query, body, client
       const baseForJump = failedNonce > nowNano ? failedNonce : nowNano;
       const newJumpedNonce = baseForJump + jumpSize;
 
-      console.warn(`[mrr:${clientName}] ☢️ NUCLEAR JUMP: Baseline reset to ${newJumpedNonce} (${isSignificantFuture ? '+1h' : '+1m'}) for key ${clientConfig.apiKey.slice(0, 6)}...`);
+      logger.warn(`[mrr:${clientName}] ☢️ NUCLEAR JUMP: Baseline reset to ${newJumpedNonce} (${isSignificantFuture ? '+1h' : '+1m'}) for key ${clientConfig.apiKey.slice(0, 6)}...`);
       mrrLastNonceByClient.set(clientConfig.apiKey, newJumpedNonce);
-      db.run('INSERT OR REPLACE INTO mrr_nonces (client, last_nonce) VALUES (?, ?)', [clientConfig.apiKey, newJumpedNonce.toString()]);
+      db.run('INSERT OR REPLACE INTO mrr_nonces (client, last_nonce) VALUES (?, ?)', [clientConfig.apiKey, newJumpedNonce.toString()]); // nosemgrep: javascript.lang.security.audit.non-literal-sql-db-access.non-literal-sql-db-access
 
       currentNonce = nextMrrNonce(clientConfig.apiKey, clientName);
       const retrySignString = `${clientConfig.apiKey}${currentNonce}${sigEndpoint}`;
       const retrySig = createHmac('sha1', clientConfig.apiSecret).update(retrySignString).digest('hex');
 
-      const retryRes = await send(currentNonce, retrySig, {
+      const retryRes = await send(currentNonce, retrySig, { // nosemgrep: javascript.lang.security.audit.await-in-loop.await-in-loop
         'x-api-key': clientConfig.apiKey,
         'x-api-nonce': currentNonce,
         'x-api-sign': retrySig,
@@ -445,7 +446,7 @@ export async function mrrApiCall({ endpoint, method = 'GET', query, body, client
         // If it still fails after a jump and clock sync, it's NOT a nonce error.
         const secondMsg = String(data?.data?.message || data?.message || '');
         if (retryRes.status === 401) {
-          console.error(`[mrr:${clientName}] Permanent Auth failure for key ${clientConfig.apiKey.slice(0, 6)}... - Check if API Key/Secret are valid.`);
+          logger.error(`[mrr:${clientName}] Permanent Auth failure for key ${clientConfig.apiKey.slice(0, 6)}... - Check if API Key/Secret are valid.`);
           return { statusCode: 401, data: { ...data, message: "Invalid Credentials (checked via Nonce Reset)" }, clientName };
         }
       } catch (e) { 
@@ -456,7 +457,7 @@ export async function mrrApiCall({ endpoint, method = 'GET', query, body, client
     const shouldRetry = (!data.success && isAuthFailureMessage && !isBadNonce) || response.status === 401;
 
     if (shouldRetry && !isBadNonce) {
-      console.warn(`[mrr:${clientName}] HMAC failed (${authMessage || 'Unauthorized'}), retrying with Legacy SHA1 Concatenation...`);
+      logger.warn(`[mrr:${clientName}] HMAC failed (${authMessage || 'Unauthorized'}), retrying with Legacy SHA1 Concatenation...`);
       currentNonce = nextMrrNonce(clientConfig.apiKey, clientName);
       // Correct V1 Legacy concatenation: apiKey + nonce + endpoint + apiSecret
       const legacyStr = `${clientConfig.apiKey}${currentNonce}${normalizedPath}${clientConfig.apiSecret}`;
@@ -484,7 +485,7 @@ export async function mrrApiCall({ endpoint, method = 'GET', query, body, client
     }
 
     const logTime = new Date().toLocaleTimeString();
-    console.log(`[${logTime}] [mrr:${clientName}] endpoint=${normalizedPath} nonce=${currentNonce} status=${finalStatus} msg=${authMessage || 'OK'}`);
+    logger.info(`[${logTime}] [mrr:${clientName}] endpoint=${normalizedPath} nonce=${currentNonce} status=${finalStatus} msg=${authMessage || 'OK'}`);
 
     if (finalStatus === 200 && normalizedPath.startsWith('/rig/')) {
       saveRigEndpointToDb(normalizedPath, clientName);

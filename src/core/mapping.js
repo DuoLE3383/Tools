@@ -113,17 +113,23 @@ export const MRR_ALGO_MAP = {
 };
 
 // Reverse mappings for lookup
-export const NICEHASH_REVERSE_MAP = Object.entries(NICEHASH_ALGO_MAP).reduce((acc, [key, value]) => {
-  if (!acc[value]) acc[value] = [];
-  acc[value].push(key);
-  return acc;
-}, {});
+export const NICEHASH_REVERSE_MAP = Object.entries(NICEHASH_ALGO_MAP).reduce(
+  (acc, [key, value]) => {
+    if (!acc[value]) acc[value] = [];
+    acc[value].push(key);
+    return acc;
+  },
+  {},
+);
 
-export const MRR_REVERSE_MAP = Object.entries(MRR_ALGO_MAP).reduce((acc, [key, value]) => {
-  if (!acc[value]) acc[value] = [];
-  acc[value].push(key);
-  return acc;
-}, {});
+export const MRR_REVERSE_MAP = Object.entries(MRR_ALGO_MAP).reduce(
+  (acc, [key, value]) => {
+    if (!acc[value]) acc[value] = [];
+    acc[value].push(key);
+    return acc;
+  },
+  {},
+);
 
 // Hashrate suffixes for display
 export const HASHRATE_SUFFIXES = {
@@ -215,10 +221,32 @@ export const UNIT_FACTORS = {
 
 // Algorithm categories for filtering
 export const ALGO_CATEGORIES = {
-  ASIC: ["SHA256", "SHA256ASICBOOST", "SCRYPT", "X11", "EAGLESONG", "KHEAVYHASH", "BLAKE3", "BLAKE3_ALPH"],
-  GPU: ["DAGGERHASHIMOTO", "ETCHASH", "KAWPOW", "AUTOLYKOS", "OCTOPUS", "FISHHASH", "DYNEXSOLVE", "NEXAPOW", "PROGPOWZ", "PEARLHASH", "IRONFISH", "ALEPHIUM"],
+  ASIC: [
+    "SHA256",
+    "SHA256ASICBOOST",
+    "SCRYPT",
+    "X11",
+    "EAGLESONG",
+    "KHEAVYHASH",
+    "BLAKE3",
+    "BLAKE3_ALPH",
+  ],
+  GPU: [
+    "DAGGERHASHIMOTO",
+    "ETCHASH",
+    "KAWPOW",
+    "AUTOLYKOS",
+    "OCTOPUS",
+    "FISHHASH",
+    "DYNEXSOLVE",
+    "NEXAPOW",
+    "PROGPOWZ",
+    "PEARLHASH",
+    "IRONFISH",
+    "ALEPHIUM",
+  ],
   CPU: ["RANDOMXMONERO", "VERUSHASH"],
-  HYBRID: ["EQUIHASH", "ZHASH", "BEAMV3", "JANUSHASH", "XELISHASHV3"]
+  HYBRID: ["EQUIHASH", "ZHASH", "BEAMV3", "JANUSHASH", "XELISHASHV3"],
 };
 
 // Profitability tiers for quick reference
@@ -227,7 +255,7 @@ export const PROFITABILITY_TIERS = {
   HIGH: { min: 25, emoji: "🔥", color: "#ff6600" },
   GOOD: { min: 10, emoji: "💰", color: "#ffcc00" },
   MODERATE: { min: 5, emoji: "✅", color: "#00cc00" },
-  LOW: { min: 0, emoji: "📊", color: "#0099ff" }
+  LOW: { min: 0, emoji: "📊", color: "#0099ff" },
 };
 
 /**
@@ -317,7 +345,6 @@ export function getMrrAlgorithmUnit(algo) {
   const normalized = String(algo).toUpperCase().trim();
   const niceHashAlgo = normalizeAlgoForNiceHash(normalized);
   return MRR_ALGO_UNITS[normalized] || MRR_ALGO_UNITS[niceHashAlgo] || "TH";
-  
 }
 
 /**
@@ -363,7 +390,9 @@ export function getAlgorithmsByCategory(category) {
  */
 export function getProfitabilityTier(spreadPct) {
   if (spreadPct === null || spreadPct === undefined) return null;
-  const tiers = Object.entries(PROFITABILITY_TIERS).sort((a, b) => b[1].min - a[1].min);
+  const tiers = Object.entries(PROFITABILITY_TIERS).sort(
+    (a, b) => b[1].min - a[1].min,
+  );
   for (const [name, tier] of tiers) {
     if (spreadPct >= tier.min) return { name, ...tier };
   }
@@ -390,12 +419,12 @@ export function calculatePriceComparison(
     return null;
 
   const yourMultiplier = getUnitMultiplier(yourUnit);
-  const marketMultiplier = getUnitMultiplier(marketUnit);
+  const marketMultiplier = getUnitMultiplier(marketUnit) * 0.93; // Adjust MRR price by 7% to account for fees
   if (yourMultiplier <= 0 || marketMultiplier <= 0) return null;
 
   // Prices are quoted per unit per day. Normalize both to price per H/s/day.
   const yourPerHash = parseFloat(yourPrice) / yourMultiplier;
-  const marketPerHash = parseFloat(marketPrice) / marketMultiplier;
+  const marketPerHash = parseFloat(marketPrice) / marketMultiplier ;
 
   if (yourPerHash <= 0 || marketPerHash <= 0) return null;
 
@@ -414,11 +443,11 @@ export function calculatePriceComparison(
  */
 export function formatHashrate(hashrate, algo) {
   if (!hashrate || hashrate <= 0) return "0 H/s";
-  
+
   const unit = getAlgorithmUnit(algo);
   const factor = UNIT_FACTORS[unit] || 1;
   const value = hashrate / factor;
-  
+
   return `${value.toFixed(2)} ${unit}/s`;
 }
 
@@ -427,10 +456,14 @@ export function formatHashrate(hashrate, algo) {
  * @returns {string[]} Array of supported algorithm names
  */
 export function getAllSupportedAlgorithms() {
-  return [...new Set([
-    ...Object.keys(NICEHASH_ALGO_MAP),
-    ...Object.values(NICEHASH_ALGO_MAP)
-  ])].filter(algo => algo !== "UNKNOWN").sort();
+  return [
+    ...new Set([
+      ...Object.keys(NICEHASH_ALGO_MAP),
+      ...Object.values(NICEHASH_ALGO_MAP),
+    ]),
+  ]
+    .filter((algo) => algo !== "UNKNOWN")
+    .sort();
 }
 
 /**
@@ -463,9 +496,11 @@ function getUnitMultiplier(unit) {
 export function isAsicBoost(algo) {
   if (!algo) return false;
   const normalized = String(algo).toUpperCase().trim();
-  return normalized === "SHA256ASICBOOST" || 
-         normalized === "SHA256AB" ||
-         normalized.includes("ASICBOOST");
+  return (
+    normalized === "SHA256ASICBOOST" ||
+    normalized === "SHA256AB" ||
+    normalized.includes("ASICBOOST")
+  );
 }
 
 /**
@@ -477,12 +512,12 @@ export function isAsicBoost(algo) {
 export function getMrrAlgoKey(algo) {
   if (!algo) return "sha256";
   const normalized = String(algo).toUpperCase().trim();
-  
+
   // If it's AsicBoost, use sha256ab
   if (isAsicBoost(normalized)) {
     return "sha256ab";
   }
-  
+
   // Otherwise use standard mapping
   return mapNiceHashToMRR(normalized);
 }
@@ -507,14 +542,14 @@ export async function fetchMrrMarketRate(algo, currency = "BTC") {
   try {
     const mrrAlgo = getMrrAlgoKey(algo);
     const url = `https://www.miningrigrentals.com/api/v2/market/algos/${mrrAlgo}`;
-    
+
     const response = await fetch(url);
     if (!response.ok) {
       throw new Error(`API returned ${response.status}`);
     }
-    
+
     const data = await response.json();
-    
+
     let price = 0;
     if (data.success && data.data) {
       price = data.data.price || data.data[currency] || 0;
@@ -523,7 +558,7 @@ export async function fetchMrrMarketRate(algo, currency = "BTC") {
     } else if (data[currency]) {
       price = data[currency];
     }
-    
+
     return price;
   } catch (error) {
     console.error(`Failed to fetch MRR rate for ${algo}:`, error);
@@ -537,11 +572,13 @@ export async function fetchMrrMarketRate(algo, currency = "BTC") {
  */
 export async function fetchAllMrrRates() {
   try {
-    const response = await fetch("https://www.miningrigrentals.com/api/v2/market/algos");
+    const response = await fetch(
+      "https://www.miningrigrentals.com/api/v2/market/algos",
+    );
     if (!response.ok) {
       throw new Error(`API returned ${response.status}`);
     }
-    
+
     const data = await response.json();
     return data.success ? data.data : data;
   } catch (error) {

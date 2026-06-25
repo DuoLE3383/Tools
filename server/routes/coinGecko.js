@@ -1,84 +1,50 @@
-// routes/coinGecko.js
-import { asyncHandler } from "../utils.js";
-import { getCmcPrices } from "../cmcClient.js";
-
-let coinGeckoCache = {
-  data: null,
-  timestamp: 0,
-  ttl: 60 * 60 * 1000,
-};
-
-async function getCachedCoinPrices(ids) {
-  const now = Date.now();
-  const requested = ids.split(",").map(s => s.trim()).filter(Boolean);
-
-  // Cache hit?
-  if (coinGeckoCache.data && (now - coinGeckoCache.timestamp) < coinGeckoCache.ttl) {
-    const cachedIds = Object.keys(coinGeckoCache.data);
-    const missing = requested.filter(id => !cachedIds.includes(id));
-    if (missing.length === 0) return coinGeckoCache.data;
-  }
-
-  // 1️⃣ Try CoinGecko
-  try {
-    const url = `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd,btc`;
-    const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
-    if (!response.ok) throw new Error(`CoinGecko API error: ${response.status}`);
-    const data = await response.json();
-
-    coinGeckoCache.data = coinGeckoCache.data ? { ...coinGeckoCache.data, ...data } : data;
-    coinGeckoCache.timestamp = now;
-    return coinGeckoCache.data;
-  } catch (err) {
-    console.warn("[CoinGecko] Failed, trying CMC:", err.message);
-  }
-
-  // 2️⃣ Try CoinMarketCap
-  try {
-    const symbols = requested.map(id => {
-      const map = {
-        bitcoin: "BTC",
-        ethereum: "ETH",
-        "ethereum-classic": "ETC",
-        litecoin: "LTC",
-        dogecoin: "DOGE",
-        "bitcoin-cash": "BCH",
-        ravencoin: "RVN",
-        monero: "XMR",
-        kaspa: "KAS",
-      };
-      return map[id] || id.toUpperCase();
-    });
-    const cmcData = await getCmcPrices(symbols);
-    const converted = {};
-    for (const [symbol, price] of Object.entries(cmcData)) {
-      converted[symbol.toLowerCase()] = price;
-    }
-    coinGeckoCache.data = coinGeckoCache.data ? { ...coinGeckoCache.data, ...converted } : converted;
-    coinGeckoCache.timestamp = now;
-    return coinGeckoCache.data;
-  } catch (cmcErr) {
-    console.error("[CoinGecko] Both CoinGecko and CMC failed:", cmcErr.message);
-    // ❌ No hardcoded fallback – throw error
-    throw new Error("Unable to fetch prices from CoinGecko or CoinMarketCap");
-  }
-}
+// server/routes/coinGecko.js
+import { getCoinPrice, getAllCoins, getCoinData } from '../coinFetcher.js';
+import { asyncHandler } from '../utils.js';
 
 export function registerCoinGeckoRoutes(app) {
-  app.get(
-    "/api/v2/prices/coingecko",
-    asyncHandler(async (req, res) => {
-      const defaultIds =
-        "bitcoin,ethereum,ethereum-classic,litecoin,ravencoin,monero,kaspa,iron-fish,zephyr-protocol,clore-ai,dynex,conflux,ergo,bitcoin-cash";
-      const idsParam = req.query.ids || defaultIds;
-      const ids = idsParam.split(",").map((s) => s.trim()).join(",");
+  // Endpoint for the price modal (Gecko)
+  app.get('/api/v2/price/coingecko', asyncHandler(async (req, res) => {
+    const { coinId, symbol } = req.query;
+    const targetSymbol = coinId || symbol;
+    if (!targetSymbol) {
+      return res.status(400).json({ error: 'coinId or symbol is required' });
+    }
+    const data = await getCoinData(targetSymbol, 'coingecko');
+    if (data) {
+      res.json({ success: true, data });
+    } else {
+      res.status(404).json({ success: false, error: 'Coin not found' });
+    }
+  }));
 
-      try {
-        const data = await getCachedCoinPrices(ids);
-        res.json({ success: true, data, source: "cache" });
-      } catch (err) {
-        res.status(503).json({ success: false, error: err.message });
-      }
-    }),
-  );
+  // Endpoint for the price modal (CMC)
+  app.get('/api/v2/price/cmc', asyncHandler(async (req, res) => {
+    const { symbol } = req.query;
+    if (!symbol) {
+      return res.status(400).json({ error: 'symbol is required' });
+    }
+    const data = await getCoinData(symbol, 'cmc');
+    if (data) {
+      res.json({ success: true, data });
+    } else {
+      res.status(404).json({ success: false, error: 'Coin not found' });
+    }
+  }));
+
+  // Keep original routes for any other potential usage
+  app.get('/api/coin/price/:symbol', asyncHandler(async (req, res) => {
+    const data = await getCoinPrice(req.params.symbol);
+    if (data) res.json(data);
+    else res.status(404).json({ error: 'Coin not found' });
+  }));
+
+  const topCoinsHandler = asyncHandler(async (req, res) => {
+    const data = await getAllCoins(req.params.source || 'coingecko', parseInt(req.query.limit) || 100);
+    res.json(data);
+  });
+
+  // Define two routes to handle the optional parameter correctly
+  app.get('/api/coins/top', topCoinsHandler);
+  app.get('/api/coins/top/:source', topCoinsHandler);
 }

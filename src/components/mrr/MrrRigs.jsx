@@ -36,10 +36,10 @@ export default function MrrRigs({
   const [userRigIds, setUserRigIds] = useState(new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [enrichedInfo, setEnrichedInfo] = useState({}); // rigId -> details object
+  const [enrichedInfo, setEnrichedInfo] = useState({});
   const [loadingInfoIds, setLoadingInfoIds] = useState(new Set());
-  const [algoMarketPrices, setAlgoMarketPrices] = useState({}); // algoName -> priceData
-  const [coinPrices, setCoinPrices] = useState({}); // coinId -> CoinGecko price data
+  const [algoMarketPrices, setAlgoMarketPrices] = useState({});
+  const [coinPrices, setCoinPrices] = useState({});
 
   const [expandedPools, setExpandedPools] = useState(new Set());
   const togglePoolInfo = (rigId) => {
@@ -51,16 +51,13 @@ export default function MrrRigs({
     });
   };
 
-  const [expandedAlgos, setExpandedAlgos] = useState({}); // algoKey -> boolean
-  // More granular status filtering: 'available', 'rented', or 'all'
+  const [expandedAlgos, setExpandedAlgos] = useState({});
   const [statusFilter, setStatusFilter] = useState(
     endpoint === "/rig" ? initialStatus : "rented",
   );
 
   const filteredRigs = useMemo(() => {
     return rigs.filter((rig) => {
-      // Hide rigs that do not have a designated client handle to prevent signature errors,
-      // unless we are specifically browsing the public Marketplace.
       if (endpoint !== "/rig" && !rig.mrrClient && !rig.client) return false;
 
       if (statusFilter === "all") return true;
@@ -122,7 +119,6 @@ export default function MrrRigs({
   }, [rigs]);
 
   const fullSummaryData = useMemo(() => {
-    // Generate summary from full rig list, ignoring current UI status filters
     const onlineRigs = rigs.filter((r) => {
       const s = String(
         typeof r.status === "object" ? r.status.status : r.status || "",
@@ -135,9 +131,8 @@ export default function MrrRigs({
         const info = enrichedInfo[rig.id] || {};
         const rawAds =
           info?.rawAds ||
-          getRawHashrate(rig.hashrate?.advertised || rig.advertised) ||
-          0;
-        if (!info || rawAds <= 0) return false; // Ensure we have details and valid hashrate before including
+          getRawHashrate(rig.hashrate?.advertised || rig.advertised || rig.hashrate?.current || 0);
+        if (!info || rawAds <= 0) return false;
         const endT = rig.end
           ? new Date(
               rig.end + (String(rig.end).endsWith("UTC") ? "" : " UTC"),
@@ -152,7 +147,6 @@ export default function MrrRigs({
       })
       .map((rig) => {
         const info = enrichedInfo[rig.id];
-        // Provide fallbacks if enriched info is still loading
         const algo =
           info?.algo || rig.algo || rig.algorithm || rig.type || "N/A";
         const rawEffNum =
@@ -161,7 +155,7 @@ export default function MrrRigs({
           ? parseFloat(rawEffNum)
           : 0;
 
-        const efficiency = effNum; // Pass as number to avoid .toFixed errors in template
+        const efficiency = effNum;
         const rawRoi = 100 - effNum;
         const roi = Number.isFinite(rawRoi) ? rawRoi : 0;
 
@@ -184,7 +178,6 @@ export default function MrrRigs({
           ? parseFloat(rawCur)
           : 0;
 
-        // Improved target hashrate calculation with manual fallback for summary accuracy
         const startT = rig.start
           ? new Date(
               rig.start + (String(rig.start).endsWith("UTC") ? "" : " UTC"),
@@ -206,7 +199,7 @@ export default function MrrRigs({
         const rawTarget = info?.targetHashrate || rawCalcTarget || 0;
         const target = Number.isFinite(parseFloat(rawTarget))
           ? parseFloat(rawTarget)
-          : 0; // Ensure target is always a number
+          : 0;
 
         const remaining =
           info?.remainingTimeStr ||
@@ -217,32 +210,33 @@ export default function MrrRigs({
               : "");
         const account = rig.mrrClient || rig.client || mrrClient || "ALL";
 
-        // Ensure rig.price exists before calling the template function
         let perfEmoji = "⚪";
-        if (effNum >= 100) perfEmoji = "🎊";
+        if (effNum >= 100) perfEmoji = "✅";
         else if (effNum >= 95) perfEmoji = "🟢";
         else if (effNum >= 70) perfEmoji = "🔵";
-        else if (effNum < 50) perfEmoji = "🔴";
+        else if (effNum <= 50) perfEmoji = "🔴";
 
+        // ✅ FIXED: Correct parameter order for activeRentalLine
+        // Parameters: perfEmoji, algo, name, remaining, efficiency, roi, cur, avg, ads, target, extra, client, info
         return TelegramTemplates.activeRentalLine(
-          perfEmoji,
-          algo,
-          rig.name || rig.id,
-          remaining,
-          efficiency,
-          roi,
-          avg,
-          ads,
-          cur,
-          target,
-          "", // extra
-          account, // client
+          perfEmoji,                    // 1: perfEmoji
+          algo,                         // 2: algo
+          rig.name || rig.id,           // 3: name
+          remaining,                    // 4: remaining
+          efficiency,                   // 5: efficiency
+          roi,                          // 6: roi
+          cur,                          // 7: cur ✅ Current hashrate
+          avg,                          // 8: avg ✅ Average hashrate
+          ads,                          // 9: adv ✅ Advertised hashrate
+          target,                       // 10: target
+          "",                           // 11: extra
+          account,                      // 12: client
           {
             price: {
               paid: (rig.price?.paid || 0).toFixed(8),
               currency: rig.price?.currency || "BTC",
             },
-          }, // info
+          }                             // 13: info
         );
       })
       .filter(Boolean);
@@ -278,10 +272,8 @@ export default function MrrRigs({
     if (onSummaryUpdate) onSummaryUpdate(fullSummaryData);
   }, [fullSummaryData, onSummaryUpdate]);
 
-  // Debug count to see if items are being filtered out
   const totalFetchedCount = rigs.length;
 
-  // Fetch CoinGecko prices for mining coins periodically
   useEffect(() => {
     const fetchCoinPrices = async () => {
       try {
@@ -390,13 +382,10 @@ export default function MrrRigs({
     setLoading(true);
     setError("");
     try {
-      // 1. Prepare parameters for Marketplace
       const params = { endpoint };
 
       if (endpoint === "/rig") {
         if (algo) params.algo = String(algo).trim();
-
-        // Server-side status filtering for the Marketplace
         if (statusFilter !== "all") {
           params.status = statusFilter;
         }
@@ -407,14 +396,12 @@ export default function MrrRigs({
       if (result.ok) {
         const rigList = findRigArray(result.data);
 
-        // Ensure rigs are tagged with the current client handle in non-aggregate views
         if (mrrClient && mrrClient !== "VN" && mrrClient !== "ALL") {
           rigList.forEach((r) => {
             if (!r.mrrClient) r.mrrClient = mrrClient;
           });
         }
 
-        // 2. Identify "My Rigs" if in Marketplace view
         if (endpoint === "/rig") {
           const myRigsResult = await poolApi.mrrRigs(mrrClient, "/rig/mine");
           if (myRigsResult.ok) {
@@ -452,7 +439,6 @@ export default function MrrRigs({
     const isRented =
       statusStr.includes("rented") || statusStr.includes("active");
 
-    // Extract physical Rig ID and Rental ID correctly for fetching detailed info
     const rigId =
       rig.rigid || rig.rig_id || rig.rig?.id || (isRented ? "" : rig.id);
     const rentalId =
@@ -460,8 +446,6 @@ export default function MrrRigs({
       rig.current_rental_id ||
       rig.rental_id ||
       (isRented ? rig.id : "");
-
-    const effectiveClient = rig.mrrClient || rig.client || mrrClient;
 
     if (typeof onCall !== "function") {
       console.error(
@@ -480,7 +464,7 @@ export default function MrrRigs({
       const data = await onCall(path, {
         query: { client: rig.mrrClient || mrrClient },
         silent: true,
-        background: true, // Use background mode to avoid interrupting the user
+        background: true,
       });
 
       if (data && !data.error) {
@@ -491,7 +475,6 @@ export default function MrrRigs({
           const firstPool = pools[0];
           const normalized = rental.normalized;
 
-          // Normalize NH data if present in rental info
           const nhPriceData =
             rental.nicehashPrice?.price || rental.nicehashPrice;
 
@@ -523,10 +506,10 @@ export default function MrrRigs({
             endTime: normalized?.endTime || rental.end || rental.end_time || "",
             advertised:
               normalized?.niceAdvertisedHashrate ||
-              getRentalAdvertisedHashrate(rental), // For display
+              getRentalAdvertisedHashrate(rental),
             average:
               normalized?.niceAverageHashrate ||
-              getRentalAverageHashrate(rental), // For display
+              getRentalAverageHashrate(rental),
             current: normalized?.niceHashrate || "0 N/A",
             last5m: normalized?.nice5mHashrate || "0 N/A",
             last15m: normalized?.nice15mHashrate || "0 N/A",
@@ -558,18 +541,17 @@ export default function MrrRigs({
             })),
             isRental: true,
             nicehashPrice: nhPriceData,
-            price: normalized?.price || rental.price || {}, // Prefer normalized rental price shape
+            price: normalized?.price || rental.price || {},
             currency:
               normalized?.price?.currency ||
               rental.currency ||
               normalized?.currency ||
-              "", // Preserve a usable currency label
+              "",
             price_converted:
               normalized?.price_converted || rental.price_converted || null,
             duration: rental.hours || rental.length || rental.duration || 0,
           };
         } else {
-          // For rig info, the data is already structured correctly by the backend's extractRigInfo
           infoBoxData = data;
         }
         setEnrichedInfo((prev) => ({ ...prev, [rig.id]: infoBoxData }));
@@ -587,12 +569,11 @@ export default function MrrRigs({
 
   useEffect(() => {
     if (mrrClient && endpoint) {
-      setEnrichedInfo({}); // Always clear cache when context (client/endpoint) actually changes
+      setEnrichedInfo({});
       fetchRigs();
     }
   }, [mrrClient, endpoint]);
 
-  // Auto-fetch details for rented rigs so "Started X ago" and "Eff" show up automatically
   useEffect(() => {
     if (loading || typeof onCall !== "function") return;
 
@@ -612,13 +593,10 @@ export default function MrrRigs({
       });
 
       if (isSubscribed && rentedWithoutInfo.length > 0) {
-        // Process only one at a time per effect cycle.
-        // This staggers requests and prevents nonce collision in the backend.
         await fetchRigDetailInfo(rentedWithoutInfo[0]);
       }
     };
 
-    // Delay the start of background syncing to avoid clashing with the primary rig list fetch
     syncTimer = setTimeout(() => {
       if (isSubscribed) syncRentedDetails();
     }, 1500);
@@ -636,7 +614,6 @@ export default function MrrRigs({
       query: { client: rig.mrrClient || mrrClient },
       showModal: true,
     });
-    // Clear cached details for this rig to force a fresh sync
     setEnrichedInfo((prev) => {
       const next = { ...prev };
       delete next[rig.id];
@@ -665,7 +642,6 @@ export default function MrrRigs({
       query: { client: rig.mrrClient || mrrClient },
       showModal: true,
     });
-    // Clear cached details for this rig to force a fresh sync
     setEnrichedInfo((prev) => {
       const next = { ...prev };
       delete next[rig.id];
@@ -764,7 +740,6 @@ export default function MrrRigs({
         </div>
       )}
 
-      {/* Status Dashboard */}
       <div
         className="rigs-summary-bar"
         style={{
@@ -920,11 +895,8 @@ export default function MrrRigs({
         <div
           className="rig-grid-container"
           style={{
-            // minHeight: '1200px',
-            // maxHeight: 'auto',
             overflowY: "auto",
             paddingRight: "6px",
-            // overscrollBehavior: 'contain',
           }}
         >
           {groupedRigs.map(([algoName, rigsInGroup]) => {
@@ -1001,9 +973,6 @@ export default function MrrRigs({
                         >
                           Enable All
                         </button>
-                        {/* <button className="btn-pro secondary" style={{ fontSize: '10px', color: '#f87171', fontWeight: 'bold' }} onClick={() => handleBulkRigStatus(rigsInGroup, 'disabled')}>
-                          Disable All
-                        </button> */}
                       </div>
                     )}
                   </div>

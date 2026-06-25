@@ -27,7 +27,7 @@ export default function App() {
   const [modalContent, setModalContent] = useState(null);
   const [algorithm, setAlgorithm] = useState("");
   const [market, setMarket] = useState("");
-  const [mrrClient, setMrrClient] = useState("BT");
+  const [mrrClient, setMrrClient] = useState("VN");
   const [completionCalculatorContext, setCompletionCalculatorContext] =
     useState(null);
   const [, setRouteTick] = useState(0);
@@ -262,8 +262,8 @@ export default function App() {
           <div className="brand-block">
             {/* <h2>Ben Tre Mining Tool</h2> */}
             <p className="subtitle">
-              A powerful desktop tool for Nicehash miners. Manage rigs, monitor
-              stats, and automate hashpower purchases with ease.
+              A powerful tool for Nicehash miners. Manage rigs, monitor
+              stats, and automate hashpower.
             </p>
           </div>
           <div
@@ -296,6 +296,12 @@ export default function App() {
                 onClick={() => navigate("/mining")}
               >
                 Mining
+              </button>
+              <button
+                className="btn-pro danger"
+                onClick={() => callApi('/api/v2/admin/clean-cache', { method: 'POST', showModal: true })}
+              >
+                Clean Cache
               </button>
             </div>
           </div>

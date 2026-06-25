@@ -1,17 +1,10 @@
 import { useCallback, useEffect, useState, useRef } from 'react';
 import Pools from './src/components/Pools';
 import Modal from './src/components/Modal';
-<<<<<<< Updated upstream
 import HashpowerBot from './src/components/HashpowerBot';
 import NiceHash from './src/components/NiceHash';
 import MiningRigRental from './src/components/MiningRigRental';
 import MiningRigSection from './src/components/MiningRigSection';
-=======
-import HashpowerBot from './src/components/nicehash/HashpowerBot.jsx';
-import NiceHash from './src/components/nicehash/NiceHash';
-import MiningRigRental from './src/components/mrr/MiningRigRental';
-import MiningRigSection from './src/components/mrr/MiningRigSection';
->>>>>>> Stashed changes
 import HashrateCalculator from './src/components/HashrateCalculator';
 import HashCompletionCalculator from './src/components/ProfitCompletion';
 import MrrPoolsManager from './src/components/mrr/MrrManager';
@@ -365,7 +358,7 @@ export default function App() {
           border: '1px solid rgba(255, 255, 255, 0.05)',
           borderRadius: '16px',
           padding: '24px',
-          height: '12800px',
+          height: '1280px',
           minHeight: '700px'
         }}
       >
