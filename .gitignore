@@ -55,3 +55,5 @@ package-lock.json
 mrr_monitor.db-wal
 .wrangler/tmp/deploy-52h0qx/index.js
 worker/index.js
+worker/index.js
+wrangler.jsonc
