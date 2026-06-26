@@ -44,7 +44,7 @@ backend.stdout.on('data', (data) => {
   if (output) console.log('[📡]', output);
   
   // Check if backend is ready
-  if (output.includes('Listening on http://localhost:3000')) {
+  if (output.includes('Listening on http://127.0.0.1:3000')) {
     backendReady = true;
     console.log('✅ Backend ready! Starting frontend...');
     
