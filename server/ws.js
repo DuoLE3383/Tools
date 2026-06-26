@@ -11,7 +11,7 @@ const ACTION_HANDLERS = {
 };
 
 export function setupWebSocket(server) {
-  const wss = new WSS({ server, path: "/api/v2/mrr/fetch/ws" });
+  const wss = new WSS({ server, path: "/api/v2/prices/ws" });
 
   wss.on("connection", (ws, req) => {
     console.log("[WS] Client connected");
@@ -66,7 +66,7 @@ export function setupWebSocket(server) {
     });
   });
 
-  console.log("[WS] WebSocket server initialized at /api/v2/mrr/fetch/ws");
+  console.log("[WS] WebSocket server initialized at /api/v2/prices/ws");
   return wss;
 }
 

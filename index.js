@@ -179,8 +179,8 @@ async function startServer() {
     server.listen(PORT, '0.0.0.0', () => {
       console.log('--- NiceHash API Toolbox Server Started ---');
       console.log('Environment: ' + (process.env.NICEHASH_ENVIRONMENT ? process.env.NICEHASH_ENVIRONMENT.toUpperCase() : 'production'));
-      console.log(`Listening on http://localhost:${PORT}`);
-      console.log(`WebSocket: ws://localhost:${PORT}/api/v2/mrr/fetch/ws`);
+      console.log(`Listening on: http://localhost:${PORT}`);
+      console.log(`WebSocket on: ws://localhost:${PORT}/api/v2/prices/ws`);
 
       // Start mining scanner after a delay
       setTimeout(() => {
