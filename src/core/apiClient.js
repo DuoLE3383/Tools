@@ -1,4 +1,4 @@
-export function createApiClient({ onState } = {}) {
+export function createApiClient({ onState, onAuthError } = {}) {
   return async function callApi(path, options = {}) {
     const startedAt = performance.now();
     const method = options.method || "GET";
@@ -65,6 +65,10 @@ export function createApiClient({ onState } = {}) {
             durationMs: Math.round(performance.now() - startedAt),
           },
         });
+      }
+
+      if (res.status === 401 || res.status === 403) {
+        onAuthError?.({ status: res.status, path: finalPath, data });
       }
 
       const isAppError =

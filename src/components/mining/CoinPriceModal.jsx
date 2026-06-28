@@ -1,13 +1,6 @@
 // CoinPriceModal.jsx
 import { useState, useEffect, useCallback } from "react";
-
-const COINGECKO_IDS = {
-  BTC: "bitcoin",
-  ETH: "ethereum",
-  LTC: "litecoin",
-  DOGE: "dogecoin",
-  BCH: "bitcoin-cash",
-};
+import { resolveCoinPriceTarget } from "../../core/coinGrecko.js";
 
 function formatPrice(value) {
   const num = Number(value);
@@ -47,30 +40,6 @@ function formatTimestamp(dateString) {
   }
 }
 
-function resolveCoinGeckoId(coin) {
-  if (!coin) return "";
-  const rawId = String(coin.coinId || "").trim().toLowerCase();
-  if (rawId) {
-    const knownIds = Object.values(COINGECKO_IDS);
-    if (knownIds.includes(rawId)) return rawId;
-  }
-
-  const symbol = String(coin.symbol || "").trim().toUpperCase();
-  if (COINGECKO_IDS[symbol]) return COINGECKO_IDS[symbol];
-
-  const normalizedName = String(coin.name || "").trim().toLowerCase();
-  const nameMap = {
-    bitcoin: "bitcoin",
-    ethereum: "ethereum",
-    litecoin: "litecoin",
-    dogecoin: "dogecoin",
-    "bitcoin cash": "bitcoin-cash",
-  };
-  if (nameMap[normalizedName]) return nameMap[normalizedName];
-
-  return rawId || symbol.toLowerCase() || normalizedName;
-}
-
 function toNumber(value) {
   const num = Number(value);
   return Number.isFinite(num) ? num : 0;
@@ -86,8 +55,8 @@ function extractMarketEntry(payload, coinId, coin) {
 
   if (typeof payload !== "object") return null;
 
-  const symbol = String(coin?.symbol || "").trim().toLowerCase();
-  const name = String(coin?.name || "").trim().toLowerCase();
+  const symbol = String(coin?.symbol || coin?.coin || coin?.ticker || "").trim().toLowerCase();
+  const name = String(coin?.name || coin?.coin || "").trim().toLowerCase();
 
   const direct =
     payload[coinId] ||
@@ -123,11 +92,10 @@ export default function CoinPriceModal({
     setError(null);
     
     const coinId = resolveCoinGeckoId(coin);
-    
-    // --- Try CoinGecko first (most reliable for 24h high/low) ---
+    let resolved = false;
     try {
       const endpoint = "/api/v2/prices/coingecko";
-      const query = { 
+      const query = {
         ids: coinId,
         vs_currencies: "usd,btc",
         sparkline: true,
@@ -135,8 +103,7 @@ export default function CoinPriceModal({
       const result = await onCall(endpoint, { query, silent: true });
       const data = result?.data ?? result ?? {};
       const coinData = extractMarketEntry(data, coinId, coin);
-      
-      // CoinGecko response structure
+
       const price = toNumber(coinData?.usd ?? coinData?.price ?? coinData?.current_price ?? coinData);
       const marketCap = toNumber(coinData?.usd_market_cap ?? coinData?.marketCap ?? coinData?.market_cap);
       const volume24h = toNumber(coinData?.usd_24h_vol ?? coinData?.volume24h ?? coinData?.total_volume);
@@ -144,9 +111,8 @@ export default function CoinPriceModal({
       const high24h = toNumber(coinData?.high_24h ?? coinData?.high24h);
       const low24h = toNumber(coinData?.low_24h ?? coinData?.low24h);
       const supply = toNumber(coinData?.circulating_supply ?? coinData?.supply);
-      const updatedAt = coinData.lastUpdated || coinData.last_updated || new Date().toISOString();
-      
-      // Check if we got valid data from CoinGecko
+      const updatedAt = coinData?.lastUpdated || coinData?.last_updated || new Date().toISOString();
+
       if (price > 0 || marketCap > 0 || volume24h > 0) {
         setPriceData({
           price,
@@ -160,85 +126,15 @@ export default function CoinPriceModal({
         });
         setLastUpdated(updatedAt);
         setSource("coingecko");
-        return;
-      }
-    } catch (cgErr) {
-      console.warn("CoinGecko fetch failed, trying fallback:", cgErr.message);
-    }
-
-    // --- Try Database as the PRIMARY fallback ---
-    const identifiers = [...new Set([
-      coinId,
-      coin.symbol?.toLowerCase(),
-      coin.name?.toLowerCase()
-    ].filter(Boolean))];
-
-    for (const id of identifiers) {
-      try {
-        const dbResult = await onCall(`/api/v2/prices/db/${id}`, { silent: true });
-        const data = dbResult?.data ?? dbResult;
-        if (data && typeof data === "object") {
-          const dbData = data.success === false ? null : data;
-          const priceUsd = toNumber(dbData?.price_usd ?? dbData?.usd ?? dbData?.price);
-          if (priceUsd > 0 || dbData?.market_cap > 0 || dbData?.volume_24h > 0) {
-            setPriceData({
-              price: priceUsd,
-              marketCap: toNumber(dbData.market_cap),
-              volume24h: toNumber(dbData.volume_24h),
-              change24h: toNumber(dbData.price_change_24h ?? dbData.change24h),
-              high24h: toNumber(dbData.high_24h),
-              low24h: toNumber(dbData.low_24h),
-              supply: toNumber(dbData.circulating_supply),
-              lastUpdated: dbData.captured_at || dbData.last_updated || new Date().toISOString(),
-            });
-            setSource("database");
-            return; // Success, exit the fetch function
-          }
-        }
-      } catch (dbErr) {
-        console.warn(`DB lookup for '${id}' failed:`, dbErr.message);
-      }
-    }
-
-    // --- Try CoinMarketCap as fallback ---
-    try {
-      const endpoint = "/api/v2/prices/cmc";
-      const query = { 
-        symbol: coin.symbol?.toUpperCase() || coinId 
-      };
-      const result = await onCall(endpoint, { query, silent: true });
-      const data = result?.data || result || {};
-      const quote = data.quote?.USD || data.quote || {};
-      const price = toNumber(quote.price ?? data.price);
-      const marketCap = toNumber(quote.market_cap ?? data.market_cap);
-      const volume24h = toNumber(quote.volume_24h ?? data.volume_24h);
-      const change24h = toNumber(quote.percent_change_24h ?? data.percent_change_24h);
-      const high24h = toNumber(quote.high_24h ?? data.high_24h);
-      const low24h = toNumber(quote.low_24h ?? data.low_24h);
-      const supply = toNumber(quote.circulating_supply ?? data.circulating_supply);
-      const updatedAt = quote.last_updated || data.last_updated || new Date().toISOString();
-      
-      if (price > 0 || marketCap > 0 || volume24h > 0) {
-        setPriceData({
-          price,
-          marketCap,
-          volume24h,
-          change24h,
-          high24h,
-          low24h,
-          supply,
-          lastUpdated: updatedAt,
-        });
-        setLastUpdated(updatedAt);
-        setSource("cmc");
-        return;
+        resolved = true;
       }
     } catch (cmcErr) {
-      console.warn("CMC fetch failed:", cmcErr.message);
-      setError("Failed to fetch price data from all sources");
-    } finally {
-      setLoading(false);
+      console.warn("Coin price fetch failed:", cmcErr.message);
     }
+    if (!resolved) {
+      setError(`Failed to fetch price for ${coin?.symbol || coin?.name || coinId || "coin"}`);
+    }
+    setLoading(false);
   }, [coin, onCall]);
 
   useEffect(() => {

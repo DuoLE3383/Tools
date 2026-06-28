@@ -10,7 +10,7 @@ import { registerRoutes } from './routes.js';
 import { corsMiddleware, logRequestMiddleware } from './utils.js';
 import { runRentalMonitor } from './monitor.js';
 import { startMiningOpportunityScanner } from './miningOpportunityNotifier.js';
-import { authMiddleware, generateToken } from './auth.js';
+import { authMiddleware, generateToken, initAuthStore, invalidateAllSessions } from './auth.js';
 import authRoutes from './auth.js';
 
 export function createApp({ distPath }) {
@@ -22,6 +22,7 @@ export function createApp({ distPath }) {
 
   // Authentication routes
   app.use('/api/auth', authRoutes);
+  app.use('/api/v2', authMiddleware);
 
   registerRoutes(app);
 
@@ -55,6 +56,8 @@ export async function initializeApp(env) {
     console.log('🚀 Initializing system...');
     initNhConfigs(env); // Initialize NiceHash configurations
     initMrrConfigs(env); // Initialize MiningRigRentals configurations
+    await initAuthStore();
+    await invalidateAllSessions('startup');
 
     // Validate Authentication Configuration
     const requiredAuth = ['JWT_SECRET', 'ADMIN_USER', 'ADMIN_PASS'];

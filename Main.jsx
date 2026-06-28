@@ -190,7 +190,7 @@ export default function App() {
           credentials: 'omit',
         });
 
-        if (res.status === 401) {
+        if (res.status === 401 || res.status === 403) {
           handleLogout();
           return null;
         }
@@ -284,6 +284,16 @@ export default function App() {
   const handleHashpowerCall = useCallback((path, opts = {}) => {
     return callApi(path, { ...opts, section: 'hashpower' });
   }, [callApi]);
+
+  useEffect(() => {
+    if (!authToken) return undefined;
+    const verifySession = () => {
+      callApi("/api/v2/time", { silent: true }).catch(() => {});
+    };
+    verifySession();
+    const interval = setInterval(verifySession, 30000);
+    return () => clearInterval(interval);
+  }, [authToken, callApi]);
 
   const handleOpenMrrPools = useCallback(async (rig) => {
     if (!rig || !mrrClient) return;

@@ -237,7 +237,7 @@ function NiceHashOrderManager({ onCall, nhClient, setNhClient }) {
           <option value="BT">BT Account</option>
           <option value="PH">PH Account</option>
           <option value="NHATLINH">NhatLinh</option>
-          <option value="KIMLOAN">KimLoan</option>
+          <option value="LN">LN</option>
         </select>
         <NiceHashOrdersCardView />
       </div>

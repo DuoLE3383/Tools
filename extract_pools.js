@@ -70,7 +70,7 @@ async function extractPools() {
           if (u.includes('batri')) nhHandle = 'BT';
           else if (u.includes('solomining')) nhHandle = 'PH';
           else if (u.includes('luckymining')) nhHandle = 'NHATLINH';
-          else if (u.includes('lona')) nhHandle = 'KIMLOAN';
+          else if (u.includes('lona')) nhHandle = 'LN';
 
           p.client = nhHandle;
           p.nhClient = nhHandle;

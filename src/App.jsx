@@ -158,6 +158,10 @@ export default function App() {
   const callApi = useMemo(
     () =>
       createApiClient({
+        onAuthError: () => {
+          localStorage.removeItem("token");
+          setAuthToken(null);
+        },
         onState: ({ type, payload }) => {
           if (type === "request-start") {
             setLoading(true);
@@ -236,6 +240,16 @@ export default function App() {
     },
     [callApi],
   );
+
+  useEffect(() => {
+    if (!authToken) return undefined;
+    const verifySession = () => {
+      callApi("/api/v2/time", { silent: true }).catch(() => {});
+    };
+    verifySession();
+    const interval = setInterval(verifySession, 30000);
+    return () => clearInterval(interval);
+  }, [authToken, callApi]);
 
   const navigate = useCallback((to) => {
     const nextPath = String(to || "/").startsWith("/")

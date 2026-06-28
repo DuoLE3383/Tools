@@ -1,6 +1,7 @@
 // CoinPriceContext.jsx
 import { createContext, useContext, useState } from "react";
 import CoinPriceModal from "./CoinPriceModal"; // adjust path if needed
+import { resolveCoinPriceTarget } from "../../core/coinGrecko.js";
 
 const CoinPriceContext = createContext();
 
@@ -9,20 +10,11 @@ export function CoinPriceProvider({ children, onCall }) {
   const [isOpen, setIsOpen] = useState(false);
 
   const openCoinModal = (coinOrSymbol) => {
-    if (coinOrSymbol && typeof coinOrSymbol === "object") {
-      setSelectedCoin({
-        symbol: coinOrSymbol.symbol || coinOrSymbol.name || "",
-        name: coinOrSymbol.name || coinOrSymbol.symbol || "",
-        coinId: coinOrSymbol.coinId || coinOrSymbol.id || coinOrSymbol.symbol?.toLowerCase() || "",
-      });
-    } else {
-      const coinSymbol = String(coinOrSymbol || "");
-      setSelectedCoin({
-        symbol: coinSymbol,
-        name: coinSymbol,
-        coinId: coinSymbol.toLowerCase(),
-      });
-    }
+    const resolved = resolveCoinPriceTarget(coinOrSymbol);
+    setSelectedCoin({
+      ...resolved,
+      raw: coinOrSymbol,
+    });
     setIsOpen(true);
   };
 
