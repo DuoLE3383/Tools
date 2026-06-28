@@ -1,17 +1,10 @@
 import { useCallback, useEffect, useState, useRef } from 'react';
 import Pools from './src/components/Pools';
 import Modal from './src/components/Modal';
-<<<<<<< Updated upstream
 import HashpowerBot from './src/components/HashpowerBot';
 import NiceHash from './src/components/NiceHash';
 import MiningRigRental from './src/components/MiningRigRental';
 import MiningRigSection from './src/components/MiningRigSection';
-=======
-import HashpowerBot from './src/components/nicehash/HashpowerBot.jsx';
-import NiceHash from './src/components/nicehash/NiceHash';
-import MiningRigRental from './src/components/mrr/MiningRigRental';
-import MiningRigSection from './src/components/mrr/MiningRigSection';
->>>>>>> Stashed changes
 import HashrateCalculator from './src/components/HashrateCalculator';
 import HashCompletionCalculator from './src/components/ProfitCompletion';
 import MrrPoolsManager from './src/components/mrr/MrrManager';
@@ -190,7 +183,7 @@ export default function App() {
           credentials: 'omit',
         });
 
-        if (res.status === 401 || res.status === 403) {
+        if (res.status === 401) {
           handleLogout();
           return null;
         }
@@ -284,16 +277,6 @@ export default function App() {
   const handleHashpowerCall = useCallback((path, opts = {}) => {
     return callApi(path, { ...opts, section: 'hashpower' });
   }, [callApi]);
-
-  useEffect(() => {
-    if (!authToken) return undefined;
-    const verifySession = () => {
-      callApi("/api/v2/time", { silent: true }).catch(() => {});
-    };
-    verifySession();
-    const interval = setInterval(verifySession, 30000);
-    return () => clearInterval(interval);
-  }, [authToken, callApi]);
 
   const handleOpenMrrPools = useCallback(async (rig) => {
     if (!rig || !mrrClient) return;
@@ -439,7 +422,7 @@ export default function App() {
             />
           </article>
           <article className="panel">
-            <HeroMinersCard mrrClient={mrrClient} onCall={callApi} />
+            <HeroMinersCard mrrClient={mrrClient} onCall={callApi} onPaste={handlePasteFromHeroMiners} />
           </article>
           <article className="panel">
             <MiningCoin onCall={callApi} nhClient={nhClient} />

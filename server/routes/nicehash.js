@@ -2,51 +2,13 @@
 import { asyncHandler, extractAlgorithmItems } from "../utils.js";
 import { resolveNhClient, getNiceHashApp, nhConfigs, isAggregate, normalizeAlgoForNiceHash, mapNiceHashToMRR, getCachedNhPools } from "../nh.js";
 import { mrrApiCall } from "../mrr.js";
+import fs from "fs/promises";
+import path from "path";
 import { db } from "../db.js";
 import { getAlgorithmUnit } from "../../src/core/mapping.js";
 import { saveToDatabase } from "./_helpers.js"; // see below
 
 export function registerNiceHashRoutes(app) {
-  const getStoredPoolClient = (poolId) => new Promise((resolve) => {
-    db.get(
-      `SELECT nhClient FROM nh_pools WHERE id = ? ORDER BY last_updated DESC LIMIT 1`,
-      [String(poolId || "")],
-      (err, row) => resolve(err ? null : (row?.nhClient || null)),
-    );
-  });
-
-  const getPoolDetailsAcrossAccounts = async (poolId, preferredClientParam) => {
-    const attempted = new Set();
-    const candidates = [];
-    const preferred = String(preferredClientParam || "BT").toUpperCase();
-    const storedClient = await getStoredPoolClient(poolId);
-
-    if (preferred) candidates.push(preferred);
-    if (storedClient) candidates.push(String(storedClient).toUpperCase());
-
-    for (const acct of Object.keys(nhConfigs)) {
-      const { clientName } = resolveNhClient(acct);
-      if (clientName) candidates.push(clientName);
-    }
-
-    for (const clientName of candidates) {
-      if (attempted.has(clientName)) continue;
-      attempted.add(clientName);
-
-      const { client } = resolveNhClient(clientName);
-      if (!client) continue;
-
-      try {
-        const data = await getNiceHashApp(client).pools.getPoolDetails(poolId);
-        if (data && !data.error) {
-          return { ok: true, data, clientName };
-        }
-      } catch {}
-    }
-
-    return { ok: false };
-  };
-
   // Middleware for NiceHash client resolution
   app.use("/api/v2", (req, res, next) => {
     if (req.path.startsWith("/mrr/") || req.path === "/algos/mapping" || req.path === "/extracted-pools") return next();
@@ -69,19 +31,48 @@ export function registerNiceHashRoutes(app) {
   app.get("/api/v2/mining/markets", asyncHandler(async (req, res) => res.json(await req.nhApp.public.getMarkets())));
   app.get("/api/v2/public/stats/24h", asyncHandler(async (req, res) => res.json(await req.nhApp.hashpower.getGlobalStats24h())));
 
+  // New route for static NiceHash algo data
+  app.get("/api/v2/nicehash-algos", asyncHandler(async (req, res) => {
+    try {
+      const filePath = path.resolve(process.cwd(), 'nicehashMiningAlgo.json');
+      const fileContent = await fs.readFile(filePath, 'utf-8');
+      res.json(JSON.parse(fileContent));
+    } catch (error) {
+      console.error("Failed to read nicehashMiningAlgo.json:", error);
+      res.status(500).json({ success: false, error: "Could not load static algorithm data." });
+    }
+  }));
+
   // ─── Algorithm Mapping ──────────────────────────────────────
   app.get("/api/v2/algos/mapping", asyncHandler(async (req, res) => {
     const { client: nhClient, clientName: nhClientName } = resolveNhClient(req.query.client);
     const nhResponse = await getNiceHashApp(nhClient).public.getAlgorithms();
-    const { data: mrrResponse, clientName } = await mrrApiCall({ endpoint: "/info/algos", method: "GET", clientNameRaw: req.query.client });
+    const { data: mrrResponse, clientName } = await mrrApiCall({ endpoint: "/market/algos", method: "GET", clientNameRaw: req.query.client });
     const nhItems = extractAlgorithmItems(nhResponse, ["miningAlgorithms", "algorithms", "data", "list", "result", "items"]);
-    const mrrItems = extractAlgorithmItems(mrrResponse, ["algos", "algorithms", "data", "list", "result", "items"]);
+    const mrrItems = extractAlgorithmItems(mrrResponse, ["algos", "algorithms", "data", "list", "result", "items"]).map(item => ({
+      ...item,
+      slug: String(item?.algo || item?.name || item?.slug || "").toLowerCase(),
+    }));
     const mrrSlugSet = new Set(mrrItems.map(item => String(item?.algo || item?.name || item?.slug || "").toLowerCase()).filter(Boolean));
-    const mapping = nhItems.map(item => {
+
+    const combinedAlgos = new Map();
+
+    // Process all NiceHash algorithms first
+    nhItems.forEach(item => {
       const nicehash = String(item?.algorithm || item?.name || item?.algo || "").toUpperCase();
+      if (nicehash && !combinedAlgos.has(nicehash)) {
+        combinedAlgos.set(nicehash, { nicehash, mrr: null, mrrExists: false });
+      }
+    });
+
+    // Map and check for existence
+    for (const [nicehash, entry] of combinedAlgos.entries()) {
       const mrr = mapNiceHashToMRR(nicehash);
-      return { nicehash, mrr, mrrExists: mrrSlugSet.has(String(mrr).toLowerCase()) };
-    }).filter(item => item.nicehash);
+      entry.mrr = mrr;
+      entry.mrrExists = mrrSlugSet.has(String(mrr).toLowerCase());
+    }
+
+    const mapping = Array.from(combinedAlgos.values());
     res.set("X-MRR-Client", clientName);
     res.set("X-NH-Client", nhClientName);
     res.json({ success: true, data: { mapping, totals: { nicehash: nhItems.length, mrr: mrrItems.length, mapped: mapping.length } } });
@@ -372,10 +363,7 @@ export function registerNiceHashRoutes(app) {
         stmt.finalize();
       });
     }
-    res.json({
-      ...data,
-      list: pools.map(p => ({ ...p, nhClient: p.nhClient || clientName })),
-    });
+    res.json(data);
   }));
   app.get("/api/v2/pool/:poolId", asyncHandler(async (req, res) => {
     const clientParam = String(req.query.client || "BT").toUpperCase();
@@ -392,15 +380,7 @@ export function registerNiceHashRoutes(app) {
         } catch {}
       }
     }
-    const currentClientName = res.get("X-NH-Client") || clientParam;
-    const result = await getPoolDetailsAcrossAccounts(req.params.poolId, currentClientName);
-    if (result.ok) {
-      res.set("X-NH-Client", result.clientName);
-      return res.json(result.data);
-    }
-    return res.status(400).json({
-      error: `Unable to fetch pool ${req.params.poolId} for client ${clientParam}.`,
-    });
+    res.json(await req.nhApp.pools.getPoolDetails(req.params.poolId));
   }));
   app.post("/api/v2/pool", asyncHandler(async (req, res) => res.json(await req.nhApp.pools.createPool(req.body))));
   app.post("/api/v2/pools/verify", asyncHandler(async (req, res) => res.json(await req.nhApp.pools.verifyPool(req.body))));

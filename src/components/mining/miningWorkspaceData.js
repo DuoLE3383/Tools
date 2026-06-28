@@ -38,15 +38,6 @@ export const percentValue = (value) => {
 const normalizeKey = (algo) =>
   normalizeAlgoForNiceHash(algo || "").toUpperCase();
 
-const isCoinLikeLabel = (value) => {
-  const text = String(value || "").trim();
-  if (!text) return false;
-  const normalized = normalizeAlgoForNiceHash(text);
-  if (normalized && normalized !== "UNKNOWN") return false;
-  const compact = text.replace(/[^a-z0-9]/gi, "");
-  return compact.length > 1;
-};
-
 export function normalizeMiningDutchRows(payload) {
   const source = payload?.miningdutch || payload || {};
   const rows = Array.isArray(source?.coinStats) ? source.coinStats : [];
@@ -56,7 +47,7 @@ export function normalizeMiningDutchRows(payload) {
       const nicehashAlgo = normalizeKey(row.algorithm || row.algo);
       return {
         provider: "Mining-Dutch",
-        coin: row.coin || row.symbol || "",
+        coin: row.coin || row.symbol || row.algorithm || "Pool",
         algorithm: row.algorithm || row.algo || "N/A",
         nicehashAlgo,
         mrrAlgo: mapNiceHashToMRR(nicehashAlgo),
@@ -78,7 +69,8 @@ export function normalizeHeroRows(payload) {
   return rows
     .map((row) => {
       const nicehashAlgo = normalizeKey(row.algorithm || row.algo);
-      const coinName = row.coin || row.symbol || "";
+      // Get the actual coin name from the API
+      const coinName = row.coin || row.symbol || row.algorithm || "Unknown";
       
       return {
         provider: "HeroMiners",
@@ -108,25 +100,25 @@ export function mergeMiningRoutes(
   for (const row of heroRows) {
     const current = heroByAlgo.get(row.nicehashAlgo) || {
       coins: [],
-      allCoinsSet: new Set(), // Use Set to track unique coins
+      allCoinsSet: new Set(),
       miners: 0,
       workers: 0,
       poolHashrates: [],
     };
 
-    // Add coin if it exists and is not empty
-    if (isCoinLikeLabel(row.coin)) {
+    if (row.coin && row.coin !== "Unknown" && row.coin !== "N/A") {
       current.allCoinsSet.add(row.coin);
     }
-    // Also add from raw data if available
-    if (isCoinLikeLabel(row.raw?.coin)) {
+    if (row.raw?.coin) {
       current.allCoinsSet.add(row.raw.coin);
     }
-    if (isCoinLikeLabel(row.raw?.symbol)) {
+    if (row.raw?.symbol) {
       current.allCoinsSet.add(row.raw.symbol);
     }
-    
-    // Update coins array from set
+    if (row.raw?.name) {
+      current.allCoinsSet.add(row.raw.name);
+    }
+
     current.coins = Array.from(current.allCoinsSet).filter(Boolean).sort();
     
     current.miners += row.miners || 0;
@@ -147,10 +139,10 @@ export function mergeMiningRoutes(
         allCoinsSet: new Set(),
         nicehashAlgo: row.nicehashAlgo,
       };
-      if (isCoinLikeLabel(row.coin)) {
+      if (row.coin && row.coin !== "Unknown" && row.coin !== "N/A") {
         current.allCoinsSet.add(row.coin);
       }
-      if (isCoinLikeLabel(row.raw?.coin)) {
+      if (row.raw?.coin) {
         current.allCoinsSet.add(row.raw.coin);
       }
       current.coins = Array.from(current.allCoinsSet).filter(Boolean).sort();

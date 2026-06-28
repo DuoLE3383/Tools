@@ -86,11 +86,7 @@ export async function fetchAndSaveCoinPrices(force = false) {
   }
 }
 
-function normalizeCoinKey(value) {
-  return String(value || "").trim().toLowerCase();
-}
-
-export async function getCoinPricesFromDb(coinIds = null, limit = null) {
+export async function getCoinPricesFromDb(coinIds = null, limit = 100) {
   try {
     const db = await getTrendDb();
     await ensureTable(db); // ✅ ensure table exists
@@ -103,26 +99,16 @@ export async function getCoinPricesFromDb(coinIds = null, limit = null) {
     `;
     const params = [];
     if (coinIds && coinIds.length > 0) {
-      const keys = coinIds.map(normalizeCoinKey).filter(Boolean);
-      if (keys.length > 0) {
-        const placeholders = keys.map(() => "?").join(",");
-        query += ` AND (
-          LOWER(coin_id) IN (${placeholders})
-          OR LOWER(symbol) IN (${placeholders})
-          OR LOWER(coin_name) IN (${placeholders})
-        )`;
-        params.push(...keys, ...keys, ...keys);
-      }
+      query += ` AND coin_id IN (${coinIds.map(() => '?').join(',')})`;
+      params.push(...coinIds);
     }
-    if (Number.isFinite(limit) && limit > 0) {
-      query += ` LIMIT ?`;
-      params.push(limit);
-    }
+    query += ` LIMIT ?`;
+    params.push(limit);
 
     const rows = await all(db, query, params);
     const result = {};
     for (const row of rows) {
-      const value = {
+      result[row.coin_id] = {
         usd: row.price_usd || 0,
         btc: row.price_btc || 0,
         market_cap: row.market_cap || 0,
@@ -132,9 +118,6 @@ export async function getCoinPricesFromDb(coinIds = null, limit = null) {
         symbol: row.symbol,
         last_updated: row.captured_at
       };
-      result[normalizeCoinKey(row.coin_id)] = value;
-      if (row.symbol) result[normalizeCoinKey(row.symbol)] = value;
-      if (row.coin_name) result[normalizeCoinKey(row.coin_name)] = value;
     }
     return result;
   } catch (err) {

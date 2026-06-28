@@ -1,6 +1,6 @@
 // routes/misc.js
 import { asyncHandler } from "../utils.js";
-import { sendTelegramInternal, runRentalMonitor, getTelegramStatus, setTelegramStatus } from "../monitor.js";
+import { sendTelegramInternal, getTelegramStatus, setTelegramStatus } from "../monitor.js";
 import { saveMiningTrainingSnapshot } from "../miningTrainingDb.js";
 import { db } from "../db.js";
 import { saveToDatabase } from "./_helpers.js";
@@ -23,6 +23,88 @@ export function registerMiscRoutes(app) {
       res.status(400).json({ success: false, error: err.message });
     }
   }));
+
+  // New endpoint for the mining page telegram provider
+  app.post("/api/v2/telegram/send-mine", asyncHandler(async (req, res) => {
+    const { message } = req.body;
+    const botToken = process.env.TELEGRAM_MINE_BOT_TOKEN;
+    const chatId = process.env.TELEGRAM_GROUP_ID;
+
+    if (!botToken || !chatId) {
+      return res.status(500).json({ success: false, error: "Mining Telegram bot is not configured on the server." });
+    }
+
+    try {
+      const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, text: message, parse_mode: 'HTML' }),
+      });
+      const data = await response.json();
+      res.status(response.status).json(data);
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }));
+
+  app.get("/api/v2/prices/db/:coinId", asyncHandler(async (req, res) => {
+    const { coinId } = req.params;
+    if (!coinId) {
+      return res.status(400).json({ success: false, error: "Coin ID is required." });
+    }
+
+    try {
+      // Query for the most recent price for the given coin_id
+      db.get(
+        `SELECT * FROM coin_prices WHERE coin_id = ? ORDER BY captured_at DESC LIMIT 1`,
+        [coinId],
+        (err, row) => {
+          if (err) return res.status(500).json({ success: false, error: err.message });
+          if (!row) return res.status(404).json({ success: false, error: "Price not found in database." });
+          res.json({ success: true, data: row });
+        }
+      );
+    } catch (err) {
+      res.status(500).json({ success: false, error: `Database query failed: ${err.message}` });
+    }
+  }));
+
+  // ─── Manual Price Update ───────────────────────────────────
+  app.post("/api/v2/prices/update", asyncHandler(async (req, res) => {
+    const { fetchAndStoreCoinPrices } = await import("../price-fetcher.js");
+    try {
+      console.log("[Prices] Manual price update triggered from frontend");
+      await fetchAndStoreCoinPrices();
+      res.json({ success: true, message: "Coin prices updated successfully" });
+    } catch (err) {
+      console.error("[Prices] Manual update failed:", err.message);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }));
+
+  app.get("/api/v2/db/available-coins", asyncHandler(async (req, res) => {
+    try {
+      const cmcCoinsPromise = new Promise((resolve, reject) => {
+        db.all('SELECT DISTINCT slug FROM cmc_coins WHERE slug IS NOT NULL', (err, rows) => err ? reject(err) : resolve(rows.map(r => r.slug.toLowerCase())));
+      });
+      const coingeckoCoinsPromise = new Promise((resolve, reject) => {
+        db.all('SELECT DISTINCT name FROM coingecko_coins WHERE name IS NOT NULL', (err, rows) => err ? reject(err) : resolve(rows.map(r => r.name.toLowerCase())));
+      });
+
+      const coingeckoIdsPromise = new Promise((resolve, reject) => {
+        db.all('SELECT DISTINCT id FROM coingecko_coins WHERE id IS NOT NULL', (err, rows) => err ? reject(err) : resolve(rows.map(r => r.id.toLowerCase())));
+      });
+
+      const [cmcSlugs, coingeckoNames, coingeckoIds] = await Promise.all([cmcCoinsPromise, coingeckoCoinsPromise, coingeckoIdsPromise]);
+      const allCoinIds = [...new Set([...cmcSlugs, ...coingeckoNames, ...coingeckoIds])];
+
+      res.json({ success: true, data: allCoinIds });
+    } catch (err) {
+      console.error('[DB] Failed to fetch available coins:', err.message);
+      res.status(500).json({ success: false, error: 'Could not query available coins from database.' });
+    }
+  }));
+
   app.get("/api/v2/notify/telegram/status", asyncHandler(async (req, res) => res.json(await getTelegramStatus())));
   app.post("/api/v2/notify/telegram/status", asyncHandler(async (req, res) => {
     const { enabled } = req.body;

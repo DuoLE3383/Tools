@@ -248,9 +248,11 @@ function extractCoinNames(heroRows, dutchRows) {
   for (const row of heroRows || []) {
     if (row.coin) coinNames.add(row.coin.toUpperCase());
     if (row.subdomain) coinNames.add(row.subdomain.toUpperCase());
+    if (row.algorithm) coinNames.add(row.algorithm.toUpperCase());
   }
   for (const row of dutchRows || []) {
     if (row.coin) coinNames.add(row.coin.toUpperCase());
+    if (row.algorithm) coinNames.add(row.algorithm.toUpperCase());
   }
   return Array.from(coinNames);
 }

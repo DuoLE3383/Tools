@@ -62,7 +62,7 @@ export const TelegramTemplates = {
       `📡 Cur: <b>${cur}</b> | ` +
       `📊 Eff: <code>${typeof efficiency === "number" ? efficiency.toFixed(2) : efficiency}%</code>\n` +
       `📈 Avg: <code>${avg}</code> | Adv: <code>${ads}</code>\n` +
-      `💰 Paid: <code>${escapeHtml(info.price?.paid)}</code> <b>${escapeHtml(info.price?.currency)}</b>\n` +
+      `💰 Paid: <code>${escapeHtml(info.price?.paid)} </code> <b> ${escapeHtml(info.price?.currency)}</b>\n` +
       `${extra}${divider}\n`
     );
   },
@@ -76,23 +76,9 @@ export const TelegramTemplates = {
       `<b>Time:</b> ${formatTimeRange(info.startTime, info.endTime)}\n` +
       `💰 Paid: <code>${escapeHtml(info.price?.paid)} </code> <b> ${escapeHtml(info.price?.currency)}</b>\n` +
       `<b>Efficiency:</b> <b>${info.percent}%</b> (Diff: ${diff}%)\n` +
-      `Adv: <code>${escapeHtml(ads || info.hashrate?.advertised?.nice || info.hashrate?.advertised || info.hashrate?.suffix || "N/A")}</code>\n` +
+      `Adv: <code>${ads}</code>\n` +
       `<b>Remaining:</b> ${rem}\n` +
       `<b>Target to 100%:</b> ${info.targetHashrate || "N/A"}\n` +
-      `${divider}\n`
-    );
-  },
-
-  newRental: (account, r, paid, startStr, endStr, algo = "N/A", ads = "N/A") => {
-    return (
-      `🚀 <b>[NEW RENTAL]</b>\n` +
-      `<b>Account:</b> <code>${formatAccount(account)}</code>\n` +
-      `${divider}\n` +
-      `<b>Rig:</b> ${formatRig(r)}\n` +
-      `<b>Algo:</b> <code>${escapeHtml(algo)}</code>\n` +
-      `<b>Time:</b> ${formatTimeRange(startStr, endStr)}\n` +
-      `💰 Paid: <code>${escapeHtml(paid)}</code>\n` +
-      `Adv: <code>${escapeHtml(ads)}</code>\n` +
       `${divider}\n`
     );
   },
@@ -139,13 +125,7 @@ export const TelegramTemplates = {
     );
   },
 
-  completionAlert: (
-    acct,
-    r,
-    info, 
-    efficiency, 
-    target, 
-    algo) => {
+  completionAlert: (acct, r, info, efficiency, target, algo) => {
     return (
       `🏁 <b>[ALMOST COMPLETE]</b>\n` +
       `<b>Algo:</b> <code>${escapeHtml(algo)}</code>\n` +
@@ -163,7 +143,6 @@ export const TelegramTemplates = {
     r,
     info = { price: {} },
     efficiency,
-    adv,
     avg,
     suffix,
     algo,
@@ -183,7 +162,7 @@ export const TelegramTemplates = {
   perfectEfficiency: (acct, r, efficiency, info, remainingMs, algo) => {
     const remH = Math.floor(remainingMs / 3600000);
     return (
-      `🎊 <b>[PERFECT 100%]</b>\n` +
+      `♻️ <b>[PERFECT 100%]</b>\n` +
       `<b>Account:</b> <code>${formatAccount(acct)}</code>\n` +
       `${divider}\n` +
       `<b>Rig:</b> ${formatRig(r)}\n` +
@@ -245,6 +224,28 @@ export const TelegramTemplates = {
 
     return summary;
   },
+  
+   herominersSummary: (data) => {
+    if (!data || !data.liveStats) return 'No HeroMiners data available.';
+    return (
+      `⛏️ <b>HeroMiners Stats for ${escapeHtml(data.coin)}</b>\n` +
+      `${divider}\n` +
+      `<b>Address:</b> <code>${escapeHtml(data.address)}</code>\n` +
+      `<b>Hashrate:</b> ${data.liveStats.currentHashrate} (Avg 24h: ${data.liveStats.avg24h})\n` +
+      `<b>Workers:</b> ${data.liveStats.workersOnline} / ${data.liveStats.workersTotal}\n` +
+      `${divider}\n` +
+      `<b>Pending:</b> ${data.paymentStats.pendingBalance} (${data.paymentStats.pendingUSD})\n` +
+      `<b>Total Paid:</b> ${data.paymentStats.totalPaid} (${data.paymentStats.totalPaidUSD})\n` +
+      `<b>Paid (24h):</b> ${data.paymentStats.paid24h}\n` +
+      `${divider}\n` +
+      `<b>Shares (Valid/Total):</b> ${data.shareStats.total.valid} / ${data.shareStats.total.total}\n` +
+      `<b>Efficiency:</b> ${data.shareStats.total.efficiency}%\n` +
+      `<b>Blocks Found:</b> ${data.blockStats.totalBlocks}\n` +
+      `${divider}\n` +
+      `<i>Last Share: ${data.liveStats.lastShare}</i>`
+    );
+  },
+
 
   rigStatusWarning: (acct, rig, algo) =>
     `⚠️ <b>[RIG WARNING]</b>\n

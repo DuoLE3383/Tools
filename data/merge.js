@@ -5,7 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = path.resolve(__dirname, '../data');
+const DATA_DIR = path.resolve(__dirname, './');
 const TARGET_DB = path.join(DATA_DIR, 'stats.db');
 
 // ─── Ensure target schema exists ──────────────────────────────────────
@@ -113,7 +113,7 @@ export async function mergeDatabases() {
   console.log('✅ Target schema is ready.');
 
   const files = fs.readdirSync(DATA_DIR)
-    .filter(f => f.endsWith('.db') && f !== 'stats.db' && f !== 'mining_training.db')
+    .filter(f => (f.endsWith('.db') || f.endsWith('.json')) && f !== 'stats.db' && f !== 'mining_training.db')
     .map(f => path.join(DATA_DIR, f));
 
   if (files.length === 0) {
@@ -123,91 +123,131 @@ export async function mergeDatabases() {
 
   const target = new sqlite3.Database(TARGET_DB);
   target.run('PRAGMA foreign_keys=OFF');
+  console.log('🔌 Target database connection opened.');
 
   for (const srcFile of files) {
-    console.log(`\n🔄 Merging ${path.basename(srcFile)}...`);
-    const src = new sqlite3.Database(srcFile);
+    const isJson = srcFile.endsWith('.json');
+    console.log(`\n🔄 Merging ${path.basename(srcFile)} (${isJson ? 'JSON' : 'DB'})...`);
 
-    // Attach source database
-    await new Promise((resolve, reject) => {
-      target.run(`ATTACH DATABASE '${srcFile}' AS src`, (err) => {
-        if (err) reject(err);
-        else resolve();
-      });
-    });
-
-    // Get tables from source
-    const tables = await new Promise((resolve, reject) => {
-      src.all("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'", (err, rows) => {
-        if (err) reject(err);
-        else resolve(rows.map(r => r.name));
-      });
-    });
-
-    if (tables.length === 0) {
-      console.log(`  ⚠️ No tables found.`);
-    }
-
-    for (const table of tables) {
+    if (isJson) {
       try {
-        // Get source columns
-        const srcCols = await getTableColumns(src, table);
-        if (srcCols.length === 0) continue;
+        const content = fs.readFileSync(srcFile, 'utf-8');
+        const data = JSON.parse(content);
+        const tableName = path.basename(srcFile, '.json').replace(/-/g, '_');
 
-        // Check if target has this table
-        const targetHas = await new Promise((resolve, reject) => {
-          target.get(`SELECT name FROM sqlite_master WHERE type='table' AND name='${table}'`, (err, row) => {
-            if (err) reject(err);
-            else resolve(!!row);
-          });
-        });
-        if (!targetHas) {
-          // Create table in target (simple: just create with columns from source)
-          const colDefs = srcCols.map(c => `"${c}" TEXT`).join(', ');
+        if (Array.isArray(data) && data.length > 0) {
+          const firstItem = data[0];
+          const columns = Object.keys(firstItem);
+          console.log(`  Found ${columns.length} columns in JSON: ${columns.join(', ')}`);
+          const colDefs = columns.map(c => `"${c}" TEXT`).join(', ');
+
           await new Promise((resolve, reject) => {
-            target.run(`CREATE TABLE main.${table} (${colDefs})`, (err) => {
+            target.exec(`DROP TABLE IF EXISTS ${tableName}; CREATE TABLE ${tableName} (${colDefs});`, (err) => {
+              if (err) return reject(err);
+              const stmt = target.prepare(`INSERT INTO ${tableName} (${columns.join(',')}) VALUES (${columns.map(() => '?').join(',')})`);
+              data.forEach(item => {
+                const values = columns.map(col => {
+                  const val = item[col];
+                  return (typeof val === 'object' && val !== null) ? JSON.stringify(val) : val;
+                });
+                stmt.run(values);
+              });
+              stmt.finalize(err => err ? reject(err) : resolve());
+            });
+          });
+          console.log(`  ✅ Imported ${data.length} records into table '${tableName}'`);
+        } else {
+          console.log(`  ⚠️ JSON file is empty or not an array, skipping.`);
+        }
+      } catch (err) {
+        console.error(`  ❌ Failed to process JSON file ${path.basename(srcFile)}: ${err.message}`);
+      }
+    } else {
+      // Existing DB merge logic
+      const src = new sqlite3.Database(srcFile);
+
+      // Attach source database
+      await new Promise((resolve, reject) => {
+        target.run(`ATTACH DATABASE '${srcFile}' AS src`, (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+
+      // Get tables from source
+      const tables = await new Promise((resolve, reject) => {
+        src.all("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'", (err, rows) => {
+          if (err) reject(err);
+          else resolve(rows.map(r => r.name));
+        });
+      });
+
+      if (tables.length === 0) {
+        console.log(`  ⚠️ No tables found.`);
+      }
+
+      for (const table of tables) {
+        try {
+          // Get source columns
+          const srcCols = await getTableColumns(src, table);
+          if (srcCols.length === 0) continue;
+
+          // Check if target has this table
+          const targetHas = await new Promise((resolve, reject) => {
+            target.get(`SELECT name FROM sqlite_master WHERE type='table' AND name='${table}'`, (err, row) => {
+              if (err) reject(err);
+              else resolve(!!row);
+            });
+          });
+          if (!targetHas) {
+            // Create table in target (simple: just create with columns from source)
+            const colDefs = srcCols.map(c => `"${c}" TEXT`).join(', ');
+            await new Promise((resolve, reject) => {
+              target.run(`CREATE TABLE main.${table} (${colDefs})`, (err) => {
+                if (err) reject(err);
+                else resolve();
+              });
+            });
+          }
+
+          // Get target columns
+          const tgtCols = await getTableColumns(target, table);
+          // Intersection: columns that exist in both
+          const commonCols = srcCols.filter(c => tgtCols.includes(c));
+          if (commonCols.length === 0) {
+            console.log(`  ⚠️ No common columns for ${table}, skipping`);
+            continue;
+          }
+
+          // Build INSERT with column list
+          const colList = commonCols.map(c => `"${c}"`).join(', ');
+          const insertSql = `INSERT OR IGNORE INTO main.${table} (${colList}) SELECT ${colList} FROM src.${table}`;
+          await new Promise((resolve, reject) => {
+            target.run(insertSql, (err) => {
               if (err) reject(err);
               else resolve();
             });
           });
+          console.log(`  ✅ Copied table ${table} (${commonCols.length} columns)`);
+        } catch (err) {
+          console.error(`  ❌ Failed to copy table ${table}: ${err.message}`);
         }
-
-        // Get target columns
-        const tgtCols = await getTableColumns(target, table);
-        // Intersection: columns that exist in both
-        const commonCols = srcCols.filter(c => tgtCols.includes(c));
-        if (commonCols.length === 0) {
-          console.log(`  ⚠️ No common columns for ${table}, skipping`);
-          continue;
-        }
-
-        // Build INSERT with column list
-        const colList = commonCols.map(c => `"${c}"`).join(', ');
-        const insertSql = `INSERT OR IGNORE INTO main.${table} (${colList}) SELECT ${colList} FROM src.${table}`;
-        await new Promise((resolve, reject) => {
-          target.run(insertSql, (err) => {
-            if (err) reject(err);
-            else resolve();
-          });
-        });
-        console.log(`  ✅ Copied table ${table} (${commonCols.length} columns)`);
-      } catch (err) {
-        console.error(`  ❌ Failed to copy table ${table}: ${err.message}`);
       }
+
+      // Detach source
+      await new Promise((resolve) => {
+        target.run(`DETACH DATABASE src`, resolve);
+      });
+
+      // Close source connection
+      src.close();
     }
 
-    // Detach source
-    await new Promise((resolve) => {
-      target.run(`DETACH DATABASE src`, resolve);
-    });
-
-    // Close source connection
-    src.close();
-
     // Delete source files after a short delay
-    const base = srcFile.replace('.db', '');
+    const base = srcFile.replace(/\.(db|json)$/, '');
     await new Promise(resolve => setTimeout(resolve, 300));
-    for (const ext of ['.db', '.db-wal', '.db-shm']) {
+    const extensionsToDelete = isJson ? ['.json'] : ['.db', '.db-wal', '.db-shm'];
+    for (const ext of extensionsToDelete) {
       const f = base + ext;
       if (fs.existsSync(f)) {
         try {
@@ -221,6 +261,7 @@ export async function mergeDatabases() {
   }
 
   target.close();
+  console.log('🔌 Target database connection closed.');
   console.log('\n✅ All databases merged into stats.db');
 }
 

@@ -3,7 +3,7 @@
 const MAX_ATTEMPTS = 3;           // Reduced from 5
 const REQUEST_TIMEOUT = 10000;    // Reduced from 20000
 const BASE_DELAY = 500;
-const CACHE_TTL = 5000;
+const CACHE_TTL = 10000;
 
 const pendingRequestsMap = new Map();
 const requestCache = new Map();
@@ -101,8 +101,9 @@ async function fetchMiningStatsInternal(
   force = false,
 ) {
   const restPathMap = {
-    herominers: "herominers",
-    miningDutch: "miningdutch",
+    herominers: "herominers/global",
+    miningDutch: "miningdutch", // Corrected to match route definition
+    herominers_address: "herominers/address", // This is the correct endpoint for address lookups
     all: "all",
   };
 
@@ -113,7 +114,13 @@ async function fetchMiningStatsInternal(
       if (i > 0) {
         await new Promise((r) => setTimeout(r, BASE_DELAY * Math.pow(2, i)));
       }
-      const url = `/api/v2/mining-stats/${path}${force ? "?force=true" : ""}`;
+      let url = `/api/v2/mining-stats/${path}`;
+      const queryParams = new URLSearchParams();
+      if (force) queryParams.set("force", "true");
+      if (type === 'herominers_address') {
+        if (rigId) queryParams.set('address', rigId); // coin is no longer needed
+      }
+      if (queryParams.toString()) url += `?${queryParams.toString()}`;
       const res = await fetch(url, { signal: AbortSignal.timeout(customTimeout) });
       
       if (!res.ok) {
