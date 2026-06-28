@@ -1,4 +1,4 @@
-import { getTrendDb, all } from "./database/db.js";
+import { getTrendDb, all } from "./db.js";
 
 function normalizeCoinKey(value) {
   return String(value || "").trim().toLowerCase();

@@ -86,7 +86,7 @@ function MiniStat({ label, value, tone }) {
 }
 
 // ===== Main Route Hero =====
-function MiningRouteHero() {
+function MiningRouteHero({ onCall }) {
   const {
     routes,
     opportunities,
@@ -98,6 +98,7 @@ function MiningRouteHero() {
     refresh,
     priceFetchStatus,
   } = useMiningWorkspace();
+  const [updatingCoins, setUpdatingCoins] = useState(false);
   const { openCoinModal } = useCoinPrice();
 
   const bestRoute = routes[0] || null;
@@ -106,6 +107,22 @@ function MiningRouteHero() {
   ).length;
   const profitableCount = routes.filter((route) => route.spread > 0).length;
   const bestOpportunity = opportunities[0] || null;
+
+  const handleUpdateCoins = async () => {
+    if (updatingCoins) return;
+    setUpdatingCoins(true);
+    try {
+      await onCall("/api/v2/prices/coingecko/update", {
+        method: "POST",
+        silent: true,
+      });
+      await refresh(true);
+    } catch (err) {
+      console.error("Failed to update coin catalog:", err);
+    } finally {
+      setUpdatingCoins(false);
+    }
+  };
 
   return (
     <section style={{ display: "grid", gap: "10px", marginBottom: "12px" }}>
@@ -189,6 +206,13 @@ function MiningRouteHero() {
               disabled={loading}
             >
               {loading ? "Refreshing..." : "Refresh routes"}
+            </button>
+            <button
+              className="btn-pro secondary"
+              onClick={() => void handleUpdateCoins()}
+              disabled={loading || updatingCoins}
+            >
+              {updatingCoins ? "Updating coins..." : "Update coins"}
             </button>
           </div>
 
@@ -727,7 +751,7 @@ function MiningWorkspaceShell({ onNavigateHome, onCall, nhClient }) {
         </div>
       </header>
 
-      <MiningRouteHero />
+      <MiningRouteHero onCall={onCall} />
 
       <section
         style={{

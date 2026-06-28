@@ -1,6 +1,7 @@
 // routes/coinGecko.js
 import { asyncHandler } from "../utils.js";
 import { getStoredCoinPriceCatalog, fetchAllCoinGeckoMarketPrices } from "../priceProvider.js";
+import { fetchAndStoreCoinPrices } from "../priceFetcher.js";
 
 async function getCachedCoinPrices(ids) {
   const requested = String(ids || "")
@@ -46,6 +47,22 @@ export function registerCoinGeckoRoutes(app) {
         const ids = req.query.ids || "";
         const data = await getCachedCoinPrices(ids);
         res.json({ success: true, data, source: "provider" });
+      } catch (err) {
+        res.status(503).json({ success: false, error: err.message });
+      }
+    }),
+  );
+
+  app.post(
+    "/api/v2/prices/coingecko/update",
+    asyncHandler(async (req, res) => {
+      try {
+        const result = await fetchAndStoreCoinPrices();
+        res.json({
+          success: true,
+          message: "Coin catalog updated",
+          data: result,
+        });
       } catch (err) {
         res.status(503).json({ success: false, error: err.message });
       }
