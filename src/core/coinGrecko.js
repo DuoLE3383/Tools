@@ -39,6 +39,8 @@ const COIN_TO_COINGECKO_MAP = {
   ZANO: "zano",
   VERUS: "verus",
   DASH: "dash",
+  SAL: "salvium",
+  SALVIUM: "salvium",
 };
 
 const ALGO_TO_COIN_MAP = {
