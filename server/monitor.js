@@ -1007,8 +1007,9 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
             const remH = Math.floor((displayRemN % 86400000) / 3600000);
             const remM = Math.floor((displayRemN % 3600000) / 60000);
             const remStr = displayRemN <= 0 ? 'Finished' : (remD > 0 ? `${remD}d ${remH}h` : `${remH}h ${remM}m`);
+            const ads = info.niceAdvertisedHashrate || info.hashrate?.advertised?.nice || info.hashrate?.advertised || info.hashrate?.suffix || 'N/A';
 
-            const msg = TelegramTemplates.rentedNotice(hbType, r, info, acct, orderDiff, remStr, resolveRentalAlgo(r, info));
+            const msg = TelegramTemplates.rentedNotice(hbType, r, info, acct, orderDiff, remStr, resolveRentalAlgo(r, info), ads);
 
             queueTelegramMessage(msg, {
               type: hbType,

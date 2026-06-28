@@ -19,7 +19,7 @@ function normalizeAlgorithm(algo) {
     "sha256": ["sha256", "sha256d"],
     "scrypt": ["scrypt"],
     "x11": ["x11"],
-    "ethash": ["ethash", "daggerhashimoto"],
+    "daggerhashimoto": ["daggerhashimoto"],
     "etchash": ["etchash", "etcfash"],
   };
   

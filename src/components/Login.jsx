@@ -24,7 +24,7 @@ export default function Login({ onLoginSuccess, onCall }) {
       } else {
         setError(result?.message || result?.error || "Invalid credentials");
       }
-    } catch (err) {
+    } catch {
       setError("Failed to connect to authentication server");
     } finally {
       setLoading(false);
@@ -33,7 +33,7 @@ export default function Login({ onLoginSuccess, onCall }) {
 
   return (
     <div
-      className="app-shell"
+      className="app-shell auth-shell"
       style={{
         display: "flex",
         alignItems: "center",
@@ -43,7 +43,7 @@ export default function Login({ onLoginSuccess, onCall }) {
       }}
     >
       <div
-        className="panel"
+        className="panel auth-panel"
         style={{
           textAlign: "center",
           padding: "40px",

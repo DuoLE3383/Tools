@@ -45,19 +45,19 @@ export function useTelegram(onCall, mrrClient) {
     (r) => {
       const account = getTelegramAccount(r, mrrClient);
       const paid = getPaidAmount(r);
+      const algo = r?.rig?.type || r?.algorithm || r?.algo || r?.type || "N/A";
+      const ads =
+        r?.hashrate?.advertised?.nice ||
+        r?.hashrate?.advertised ||
+        r?.hashrate?.suffix ||
+        "N/A";
       const startStr = String(r.start || "")
         .replace(/:\d{2} UTC/i, "")
         .replace(/^\d{4}-/, "");
       const endStr = String(r.end || "")
         .replace(/:\d{2} UTC/i, "")
         .replace(/^\d{4}-/, "");
-      const msg = TelegramTemplates.newRental(
-        account,
-        r,
-        paid,
-        startStr,
-        endStr,
-      );
+      const msg = TelegramTemplates.newRental(account, r, paid, startStr, endStr, algo, ads);
       return sendTelegram(msg, { silent: true });
     },
     [sendTelegram, mrrClient],

@@ -46,6 +46,8 @@ const vars = {
 
   MRR_DEFAULT_CLIENT: process.env.MRR_DEFAULT_CLIENT,
   NH_DEFAULT_CLIENT: process.env.NH_DEFAULT_CLIENT,
+
+  TUNNEL_URL: process.env.TUNNEL_URL,
 }
 
 const missingKeys = Object.entries(vars)

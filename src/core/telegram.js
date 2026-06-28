@@ -62,7 +62,7 @@ export const TelegramTemplates = {
       `📡 Cur: <b>${cur}</b> | ` +
       `📊 Eff: <code>${typeof efficiency === "number" ? efficiency.toFixed(2) : efficiency}%</code>\n` +
       `📈 Avg: <code>${avg}</code> | Adv: <code>${ads}</code>\n` +
-      `💰 Paid: <code>${escapeHtml(info.price?.paid)} </code> <b> ${escapeHtml(info.price?.currency)}</b>\n` +
+      `💰 Paid: <code>${escapeHtml(info.price?.paid)}</code> <b>${escapeHtml(info.price?.currency)}</b>\n` +
       `${extra}${divider}\n`
     );
   },
@@ -76,9 +76,23 @@ export const TelegramTemplates = {
       `<b>Time:</b> ${formatTimeRange(info.startTime, info.endTime)}\n` +
       `💰 Paid: <code>${escapeHtml(info.price?.paid)} </code> <b> ${escapeHtml(info.price?.currency)}</b>\n` +
       `<b>Efficiency:</b> <b>${info.percent}%</b> (Diff: ${diff}%)\n` +
-      `Adv: <code>${ads}</code>\n` +
+      `Adv: <code>${escapeHtml(ads || info.hashrate?.advertised?.nice || info.hashrate?.advertised || info.hashrate?.suffix || "N/A")}</code>\n` +
       `<b>Remaining:</b> ${rem}\n` +
       `<b>Target to 100%:</b> ${info.targetHashrate || "N/A"}\n` +
+      `${divider}\n`
+    );
+  },
+
+  newRental: (account, r, paid, startStr, endStr, algo = "N/A", ads = "N/A") => {
+    return (
+      `🚀 <b>[NEW RENTAL]</b>\n` +
+      `<b>Account:</b> <code>${formatAccount(account)}</code>\n` +
+      `${divider}\n` +
+      `<b>Rig:</b> ${formatRig(r)}\n` +
+      `<b>Algo:</b> <code>${escapeHtml(algo)}</code>\n` +
+      `<b>Time:</b> ${formatTimeRange(startStr, endStr)}\n` +
+      `💰 Paid: <code>${escapeHtml(paid)}</code>\n` +
+      `Adv: <code>${escapeHtml(ads)}</code>\n` +
       `${divider}\n`
     );
   },

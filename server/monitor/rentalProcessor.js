@@ -324,7 +324,16 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
         const remM = Math.floor((remainingMs % 3600000) / 60000);
         const remStr = remainingMs <= 0 ? "Finished" : remD > 0 ? `${remD}d ${remH}h` : `${remH}h ${remM}m`;
         const rentalForNotice = { ...rental, name: liveRig?.name || rental.name || rental.id };
-        const msg = TelegramTemplates.rentedNotice(hbType, rentalForNotice, info, acct, remStr, info.algo, advDisplay);
+        const msg = TelegramTemplates.rentedNotice(
+            hbType,
+            rentalForNotice,
+            info,
+            acct,
+            orderDiff,
+            remStr,
+            resolveRentalAlgo(rentalForNotice, info),
+            advDisplay
+        );
 
         sendTelegramNotification(msg, {
             type: hbType,

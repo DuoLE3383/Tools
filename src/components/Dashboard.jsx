@@ -19,7 +19,7 @@ export default function Dashboard({
 }) {
   return (
     <div
-      className="app-shell"
+      className="app-shell dashboard-shell"
       style={{ padding: "0 20px 40px", maxWidth: "1600px", margin: "0 auto" }}
     >
       {/* HEADER */}

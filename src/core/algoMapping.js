@@ -10,9 +10,7 @@ export const UNIT_TO_POWER = {
  */
 export const algoMap = {
   // Common GPU Algorithms
-  'ETHASH': 'DAGGERHASHIMOTO',
   'DAGGERHASHIMOTO': 'DAGGERHASHIMOTO',
-  'ETCHASH': 'ETCHASH',
   'ETC': 'ETCHASH',
   'ETHEREUMCLASSIC': 'ETCHASH',
   'KAWPOW': 'KAWPOW',
