@@ -91,7 +91,8 @@ export default function CoinPriceModal({
     setLoading(true);
     setError(null);
     
-    const coinId = resolveCoinGeckoId(coin);
+    const resolvedCoin = resolveCoinPriceTarget(coin);
+    const coinId = resolvedCoin.coinId;
     let resolved = false;
     try {
       const endpoint = "/api/v2/prices/coingecko";
@@ -102,7 +103,7 @@ export default function CoinPriceModal({
       };
       const result = await onCall(endpoint, { query, silent: true });
       const data = result?.data ?? result ?? {};
-      const coinData = extractMarketEntry(data, coinId, coin);
+      const coinData = extractMarketEntry(data, coinId, resolvedCoin);
 
       const price = toNumber(coinData?.usd ?? coinData?.price ?? coinData?.current_price ?? coinData);
       const marketCap = toNumber(coinData?.usd_market_cap ?? coinData?.marketCap ?? coinData?.market_cap);
@@ -132,7 +133,9 @@ export default function CoinPriceModal({
       console.warn("Coin price fetch failed:", cmcErr.message);
     }
     if (!resolved) {
-      setError(`Failed to fetch price for ${coin?.symbol || coin?.name || coinId || "coin"}`);
+      setError(
+        `Failed to fetch price for ${resolvedCoin.symbol || resolvedCoin.name || coinId || "coin"}`,
+      );
     }
     setLoading(false);
   }, [coin, onCall]);

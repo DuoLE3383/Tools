@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { btcValue, compactNumber, percentValue } from "./miningWorkspaceData";
 import { useMiningWorkspace } from "./MiningWorkspaceProvider";
 import CoinPriceModal from "./CoinPriceModal"; 
+import { resolveCoinPriceTarget } from "../../core/coinGrecko.js";
 export default function MiningCoin({ onCall, nhClient = "VN" }) {
   const {
     routes: combinedRows,
@@ -49,11 +50,7 @@ export default function MiningCoin({ onCall, nhClient = "VN" }) {
 
   // Handle coin click - open price modal
   const handleCoinClick = (coin) => {
-    setSelectedCoin({
-      symbol: coin,
-      name: coin,
-      coinId: coin.toLowerCase(),
-    });
+    setSelectedCoin(resolveCoinPriceTarget(coin));
     setPriceModalOpen(true);
   };
 
