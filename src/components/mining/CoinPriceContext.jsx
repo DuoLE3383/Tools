@@ -1,5 +1,6 @@
 // CoinPriceContext.jsx
 import { createContext, useContext, useState } from "react";
+import { WebSocketProvider } from "../../context/WebSocketContext.jsx";
 import CoinPriceModal from "./CoinPriceModal"; // adjust path if needed
 
 const CoinPriceContext = createContext();
@@ -21,13 +22,15 @@ export function CoinPriceProvider({ children, onCall }) {
 
   return (
     <CoinPriceContext.Provider value={{ openCoinModal }}>
-      {children}
-      <CoinPriceModal
-        isOpen={isOpen}
-        onClose={closeCoinModal}
-        coin={selectedCoin}
-        onCall={onCall}
-      />
+      <WebSocketProvider>
+        {children}
+        <CoinPriceModal
+          isOpen={isOpen}
+          onClose={closeCoinModal}
+          coin={selectedCoin}
+          onCall={onCall}
+        />
+      </WebSocketProvider>
     </CoinPriceContext.Provider>
   );
 }

@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
 } from "react";
+import { WebSocketProvider } from "../../context/WebSocketContext.jsx";
 
 const RentedRigContext = createContext();
 
@@ -42,9 +43,11 @@ export function RentedRigProvider({ children, callApi }) {
   const value = { rentedRigs, loading, error, refresh: fetchRentedRigs };
 
   return (
-    <RentedRigContext.Provider value={value}>
-      {children}
-    </RentedRigContext.Provider>
+    <WebSocketProvider>
+      <RentedRigContext.Provider value={value}>
+        {children}
+      </RentedRigContext.Provider>
+    </WebSocketProvider>
   );
 }
 

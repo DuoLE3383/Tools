@@ -515,19 +515,14 @@ export default function App() {
   // CryptoRate view
   if (state.view === 'cryptorate') {
     return (
-      <div className="app-shell" style={{ background: '#0f172a', minHeight: '100vh' }}>
-        <div style={{ padding: '16px 20px' }}>
-          <button
-            className="btn-pro secondary"
-            onClick={() => {
-              window.history.pushState({}, '', '/');
-              dispatch({ type: 'SET_VIEW', payload: 'dashboard' }); // Navigate home
-            }}
-          >
-            ← Back to Dashboard
-          </button>
-        </div>
-        <CryptoRatePage onCall={callApi} />
+      <div className="app-shell">
+        <CryptoRatePage
+          onCall={callApi}
+          onNavigateHome={() => {
+            window.history.pushState({}, '', '/');
+            dispatch({ type: 'SET_VIEW', payload: 'dashboard' });
+          }}
+        />
       </div>
     );
   }

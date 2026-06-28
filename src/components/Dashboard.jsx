@@ -18,112 +18,23 @@ export default function Dashboard({
   setMrrClient,
 }) {
   return (
-    <div
-      className="app-shell"
-      style={{ padding: "0 20px 40px", maxWidth: "1600px", margin: "0 auto" }}
-    >
+    <div className="app-shell">
       {/* HEADER */}
-      <header
-        className="app-header"
-        style={{
-          padding: "40px 0",
-          borderBottom: "1px solid rgba(255,255,255,0.05)",
-          marginBottom: "30px",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-end",
-        }}
-      >
-        <div className="brand-block" style={{ flex: 1 }}>
-          <div className="status-card" style={{ marginBottom: "2px" }}>
+      <header className="app-header">
+        <div className="brand-block">
+          <div className="status-card">
             <div className="status-item">
-              <span style={{ opacity: 0.5, marginRight: "10px" }}>SYSTEM:</span>
-              <span
-                className={`status-value ${state.loading ? "status-ready" : state.error ? "status-error" : "status-success"}`}
-              >
+              <span style={{ opacity: 0.5, marginRight: '10px' }}>SYSTEM:</span>
+              <span className={`status-value ${state.loading ? "status-ready" : state.error ? "status-error" : "status-success"}`}>
                 {state.loading ? "Loading..." : state.error ? "Error" : "Ready"}
               </span>
-            </div>
-            <div
-              style={{
-                display: "flex",
-                gap: "8px",
-                marginTop: "8px",
-                flexWrap: "wrap",
-              }}
-            >
-              <button
-                className="btn-pro secondary"
-                onClick={forceCheckStatus}
-                style={{ fontSize: "10px" }}
-              >
-                Force Check
-              </button>
-              <button
-                className="btn-pro secondary"
-                onClick={() =>
-                  dispatch({ type: "SET_DEBUG_MODAL", payload: true })
-                }
-                style={{ fontSize: "10px" }}
-              >
-                Debug Logs
-              </button>
-              <button
-                className="btn-pro secondary"
-                onClick={handleLogout}
-                style={{ fontSize: "10px" }}
-              >
-                Logout
-              </button>
-              <button
-                className="btn-pro secondary"
-                onClick={() =>
-                  dispatch({ type: "SET_CALCULATOR_MODAL", payload: true })
-                }
-                style={{ fontSize: "10px" }}
-              >
-                Calculator
-              </button>
-              <button
-                className="btn-pro secondary"
-                onClick={() => {
-                  window.history.pushState({}, "", "/cryptorate");
-                  dispatch({ type: "SET_VIEW", payload: "cryptorate" });
-                }}
-                style={{ fontSize: "10px" }}
-              >
-                Live Rates
-              </button>
-              <button
-                className="btn-pro secondary"
-                onClick={() => {
-                  window.history.pushState({}, "", "/mining");
-                  window.dispatchEvent(new PopStateEvent("popstate"));
-                }}
-                style={{ fontSize: "10px" }}
-              >
-                Mining
-              </button>
             </div>
           </div>
         </div>
       </header>
 
       {/* POOLS SECTION */}
-      <section
-        className="pools-section"
-        style={{
-          marginBottom: "15px",
-          marginTop: "0px",
-          background: "rgba(255, 255, 255, 0.02)",
-          border: "1px solid rgba(255, 255, 255, 0.05)",
-          borderRadius: "16px",
-          padding: "24px",
-          height: "850px",
-          minHeight: "200px",
-          overflow: "auto",
-        }}
-      >
+      <section className="pools-section">
         <Pools
           onCall={callApi}
           poolData={state.poolData}
@@ -137,10 +48,7 @@ export default function Dashboard({
 
       {/* MAIN DASHBOARD */}
       <main className="dashboard">
-        <div
-          className="column-stack"
-          style={{ display: "flex", flexDirection: "column", gap: "24px" }}
-        >
+        <div className="column-stack">
           <NiceHashOrderProvider
             nhClient={state.nhOrderClient}
             callApi={callApi}
@@ -159,28 +67,9 @@ export default function Dashboard({
             </article>
 
             {/* QUICK ACTIONS */}
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: "16px",
-                gap: "12px",
-                flexWrap: "wrap",
-              }}
-            >
-              <div>
-                <h3 style={{ margin: 0, fontSize: "1rem" }}>Quick Actions</h3>
-                <p
-                  style={{
-                    margin: "4px 0 0",
-                    color: "var(--muted)",
-                    fontSize: "0.85rem",
-                  }}
-                >
-                  Open the hashrate calculator or view live rates.
-                </p>
-              </div>
+            <div className="panel">
+              <h3 style={{ margin: 0, fontSize: "1rem" }}>Quick Actions</h3>
+              <p style={{ margin: "4px 0 1rem", color: "var(--text-muted)", fontSize: "0.85rem" }}>Unit conversions and rental projections.</p>
               <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
                 <button
                   className="btn-pro secondary"
@@ -188,7 +77,7 @@ export default function Dashboard({
                     dispatch({ type: "SET_CALCULATOR_MODAL", payload: true })
                   }
                 >
-                  Open Calculator
+                  Unit Converter
                 </button>
                 <button
                   className="btn-pro secondary"
@@ -231,28 +120,11 @@ export default function Dashboard({
         maxWidth="800px"
       >
         {state.lastCall && (
-          <div
-            style={{
-              marginBottom: "15px",
-              opacity: 0.7,
-              fontSize: "11px",
-              fontFamily: "monospace",
-            }}
-          >
-            {state.lastCall.method} {state.lastCall.path} —{" "}
-            {state.lastCall.status} ({state.lastCall.durationMs}ms)
+          <div className="response-meta" style={{ fontFamily: 'monospace', marginBottom: '1rem', opacity: 0.7, fontSize: '0.75rem' }}>
+            {state.lastCall.method} {state.lastCall.path} — {state.lastCall.status} ({state.lastCall.durationMs}ms)
           </div>
         )}
-        <pre
-          className="response-body"
-          style={{
-            maxHeight: "50vh",
-            overflow: "auto",
-            background: "rgba(0,0,0,0.3)",
-            padding: "12px",
-            borderRadius: "6px",
-          }}
-        >
+        <pre className="response-body" style={{ maxHeight: '60vh', overflow: 'auto', background: 'rgba(0,0,0,0.2)', padding: '1rem', borderRadius: '8px' }}>
           {JSON.stringify(state.modalContent, null, 2)}
         </pre>
       </Modal>
@@ -263,37 +135,13 @@ export default function Dashboard({
         title="System Debug Logs"
         maxWidth="800px"
       >
-        <div
-          className="code-block-content"
-          style={{
-            maxHeight: "60vh",
-            overflow: "auto",
-            fontSize: "11px",
-            fontFamily: "monospace",
-          }}
-        >
-          {state.debugLogs.length === 0 && (
-            <div style={{ opacity: 0.5 }}>No logs captured yet.</div>
-          )}
+        <div className="code-block-content" style={{ maxHeight: '60vh', overflow: 'auto', fontSize: '11px', fontFamily: 'monospace', background: 'rgba(0,0,0,0.2)', padding: '1rem', borderRadius: '8px' }}>
+          {state.debugLogs.length === 0 && <div style={{ opacity: 0.5 }}>No logs captured yet.</div>}
           {state.debugLogs.map((log, i) => (
-            <div
-              key={i}
-              style={{
-                padding: "2px 0",
-                borderBottom: "1px solid rgba(255,255,255,0.05)",
-              }}
-            >
+            <div key={i} style={{ borderBottom: "1px solid var(--border-color)", padding: '0.25rem 0' }}>
               {log}
             </div>
           ))}
-        </div>
-        <div className="modal-actions" style={{ marginTop: "12px" }}>
-          <button
-            className="btn-pro secondary"
-            onClick={() => dispatch({ type: "CLEAR_DEBUG_LOGS" })}
-          >
-            Clear Logs
-          </button>
         </div>
       </Modal>
 

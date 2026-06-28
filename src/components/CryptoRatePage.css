@@ -1,12 +1,14 @@
 /* c:/Coding/Tools/src/components/CryptoRatePage.css */
 
 .crypto-rate-page {
+  position: relative;
   padding: 1rem 1.25rem;
-  color: #f8fafc;
+  color: var(--text-light, #f8fafc);
   background: transparent;
   font-family: sans-serif;
   width: 100%;
   max-width: 600px; /* Use max-width for responsiveness */
+  /* min-height should be set by app-shell or content */
   min-height: 500px;
   margin: auto;
   box-sizing: border-box;
@@ -15,10 +17,10 @@
 }
 
 .crypto-rate-page .btn-back {
-  position: absolute;
-  top: 12px;
-  left: 12px;
+  /* Position relative to the page, but flow with content on small screens */
+  margin-bottom: 1rem;
   z-index: 10;
+  align-self: flex-start;
   /* Assuming .btn-pro.secondary styles exist elsewhere */
 }
 
@@ -29,7 +31,7 @@
   justify-content: space-between;
   gap: 1rem;
   margin-bottom: 1rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid var(--border-color, rgba(255, 255, 255, 0.05));
   padding-bottom: 1rem;
 }
 
@@ -45,7 +47,7 @@
 }
 
 .crypto-rate-header-title .title-text-highlight {
-  color: #60a5fa;
+  color: var(--primary-accent, #60a5fa);
 }
 
 .crypto-rate-header-title .status-indicator {
@@ -55,11 +57,11 @@
 }
 
 .crypto-rate-header-title .status-indicator.connected {
-  background: #10b981;
+  background: var(--success-color, #10b981);
 }
 
 .crypto-rate-header-title .status-indicator.disconnected {
-  background: #f59e0b;
+  background: var(--warning-color, #f59e0b);
 }
 
 .crypto-rate-header-title .status-label {
@@ -77,26 +79,26 @@
 
 .crypto-rate-header-input-group .usd-symbol {
   font-size: 1rem;
-  color: #60a5fa;
+  color: var(--primary-accent, #60a5fa);
   font-weight: 700;
 }
 
 .crypto-rate-header-input-group .usd-input {
   width: 120px;
   background: rgba(30, 41, 59, 0.3);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.06));
   border-radius: 8px;
   padding: 4px 8px;
   font-size: 1.3rem;
-  color: #fff;
+  color: var(--text-light, #fff);
   font-family: monospace;
   outline: none;
   text-align: right;
 }
 
 .crypto-rate-header-input-group .refresh-btn {
-  background: rgba(96, 165, 250, 0.08);
-  border: 1px solid rgba(96, 165, 250, 0.1);
+  background: var(--card-bg-active, rgba(96, 165, 250, 0.08));
+  border: 1px solid var(--primary-accent, rgba(96, 165, 250, 0.1));
   border-radius: 4px;
   padding: 4px 10px;
   color: #60a5fa;
@@ -115,8 +117,8 @@
 
 .crypto-card {
   aspect-ratio: 2 / 1;
-  background: rgba(30, 41, 59, 0.12);
-  border: 1px solid rgba(255, 255, 255, 0.03);
+  background: var(--card-bg, rgba(30, 41, 59, 0.12));
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.03));
   border-radius: 10px;
   padding: 14px 12px 12px;
   display: flex;
@@ -126,8 +128,8 @@
 }
 
 .crypto-card.active {
-  background: rgba(96, 165, 250, 0.06);
-  border: 1px solid rgba(96, 165, 250, 0.15);
+  background: var(--card-bg-active, rgba(96, 165, 250, 0.06));
+  border: 1px solid var(--primary-accent, rgba(96, 165, 250, 0.15));
 }
 
 .crypto-card-header {
@@ -138,7 +140,7 @@
 
 .crypto-card-symbol {
   font-weight: 800;
-  color: #d660fa;
+  color: var(--secondary-accent, #d660fa);
   font-size: 0.85rem;
 }
 
@@ -148,11 +150,11 @@
 }
 
 .crypto-card-change.positive {
-  color: #10b981;
+  color: var(--success-color, #10b981);
 }
 
 .crypto-card-change.negative {
-  color: #f87171;
+  color: var(--danger-color, #f87171);
 }
 
 .crypto-card-input-wrapper {
@@ -162,11 +164,11 @@
 .crypto-card-input {
   width: 100%;
   background: rgba(0, 0, 0, 0.25);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.05));
   border-radius: 6px;
   padding: 6px 8px;
   font-size: 1.2rem;
-  color: #fff;
+  color: var(--text-light, #fff);
   font-family: monospace;
   outline: none;
   text-align: center;
@@ -182,9 +184,29 @@
 
 .crypto-rate-error {
   font-size: 0.75rem;
-  color: #f87171;
+  color: var(--danger-color, #f87171);
   text-align: center;
   margin-top: 10px;
+}
+
+/* --- Sparkline component styles --- */
+.sparkline-placeholder {
+  width: 100%;
+  height: 40px; /* Adjust height as needed */
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 8px;
+}
+
+.sparkline-svg {
+  width: 100%;
+  height: 40px; /* Match placeholder height */
+  overflow: visible;
+}
+
+/* Add this if you have a .btn-pro class, otherwise style as needed */
+.btn-pro.secondary.btn-back {
+  background: var(--card-bg, rgba(255, 255, 255, 0.05));
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
 }
 
 /* --- Responsive Adjustments --- */
@@ -196,11 +218,41 @@
   }
 
   .crypto-rate-header {
+    /* Stack header items and center them */
     flex-direction: column;
-    align-items: stretch;
+    align-items: center; /* Center content on small screens */
+  }
+
+  .crypto-rate-header-input-group .usd-input {
+    width: 100px; /* Reduce width on smaller screens */
   }
 
   .crypto-grid {
     grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  }
+}
+
+/* For screens smaller than 420px */
+@media (max-width: 420px) {
+  .crypto-rate-page .btn-back {
+    /* Make back button less prominent on very small screens */
+    padding: 4px 8px;
+    font-size: 0.8rem;
+    position: absolute; /* Take out of flow to save space */
+    top: 10px;
+    left: 10px;
+  }
+
+  .crypto-rate-header-title .title-text {
+    font-size: 1.2rem; /* Slightly smaller title on very small screens */
+  }
+
+  .crypto-grid {
+    /* Switch to a single column layout on very small screens */
+    grid-template-columns: 1fr;
+  }
+
+  .crypto-card {
+    aspect-ratio: auto; /* Allow card height to be flexible */
   }
 }

@@ -69,6 +69,19 @@ export function registerMiscRoutes(app) {
     }
   }));
 
+  // ─── Manual Price Update ───────────────────────────────────
+  app.post("/api/v2/prices/update", asyncHandler(async (req, res) => {
+    const { fetchAndStoreCoinPrices } = await import("../price-fetcher.js");
+    try {
+      console.log("[Prices] Manual price update triggered from frontend");
+      await fetchAndStoreCoinPrices();
+      res.json({ success: true, message: "Coin prices updated successfully" });
+    } catch (err) {
+      console.error("[Prices] Manual update failed:", err.message);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }));
+
   app.get("/api/v2/db/available-coins", asyncHandler(async (req, res) => {
     try {
       const cmcCoinsPromise = new Promise((resolve, reject) => {
@@ -78,8 +91,12 @@ export function registerMiscRoutes(app) {
         db.all('SELECT DISTINCT name FROM coingecko_coins WHERE name IS NOT NULL', (err, rows) => err ? reject(err) : resolve(rows.map(r => r.name.toLowerCase())));
       });
 
-      const [cmcSlugs, coingeckoNames] = await Promise.all([cmcCoinsPromise, coingeckoCoinsPromise]);
-      const allCoinIds = [...new Set([...cmcSlugs, ...coingeckoNames])];
+      const coingeckoIdsPromise = new Promise((resolve, reject) => {
+        db.all('SELECT DISTINCT id FROM coingecko_coins WHERE id IS NOT NULL', (err, rows) => err ? reject(err) : resolve(rows.map(r => r.id.toLowerCase())));
+      });
+
+      const [cmcSlugs, coingeckoNames, coingeckoIds] = await Promise.all([cmcCoinsPromise, coingeckoCoinsPromise, coingeckoIdsPromise]);
+      const allCoinIds = [...new Set([...cmcSlugs, ...coingeckoNames, ...coingeckoIds])];
 
       res.json({ success: true, data: allCoinIds });
     } catch (err) {

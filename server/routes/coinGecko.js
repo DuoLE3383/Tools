@@ -1,98 +1,51 @@
 // routes/coinGecko.js
 import { asyncHandler } from "../utils.js";
-import { getCmcPrices } from "../cmcClient.js"; // Make sure this is correctly implemented
+import { fetchAndStoreCoinPrices } from "../price-fetcher.js";
+import { db } from "../db.js";
 
 let coinGeckoCache = {
   data: null,
   timestamp: 0,
-  ttl: 60 * 60 * 1000, // 1-hour cache TTL
 };
 
 async function getCachedCoinPrices(ids) {
   const now = Date.now();
-  const requested = ids.split(",").map(s => s.trim()).filter(Boolean);
+  const requestedIds = ids.split(",").map(s => s.trim()).filter(Boolean);
 
-  // Cache hit?
-  if (coinGeckoCache.data && now - coinGeckoCache.timestamp < coinGeckoCache.ttl) {
+  // Return from cache if valid and all requested IDs are present
+  if (coinGeckoCache.data && now - coinGeckoCache.timestamp < 60000) { // 1 minute cache
     const cachedIds = Object.keys(coinGeckoCache.data);
-    const missing = requested.filter(id => !cachedIds.includes(id));
+    const missing = requestedIds.filter(id => !cachedIds.includes(id));
     if (missing.length === 0) return coinGeckoCache.data;
   }
 
-  // 1. Primary Provider: CoinGecko
-  try {
-    const url = `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd,btc`;
-    const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
-    if (!response.ok) throw new Error(`CoinGecko API error: ${response.status}`);
-    const data = await response.json();
+  // If cache is stale or incomplete, fetch from DB
+  return new Promise((resolve, reject) => {
+    const placeholders = requestedIds.map(() => '?').join(',');
+    const sql = `
+      SELECT * FROM (
+        SELECT *, ROW_NUMBER() OVER(PARTITION BY coin_id ORDER BY captured_at DESC) as rn
+        FROM coin_prices
+        WHERE coin_id IN (${placeholders})
+      ) WHERE rn = 1
+    `;
+    db.all(sql, requestedIds, (err, rows) => {
+      if (err) return reject(err);
+      const priceData = rows.reduce((acc, row) => {
+        acc[row.coin_id] = {
+          price: row.price_usd,
+          price_btc: row.price_btc,
+          source: row.source,
+          last_updated: row.captured_at,
+        };
+        return acc;
+      }, {});
 
-    // Merge new data with existing cache
-    coinGeckoCache.data = coinGeckoCache.data ? { ...coinGeckoCache.data, ...data } : data;
-    coinGeckoCache.timestamp = now;
-    return coinGeckoCache.data;
-  } catch (err) {
-    console.warn("[CoinGecko] Failed, trying CMC:", err.message);
-  }
-
-  // 2. Fallback Provider: CoinMarketCap
-  try {
-    // Map CoinGecko IDs to CMC symbols (this is a simplified example)
-    const symbols = requested.map(id => {
-      const map = {
-        bitcoin: "BTC",
-        ethereum: "ETH",
-        "ethereum-classic": "ETC",
-        litecoin: "LTC",
-        dogecoin: "DOGE",
-        "bitcoin-cash": "BCH",
-        ravencoin: "RVN",
-        monero: "XMR",
-        kaspa: "KAS",
-        // Add other mappings as needed
-      };
-      return map[id] || id.toUpperCase();
+      coinGeckoCache.data = { ...(coinGeckoCache.data || {}), ...priceData };
+      coinGeckoCache.timestamp = now;
+      resolve(coinGeckoCache.data);
     });
-
-    const cmcData = await getCmcPrices(symbols);
-    const converted = {};
-
-    for (const [symbol, price] of Object.entries(cmcData)) {
-      // Convert CMC response back to a CoinGecko-like structure
-      converted[symbol.toLowerCase()] = price;
-    }
-
-    // Merge with cache and update timestamp
-    coinGeckoCache.data = coinGeckoCache.data ? { ...coinGeckoCache.data, ...converted } : converted;
-    coinGeckoCache.timestamp = now;
-    return coinGeckoCache.data;
-  } catch (cmcErr) {
-    console.error("[CoinGecko] Both CoinGecko and CMC failed:", cmcErr.message);
-    throw new Error("Unable to fetch prices from CoinGecko or CoinMarketCap");
-  }
-}
-
-async function getCmcPrice(symbol) {
-  if (!symbol) {
-    throw new Error("Symbol is required for CMC price lookup.");
-  }
-  try {
-    const prices = await getCmcPrices([symbol]);
-    // The getCmcPrices function returns an object where keys are lowercase coin IDs.
-    // We need to find the price for the requested symbol, likely by its lowercase version.
-    const priceData = prices[symbol.toLowerCase()];
-    if (priceData) {
-      // The frontend expects a structure similar to CoinGecko's for simplicity.
-      // Let's mimic that structure.
-      return {
-        price: priceData.usd,
-        price_btc: priceData.btc,
-        // CMC simple quotes don't provide all fields, so we return what we have.
-      };
-    }
-    throw new Error(`Price for ${symbol} not found on CoinMarketCap.`);
-  } catch (err) {
-    throw new Error(`CMC Fallback Error: ${err.message}`);
-  }
+  });
 }
 
 export function registerCoinGeckoRoutes(app) {
@@ -111,24 +64,11 @@ export function registerCoinGeckoRoutes(app) {
         
         // If a single ID was requested, return just that coin's data for compatibility with the modal
         if (ids.split(',').length === 1 && data[requestedId]) {
-          return res.json({ success: true, data: data[requestedId], source: "cache" });
+          return res.json({ success: true, data: data[requestedId], source: "db_cache" });
         }
-        res.json({ success: true, data, source: "cache" });
+        res.json({ success: true, data, source: "db_cache" });
       } catch (err) {
         res.status(503).json({ success: false, error: err.message });
-      }
-    }),
-  );
-
-  app.get(
-    "/api/v2/prices/cmc",
-    asyncHandler(async (req, res) => {
-      const { symbol } = req.query;
-      try {
-        const data = await getCmcPrice(symbol);
-        res.json({ success: true, data, source: "cmc" });
-      } catch (err) {
-        res.status(503).json({ success: false, error: err.message, source: "cmc" });
       }
     }),
   );

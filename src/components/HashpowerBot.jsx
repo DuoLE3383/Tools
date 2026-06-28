@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, memo } from "react";
 import { apiFetch } from "../core/poolUtils";
+import "./HashpowerBot.css";
 
 /**
  * Sub-component for Logs to prevent re-rendering the whole bot on every log entry
@@ -8,35 +9,20 @@ const LogViewer = memo(({ logs }) => {
   return (
     <div className="log-viewer">
       <label className="label">Activity Logs</label>
-      <div
-        className="code-block-content"
-        style={{
-          height: "160px",
-          overflowY: "auto",
-          fontSize: "11px",
-          background: "rgba(0,0,0,0.2)",
-          padding: "10px",
-          borderRadius: "4px",
-          border: "1px solid rgba(255,255,255,0.05)",
-        }}
-      >
+      <div className="code-block-content">
         {logs.length === 0 ? (
-          <span style={{ opacity: 0.4 }}>
+          <span className="log-placeholder">
             Bot inactive. Press start to begin.
           </span>
         ) : (
           logs.map((log, i) => (
             <div
               key={i}
-              style={{
-                fontFamily: "monospace",
-                marginBottom: "4px",
-                color: log.includes("[ERROR]")
-                  ? "#f87171"
-                  : log.includes("[SUCCESS]")
-                    ? "#34d399"
-                    : "#94a3b8",
-              }}
+              className={`log-entry ${
+                log.includes("[ERROR]") ? "error" :
+                log.includes("[SUCCESS]") ? "success" :
+                log.includes("[WARN]") ? "warn" : ""
+              }`}
             >
               {log}
             </div>
@@ -254,26 +240,11 @@ export default function HashpowerBot({
   }, [isRunning, config.checkInterval, runIteration]);
 
   return (
-    <div
-      className="bot-panel"
-      style={{
-        borderTop: "1px solid rgba(255,255,255,0.1)",
-        paddingTop: "1.5rem",
-        marginTop: "1.5rem",
-      }}
-    >
-      <div
-        className="panel-header"
-        style={{
-          marginBottom: "1rem",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-        }}
-      >
-        <h3 style={{ margin: 0 }}>Hashpower Automator</h3>
+    <div className="bot-panel">
+      <div className="panel-header">
+        <h3>Hashpower Automator</h3>
         {setNhClient && (
-          <div className="market-inputs" style={{ marginBottom: 0 }}>
+          <div className="market-inputs">
             <select
               className="select-pro"
               value={nhClient}
@@ -285,31 +256,15 @@ export default function HashpowerBot({
             </select>
           </div>
         )}
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <span
-            className={`status-dot ${isRunning ? "active" : ""}`}
-            style={{
-              width: "8px",
-              height: "8px",
-              borderRadius: "50%",
-              background: isRunning ? "#10b981" : "#64748b",
-            }}
-          />
-          <small style={{ fontWeight: "bold", opacity: 0.8 }}>
+        <div className="status-display">
+          <span className={`status-dot ${isRunning ? "active" : ""}`} />
+          <small className="status-text">
             {isRunning ? "RUNNING" : "IDLE"}
           </small>
         </div>
       </div>
 
-      <div
-        className="field-row"
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
-          gap: "1rem",
-          marginBottom: "1rem",
-        }}
-      >
+      <div className="field-row">
         <div className="field">
           <label className="label">Price Threshold</label>
           <input
@@ -367,11 +322,10 @@ export default function HashpowerBot({
         </div>
       </div>
 
-      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1.5rem" }}>
+      <div className="controls">
         <button
-          className={`btn-pro ${isRunning ? "secondary" : "primary"}`}
+          className={`btn-pro ${isRunning ? "secondary" : "primary"} start-stop-btn`}
           onClick={() => setIsRunning(!isRunning)}
-          style={{ flex: 1 }}
         >
           {isRunning ? "Stop Bot" : "Start Bot"}
         </button>

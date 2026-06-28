@@ -16,6 +16,7 @@ export default function MiningCoin({ onCall, nhClient = "VN" }) {
   const [selectedCoin, setSelectedCoin] = useState(null);
   const [priceModalOpen, setPriceModalOpen] = useState(false);
   const [availableCoins, setAvailableCoins] = useState(new Set());
+  const [coinDetailsMap, setCoinDetailsMap] = useState(new Map());
 
   const visibleRows = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -54,7 +55,11 @@ export default function MiningCoin({ onCall, nhClient = "VN" }) {
     try {
       const result = await onCall('/api/v2/db/available-coins', { silent: true });
       if (result?.success && Array.isArray(result.data)) {
-        setAvailableCoins(new Set(result.data));
+        const coinMap = new Map();
+        const coinSet = new Set();
+        result.data.forEach(coin => { coinMap.set(coin.symbol.toUpperCase(), coin); coinSet.add(coin.symbol.toUpperCase()); });
+        setAvailableCoins(coinSet);
+        setCoinDetailsMap(coinMap);
       }
     } catch (err) {
       console.warn("Could not fetch available coins list:", err.message);
@@ -65,11 +70,8 @@ export default function MiningCoin({ onCall, nhClient = "VN" }) {
 
   // Handle coin click - open price modal
   const handleCoinClick = (coin) => {
-    setSelectedCoin({
-      symbol: coin,
-      name: coin,
-      coinId: coin.toLowerCase(),
-    });
+    const coinDetails = coinDetailsMap.get(coin.toUpperCase());
+    setSelectedCoin(coinDetails || { symbol: coin, name: coin, coinId: coin.toLowerCase() });
     setPriceModalOpen(true);
   };
 
@@ -310,29 +312,29 @@ export default function MiningCoin({ onCall, nhClient = "VN" }) {
                       {row.heroCoins && row.heroCoins.length > 0 ? (
                         row.heroCoins.map((coin) => (
                           <button
-                            disabled={!availableCoins.has(coin.toLowerCase())}
+                            disabled={!availableCoins.has(coin.toUpperCase())}
                             key={coin}
                             onClick={() => handleCoinClick(coin)}
                             style={{
                               border: "1px solid rgba(96,165,250,0.22)",
                               color: "#bfdbfe",
                               background: "rgba(37,99,235,0.12)",
-                              borderRadius: "999px",
+                              borderRadius: "99px",
                               padding: "2px 8px",
                               fontSize: "10px",
                               cursor: "pointer",
                               transition: "all 0.2s",
-                              opacity: availableCoins.has(coin.toLowerCase()) ? 1 : 0.4,
+                              opacity: availableCoins.has(coin.toUpperCase()) ? 1 : 0.4,
                             }}
                             onMouseEnter={(e) => {
-                              if (!availableCoins.has(coin.toLowerCase())) return;
+                              if (!availableCoins.has(coin.toUpperCase())) return;
                               e.target.style.background =
                                 "rgba(37,99,235,0.25)";
                               e.target.style.borderColor =
                                 "rgba(96,165,250,0.5)";
                             }}
                             onMouseLeave={(e) => {
-                              if (!availableCoins.has(coin.toLowerCase())) return;
+                              if (!availableCoins.has(coin.toUpperCase())) return;
                               e.target.style.background =
                                 "rgba(37,99,235,0.12)";
                               e.target.style.borderColor =

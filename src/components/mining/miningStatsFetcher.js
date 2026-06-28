@@ -3,7 +3,7 @@
 const MAX_ATTEMPTS = 3;           // Reduced from 5
 const REQUEST_TIMEOUT = 10000;    // Reduced from 20000
 const BASE_DELAY = 500;
-const CACHE_TTL = 5000;
+const CACHE_TTL = 10000;
 
 const pendingRequestsMap = new Map();
 const requestCache = new Map();

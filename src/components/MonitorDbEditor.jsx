@@ -91,10 +91,7 @@ export default function MonitorDbEditor({ onCall, isOpen, onClose }) {
       title="Monitoring Database Manager"
       maxWidth="1200px"
     >
-      <div
-        className="panel-body"
-        style={{ padding: "1rem", overflowX: "auto", minHeight: "400px" }}
-      >
+      <div className="panel-body" style={{ overflowX: "auto", minHeight: "400px" }}>
         {loading && (
           <div style={{ textAlign: "center", opacity: 0.6 }}>
             Loading database...
@@ -107,29 +104,15 @@ export default function MonitorDbEditor({ onCall, isOpen, onClose }) {
         )}
 
         {data.length > 0 && (
-          <table
-            className="select-dropdown-pro"
-            style={{
-              width: "100%",
-              borderCollapse: "collapse",
-              fontSize: "11px",
-            }}
-          >
+          <table className="pro-table">
             <thead>
-              <tr
-                style={{
-                  textAlign: "left",
-                  borderBottom: "1px solid rgba(255,255,255,0.1)",
-                  opacity: 0.6,
-                }}
-              >
-                <th style={{ padding: "10px" }}>ID</th>
-                <th style={{ padding: "10px" }}>Name</th>
-                <th style={{ padding: "10px" }}>Account</th>
-                <th style={{ padding: "10px" }}>Last Notified</th>
-                <th style={{ padding: "10px" }}>Low Hash</th>
-                <th style={{ padding: "10px" }}>Zero Hash</th>
-                <th style={{ padding: "10px" }}>Actions</th>
+              <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Account</th>
+                <th style={{ minWidth: '120px' }}>Last Notified</th>
+                <th>Status</th>
+                <th style={{ minWidth: '280px' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -137,17 +120,11 @@ export default function MonitorDbEditor({ onCall, isOpen, onClose }) {
                 <tr
                   key={row.id}
                   style={{
-                    borderBottom: "1px solid rgba(255,255,255,0.05)",
-                    background:
-                      editingId === row.id
-                        ? "rgba(59, 130, 246, 0.05)"
-                        : "transparent",
+                    background: editingId === row.id ? "rgba(96, 165, 250, 0.05)" : "transparent",
                   }}
                 >
-                  <td style={{ padding: "10px", fontFamily: "monospace" }}>
-                    {row.id}
-                  </td>
-                  <td style={{ padding: "10px", fontWeight: "bold" }}>
+                  <td style={{ fontFamily: "monospace" }}>{row.id}</td>
+                  <td style={{ fontWeight: "bold" }}>
                     {editingId === row.id ? (
                       <input
                         className="input-pro"
@@ -160,8 +137,8 @@ export default function MonitorDbEditor({ onCall, isOpen, onClose }) {
                       row.name
                     )}
                   </td>
-                  <td style={{ padding: "10px" }}>{row.client}</td>
-                  <td style={{ padding: "10px" }}>
+                  <td>{row.client}</td>
+                  <td>
                     {editingId === row.id ? (
                       <input
                         type="number"
@@ -181,33 +158,21 @@ export default function MonitorDbEditor({ onCall, isOpen, onClose }) {
                       "Never"
                     )}
                   </td>
-                  <td style={{ padding: "10px" }}>
-                    <span
-                      style={{
-                        color:
-                          row.low_hashrate_start > 0 ? "#f87171" : "inherit",
-                      }}
-                    >
-                      {row.low_hashrate_start > 0 ? "⚠️ Active" : "OK"}
+                  <td>
+                    <span style={{ color: row.low_hashrate_start > 0 ? 'var(--warning-color)' : 'inherit' }}>
+                      {row.low_hashrate_start > 0 ? "⚠️ Low" : "OK"}
                     </span>
-                  </td>
-                  <td style={{ padding: "10px" }}>
-                    <span
-                      style={{
-                        color:
-                          row.zero_hashrate_start > 0 ? "#f87171" : "inherit",
-                      }}
-                    >
+                    {' / '}
+                    <span style={{ color: row.zero_hashrate_start > 0 ? 'var(--danger-color)' : 'inherit' }}>
                       {row.zero_hashrate_start > 0 ? "🚫 Zero" : "OK"}
                     </span>
                   </td>
-                  <td style={{ padding: "10px" }}>
+                  <td>
                     <div style={{ display: "flex", gap: "8px" }}>
                       {editingId === row.id ? (
                         <>
                           <button
-                            className="btn-pro secondary"
-                            style={{ color: "#34d399" }}
+                            className="btn-pro primary"
                             onClick={handleUpdate}
                           >
                             Save
@@ -229,15 +194,14 @@ export default function MonitorDbEditor({ onCall, isOpen, onClose }) {
                           </button>
                           <button
                             className="btn-pro secondary"
-                            style={{ color: "#fbbf24" }}
+                            style={{ color: "var(--warning-color)" }}
                             onClick={() => handleResetAlerts(row.id)}
                             title="Reset alert timers"
                           >
                             Reset
                           </button>
                           <button
-                            className="btn-pro secondary"
-                            style={{ color: "#f87171" }}
+                            className="btn-pro secondary" style={{ color: "var(--danger-color)" }}
                             onClick={() => handleDelete(row.id)}
                           >
                             Remove

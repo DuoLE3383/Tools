@@ -386,19 +386,21 @@ export async function mrrApiCall({ endpoint, method = 'GET', query, body, client
       'x-api-sign': signatureV2,
     });
 
-    let text;
+    let text, data;
     try {
       text = await response.text();
+      // Attempt to parse JSON, but fall back to a structured error if it fails
+      try {
+        data = text ? JSON.parse(text) : { success: false, message: 'Empty response from MRR' };
+      } catch (parseError) {
+        // Handle cases where MRR returns non-JSON error pages (e.g., Cloudflare blocks)
+        data = { success: false, message: `MRR returned non-JSON response: ${text.slice(0, 150)}...` };
+      }
     } catch (e) {
-      text = '{"success":false,"message":"Network Error"}';
-    }
-
-    let data;
-    try {
-      data = text ? JSON.parse(text) : { success: false, message: 'Empty response' };
-    } catch {
-      // Handle cases where MRR returns non-JSON error pages (Cloudflare, etc)
-      data = { success: false, message: text };
+      // This block handles network errors (like connection refused) or if the response isn't valid JSON.
+      const errorMessage = e.message.includes('fetch failed') ? 'Connection to MRR API failed. The service may be down.' : `Network or parsing error: ${e.message}`;
+      console.error(`[mrr:${clientName}] Critical fetch/parse error:`, errorMessage);
+      return { statusCode: 503, data: { success: false, message: errorMessage, error: 'ServiceUnavailable' }, clientName };
     }
 
     let authMessage = String(data?.data?.message || data?.message || '');

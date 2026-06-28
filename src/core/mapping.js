@@ -6,7 +6,6 @@ export const ALGO_DISPLAY_NAMES = {
   SHA256ASICBOOST: "SHA256AB",
   SHA256AB: "SHA256AB",
   SCRYPT: "Scrypt",
-  ETH: "DaggerHashimoto",
   DAGGERHASHIMOTO: "DaggerHashimoto",
   ETCHASH: "Etchash",
   EQUIHASH: "Equihash",
@@ -49,7 +48,6 @@ export const NICEHASH_ALGO_MAP = {
   SHA256AB: "SHA256ASICBOOST",
   SHA256ASICBOOST: "SHA256ASICBOOST",
   SCRYPT: "SCRYPT",
-  ETH: "DAGGERHASHIMOTO",
   DAGGERHASHIMOTO: "DAGGERHASHIMOTO",
   EQUIHASH: "EQUIHASH",
   ZHASH: "ZHASH",
@@ -85,7 +83,6 @@ export const MRR_ALGO_MAP = {
   SHA256AB: "SHA256ASICBOOST",
   SHA256ASICBOOST: "SHA256ASICBOOST",
   SCRYPT: "scrypt",
-  ETH: "daggerhashimoto",
   DAGGERHASHIMOTO: "ethash",
   EQUIHASH: "equihash",
   ZHASH: "zhash",
@@ -186,7 +183,6 @@ export const MRR_ALGO_UNITS = {
   SCRYPT: "GH",
   X11: "TH",
   DAGGERHASHIMOTO: "GH",
-  HASHIMOTOS: "GH",
   ETHASH: "GH",
   ETCHASH: "GH",
   KAWPOW: "GH",
@@ -249,7 +245,7 @@ export function normalizeAlgoForNiceHash(algo) {
     return "SHA256ASICBOOST";
   if (normalized.includes("SHA256")) return "SHA256";
   if (normalized.includes("SCRYPT")) return "SCRYPT";
-  if (normalized.includes("ETHASH")) return "DAGGERHASHIMOTO";
+  if (normalized.includes("DAGGERHASHIMOTO")) return "DAGGERHASHIMOTO";
   if (normalized.includes("ETCHASH")) return "ETCHASH";
   if (normalized.includes("KAWPOW")) return "KAWPOW";
   if (normalized.includes("RANDOMX")) return "RANDOMXMONERO";

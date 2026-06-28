@@ -47,7 +47,7 @@ export function registerNiceHashRoutes(app) {
   app.get("/api/v2/algos/mapping", asyncHandler(async (req, res) => {
     const { client: nhClient, clientName: nhClientName } = resolveNhClient(req.query.client);
     const nhResponse = await getNiceHashApp(nhClient).public.getAlgorithms();
-    const { data: mrrResponse, clientName } = await mrrApiCall({ endpoint: "/info/algos", method: "GET", clientNameRaw: req.query.client });
+    const { data: mrrResponse, clientName } = await mrrApiCall({ endpoint: "/market/algos", method: "GET", clientNameRaw: req.query.client });
     const nhItems = extractAlgorithmItems(nhResponse, ["miningAlgorithms", "algorithms", "data", "list", "result", "items"]);
     const mrrItems = extractAlgorithmItems(mrrResponse, ["algos", "algorithms", "data", "list", "result", "items"]).map(item => ({
       ...item,

@@ -313,7 +313,7 @@ export function registerMrrRoutes(app) {
   // ─── Account / Balance / Algos ──────────────────────────────
   app.get("/api/v2/mrr/balance", asyncHandler(async (req, res) => mrrRequest('/account/balance', req, res)));
   app.get("/api/v2/mrr/algos", asyncHandler(async (req, res) => {
-    const { statusCode, data, clientName } = await mrrApiCall({ endpoint: '/info/algos', clientNameRaw: req.query.client });
+    const { statusCode, data, clientName } = await mrrApiCall({ endpoint: '/market/algos', clientNameRaw: req.query.client });
     if (statusCode === 200 && data?.success && data.data) {
       const items = Array.isArray(data.data) ? data.data : (data.data.algos || []);
       items.forEach(a => { a.nicehashAlgo = normalizeAlgoForNiceHash(a.algo || a.name || a.slug); });

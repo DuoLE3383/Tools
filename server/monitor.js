@@ -135,7 +135,6 @@ export async function setTelegramStatus(enabled) {
 }
 
 export async function sendTelegramInternal(message) {
-  await maybeDelay('sendTelegram');
   const status = await getTelegramStatus();
   if (!status.enabled) {
     console.log('[telegram] Notifications are globally disabled');

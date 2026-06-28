@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { useWebSocket } from "../context/WebSocketContext.jsx";
 
 /**
  * A multi-currency calculator modal for BTC, ETH, LTC, DOGE, and BCH.
@@ -18,12 +19,13 @@ export function CryptoCalculatorModal({ isOpen, onClose, onCall }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [wsStatus, setWsStatus] = useState("disconnected");
-  const [wsEnabled, setWsEnabled] = useState(true);
   const [amounts, setAmounts] = useState({ bitcoin: "0.001" });
   const [baseCoin, setBaseCoin] = useState("bitcoin");
 
+  const ws = useWebSocket();
+
   const fetchPrices = useCallback(async () => {
-    setLoading(true);
+    if (!prices) setLoading(true); // Only show full loading on initial fetch
     setError(null);
     try {
       const ids = COINS.map((c) => c.id).join(",");
@@ -59,7 +61,6 @@ export function CryptoCalculatorModal({ isOpen, onClose, onCall }) {
               : `API Error: ${res.slice(0, 50)}`
             : res?.error || res?.message || "Invalid Data Shape";
 
-        if (isSystemConfig) setWsEnabled(false);
         setError(detail);
       }
     } catch (err) {
@@ -73,50 +74,26 @@ export function CryptoCalculatorModal({ isOpen, onClose, onCall }) {
   useEffect(() => {
     if (!isOpen) return;
 
+    // Initial fetch
     fetchPrices();
 
-    let socket = null;
-    let reconnectTimeout = null;
-    let retryCount = 0;
-
-    const connectWs = () => {
-      if (!wsEnabled) return;
-
-      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const token = localStorage.getItem("token");
-      const wsUrl = `${protocol}//${window.location.host}/api/v2/prices/ws${token ? `?token=${token}` : ""}`;
-
-      socket = new WebSocket(wsUrl);
-      setWsStatus("connecting");
-
-      socket.onopen = () => setWsStatus("connected");
-      socket.onmessage = (event) => {
-        try {
-          const message = JSON.parse(event.data);
-          if (message.type === "price_update" && message.data) {
-            setPrices((prev) => ({ ...prev, ...message.data }));
-          }
-        } catch (err) {}
-      };
-
-      socket.onclose = () => {
-        if (retryCount >= 3) return;
-        setWsStatus("disconnected");
-        if (retryCount < 3) {
-          reconnectTimeout = setTimeout(connectWs, 15000);
-          retryCount++;
-        }
-      };
-      socket.onerror = () => setWsStatus("error");
+    // Subscribe to WebSocket updates
+    const handleWsMessage = (message) => {
+      if (message.type === "price_update" && message.data) {
+        setPrices((prev) => ({ ...prev, ...message.data }));
+      }
     };
 
-    connectWs();
+    if (ws) {
+      ws.subscribe("CryptoCalculatorModal", handleWsMessage);
+      setWsStatus(ws.status);
+    }
 
     return () => {
-      if (socket) socket.close();
-      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      // Unsubscribe when the modal is closed
+      if (ws) ws.unsubscribe("CryptoCalculatorModal");
     };
-  }, [isOpen, fetchPrices]);
+  }, [isOpen, fetchPrices, ws]);
 
   // Polling fallback for Modal
   useEffect(() => {
