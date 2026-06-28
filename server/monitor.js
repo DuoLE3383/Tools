@@ -1004,13 +1004,12 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
 
           // Send "rented" notification if new rental (first sighting)
           const isNewToMonitor = lastNotified === 0;
-          const withinReasonableStart = startT > 0 && elapsedMs < (10 * 60 * 1000);
           const alreadyNotifiedThisRun = notifiedRentalIdsThisRun.has(String(r.id));
-          const shouldNotify = !alreadyNotifiedThisRun && isValidRental && (forceNotify || (isNewToMonitor && withinReasonableStart));
+          const shouldNotify = !alreadyNotifiedThisRun && isValidRental && (forceNotify || isNewToMonitor);
 
           if (shouldNotify) {
             notifiedRentalIdsThisRun.add(String(r.id));
-            const hbType = forceNotify ? 'MONITOR' : 'RENTING';
+            const hbType = forceNotify ? 'MONITOR' : 'NEW RENTAL';
 
             const displayRemN = Math.max(0, remainingMs);
             const remD = Math.floor(displayRemN / 86400000);
@@ -1019,7 +1018,17 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
             const remStr = displayRemN <= 0 ? 'Finished' : (remD > 0 ? `${remD}d ${remH}h` : `${remH}h ${remM}m`);
             const ads = info.niceAdvertisedHashrate || info.hashrate?.advertised?.nice || info.hashrate?.advertised || info.hashrate?.suffix || 'N/A';
 
-            const msg = TelegramTemplates.rentedNotice(hbType, r, info, acct, orderDiff, remStr, resolveRentalAlgo(r, info), ads);
+            const msg = forceNotify
+              ? TelegramTemplates.rentedNotice(hbType, r, info, acct, orderDiff, remStr, resolveRentalAlgo(r, info), ads)
+              : TelegramTemplates.newRental(
+                  acct,
+                  r,
+                  info.price?.paid || '0.00',
+                  info.startTime,
+                  info.endTime,
+                  resolveRentalAlgo(r, info),
+                  ads
+                );
 
             queueTelegramMessage(msg, {
               type: hbType,

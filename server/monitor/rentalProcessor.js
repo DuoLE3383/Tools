@@ -314,29 +314,38 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
 
     // --- New Rental Notification ---
     const isNewToMonitor = lastNotified === 0;
-    const withinReasonableStart = startT > 0 && elapsedMs < 10 * 60 * 1000;
     const alreadyNotifiedThisRun = notifiedRentalIdsThisRun.has(String(rental.id));
-    if (!alreadyNotifiedThisRun && (forceNotify || (isNewToMonitor && withinReasonableStart))) {
+    if (!alreadyNotifiedThisRun && (forceNotify || isNewToMonitor)) {
         notifiedRentalIdsThisRun.add(String(rental.id));
-        const hbType = forceNotify ? "MONITOR" : "RENTING";
+        const hbType = forceNotify ? "MONITOR" : "NEW RENTAL";
         const remD = Math.floor(remainingMs / 86400000);
         const remH = Math.floor((remainingMs % 86400000) / 3600000);
         const remM = Math.floor((remainingMs % 3600000) / 60000);
         const remStr = remainingMs <= 0 ? "Finished" : remD > 0 ? `${remD}d ${remH}h` : `${remH}h ${remM}m`;
         const rentalForNotice = { ...rental, name: liveRig?.name || rental.name || rental.id };
-        const msg = TelegramTemplates.rentedNotice(
-            hbType,
-            rentalForNotice,
-            info,
-            acct,
-            orderDiff,
-            remStr,
-            resolveRentalAlgo(rentalForNotice, info),
-            advDisplay
-        );
+        const msg = forceNotify
+            ? TelegramTemplates.rentedNotice(
+                hbType,
+                rentalForNotice,
+                info,
+                acct,
+                orderDiff,
+                remStr,
+                resolveRentalAlgo(rentalForNotice, info),
+                advDisplay
+            )
+            : TelegramTemplates.newRental(
+                acct,
+                rentalForNotice,
+                info.price?.paid || "0.00",
+                info.startTime,
+                info.endTime,
+                resolveRentalAlgo(rentalForNotice, info),
+                advDisplay
+            );
 
         sendTelegramNotification(msg, {
-            type: hbType,
+          type: hbType,
             label: `${hbType} ${acct} ${rental.id}`,
             onSuccess: async () => {
                 await dbRunAsync(`UPDATE rentals SET last_notified = ? WHERE id = ?`, [now, String(rental.id)]);
