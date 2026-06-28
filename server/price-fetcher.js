@@ -6,8 +6,8 @@ async function fetchAndStoreCoinPrices() {
   console.log('[PriceFetcher] Starting coin price update job...');
   try {
     // Fetch all known coin identifiers and create a mapping to the canonical slug
-    const cmcCoinsPromise = dbAllAsync('SELECT DISTINCT slug, symbol FROM cmc_coins WHERE slug IS NOT NULL');
-    const coingeckoCoinsPromise = dbAllAsync('SELECT DISTINCT id, symbol FROM coingecko_coins WHERE id IS NOT NULL');
+    const cmcCoinsPromise = dbAllAsync(db, 'SELECT DISTINCT slug, symbol FROM cmc_coins WHERE slug IS NOT NULL');
+    const coingeckoCoinsPromise = dbAllAsync(db, 'SELECT DISTINCT id, symbol FROM coingecko_coins WHERE id IS NOT NULL');
 
     const [cmcCoins, coingeckoCoins] = await Promise.all([cmcCoinsPromise, coingeckoCoinsPromise]);
 
@@ -36,7 +36,7 @@ async function fetchAndStoreCoinPrices() {
       throw new Error('Could not fetch BTC price to use for calculations.');
     }
 
-    const CHUNK_SIZE = 150;
+    const CHUNK_SIZE = 500;
     let allFetchedCoins = [];
 
     for (let i = 0; i < allCoinIds.length; i += CHUNK_SIZE) {

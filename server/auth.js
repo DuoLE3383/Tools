@@ -7,9 +7,29 @@ const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-for-dev-only';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '1h';
 const BCRYPT_ROUNDS = parseInt(process.env.BCRYPT_ROUNDS, 10) || 10;
 
-if (!process.env.JWT_SECRET) {
-  console.error('❌ FATAL: JWT_SECRET is not defined.');
-}
+/**
+ * Validates that all required authentication environment variables are set.
+ * This should be called once at application startup.
+ */
+export function validateAuthConfig() {
+  const required = ['ADMIN_USER', 'ADMIN_PASS'];
+  const missing = required.filter(key => !process.env[key]);
+
+  if (missing.length > 0) {
+    console.warn(`⚠️  WARNING: Missing authentication variables: ${missing.join(', ')}. Login will fail.`);
+    return false;
+  }
+
+  if (!process.env.JWT_SECRET) {
+    console.warn('⚠️  WARNING: JWT_SECRET is not set. Using a temporary, insecure secret for development.');
+  }
+
+  console.log('✅ Auth Configuration Loaded:');
+  console.log(`   - ADMIN_USER: ${process.env.ADMIN_USER}`);
+  console.log(`   - JWT_SECRET: ${process.env.JWT_SECRET ? '******** (Set)' : 'TEMPORARY'}`);
+  console.log(`   - ADMIN_PASS: ${process.env.ADMIN_PASS ? '******** (Set)' : 'MISSING'}`);
+  return true;
+};
 
 // ---------- Utility exports ----------
 export const generateToken = (payload) => {

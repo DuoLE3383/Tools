@@ -78,7 +78,7 @@ export const isAggregate = (c) => {
 };
 
 export function resolveNhClient(clientNameRaw) {
-  const clientName = isAggregate(clientNameRaw) ? AGGREGATE_CLIENT : String(clientNameRaw || 'BT').trim().toUpperCase();
+  const clientName = isAggregate(clientNameRaw) ? AGGREGATE_CLIENT : String(clientNameRaw || 'VN').trim().toUpperCase();
 
   // 1. Handle Aggregate (VN) resolution
   if (isAggregate(clientName)) {
