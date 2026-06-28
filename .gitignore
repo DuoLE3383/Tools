@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+package-lock.json
+start.js
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# OS files
+.DS_Store
+
+# Build outputs
+dist/
+*.asar
+
+# Database files
+*.db
+*.db-wal
+*.db-shm
+mrr_monitor.db*
+database.json
+database.zip
+
+# Data files
+*.csv
+*.xlsx
+orders.*
+
+# Cloudflare Workers
+wrangler.toml
+wrangler.jsonc
+.wrangler/
+worker/index.js
+
+# Vite cache
+.vite/
+node_modules/.vite/

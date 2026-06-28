@@ -1,0 +1,206 @@
+/* c:/Coding/Tools/src/components/CryptoRatePage.css */
+
+.crypto-rate-page {
+  padding: 1rem 1.25rem;
+  color: #f8fafc;
+  background: transparent;
+  font-family: sans-serif;
+  width: 100%;
+  max-width: 600px; /* Use max-width for responsiveness */
+  min-height: 500px;
+  margin: auto;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+}
+
+.crypto-rate-page .btn-back {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 10;
+  /* Assuming .btn-pro.secondary styles exist elsewhere */
+}
+
+.crypto-rate-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  padding-bottom: 1rem;
+}
+
+.crypto-rate-header-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.crypto-rate-header-title .title-text {
+  font-size: 1.3rem;
+  font-weight: 900;
+}
+
+.crypto-rate-header-title .title-text-highlight {
+  color: #60a5fa;
+}
+
+.crypto-rate-header-title .status-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.crypto-rate-header-title .status-indicator.connected {
+  background: #10b981;
+}
+
+.crypto-rate-header-title .status-indicator.disconnected {
+  background: #f59e0b;
+}
+
+.crypto-rate-header-title .status-label {
+  opacity: 0.4;
+  font-size: 0.6rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.crypto-rate-header-input-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.crypto-rate-header-input-group .usd-symbol {
+  font-size: 1rem;
+  color: #60a5fa;
+  font-weight: 700;
+}
+
+.crypto-rate-header-input-group .usd-input {
+  width: 120px;
+  background: rgba(30, 41, 59, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  padding: 4px 8px;
+  font-size: 1.3rem;
+  color: #fff;
+  font-family: monospace;
+  outline: none;
+  text-align: right;
+}
+
+.crypto-rate-header-input-group .refresh-btn {
+  background: rgba(96, 165, 250, 0.08);
+  border: 1px solid rgba(96, 165, 250, 0.1);
+  border-radius: 4px;
+  padding: 4px 10px;
+  color: #60a5fa;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: sans-serif;
+  white-space: nowrap;
+}
+
+.crypto-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.crypto-card {
+  aspect-ratio: 2 / 1;
+  background: rgba(30, 41, 59, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.03);
+  border-radius: 10px;
+  padding: 14px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  transition: all 0.2s ease;
+}
+
+.crypto-card.active {
+  background: rgba(96, 165, 250, 0.06);
+  border: 1px solid rgba(96, 165, 250, 0.15);
+}
+
+.crypto-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.crypto-card-symbol {
+  font-weight: 800;
+  color: #d660fa;
+  font-size: 0.85rem;
+}
+
+.crypto-card-change {
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.crypto-card-change.positive {
+  color: #10b981;
+}
+
+.crypto-card-change.negative {
+  color: #f87171;
+}
+
+.crypto-card-input-wrapper {
+  margin: 8px 0;
+}
+
+.crypto-card-input {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 1.2rem;
+  color: #fff;
+  font-family: monospace;
+  outline: none;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.crypto-card-price {
+  font-size: 0.75rem;
+  font-family: monospace;
+  color: rgba(255, 255, 255, 0.35);
+  text-align: center;
+}
+
+.crypto-rate-error {
+  font-size: 0.75rem;
+  color: #f87171;
+  text-align: center;
+  margin-top: 10px;
+}
+
+/* --- Responsive Adjustments --- */
+
+/* For screens smaller than 640px */
+@media (max-width: 640px) {
+  .crypto-rate-page {
+    padding: 1rem;
+  }
+
+  .crypto-rate-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .crypto-grid {
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  }
+}
