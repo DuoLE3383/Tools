@@ -141,13 +141,15 @@ export default function App() {
   const apiCache = useRef(new ApiCache());
   const authTokenRef = useRef(() => localStorage.getItem('token'));
   const [authToken, setAuthToken] = useState(() => localStorage.getItem('token'));
+  const [sessionReady, setSessionReady] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null);
   const isMounted = useRef(true);
   const backgroundIntervalRef = useRef(null);
 
   // ============================================
   // MEMOIZED SELECTORS
   // ============================================
-  const isAuthenticated = useMemo(() => !!authToken, [authToken]);
+  const isAuthenticated = useMemo(() => !!authToken && sessionReady, [authToken, sessionReady]);
 
   // ============================================
   // DEBUG LOGGING
@@ -165,12 +167,16 @@ export default function App() {
   const handleLoginSuccess = useCallback((token) => {
     localStorage.setItem('token', token);
     setAuthToken(token);
+    setCurrentUser(null);
+    setSessionReady(true);
     addDebugLog('Login successful, token stored.', 'success');
   }, [addDebugLog]);
 
   const handleLogout = useCallback(() => {
     localStorage.removeItem('token');
     setAuthToken(null);
+    setCurrentUser(null);
+    setSessionReady(true);
     apiCache.current.clear();
     apiCache.current.clearInflight();
     dispatch({ type: 'RESET_STATE' });
@@ -292,11 +298,11 @@ export default function App() {
           payload: { method, path: finalPath, status: `${res.status} ${res.statusText}`, durationMs: duration }
         });
 
-        // Handle 401 - unauthorized
-        if (res.status === 401) {
+        // Handle 401/403 - unauthorized or expired session
+        if (res.status === 401 || res.status === 403) {
           const isProxyFailure = data?.msg?.includes('Invalid Key') || data?.message?.includes('Invalid Key');
           if (!isProxyFailure) {
-            addDebugLog('Session expired (401), logging out', 'error');
+            addDebugLog(`Session expired (${res.status}), logging out`, 'error');
             handleLogout();
           }
           return { success: false, error: 'Unauthorized' };
@@ -448,6 +454,54 @@ export default function App() {
     return () => window.removeEventListener('popstate', handlePath);
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const verifyPersistedSession = async () => {
+      if (!authToken) {
+        if (!cancelled) setSessionReady(true);
+        if (!cancelled) setCurrentUser(null);
+        return;
+      }
+
+      if (!cancelled) setSessionReady(false);
+
+      try {
+        const res = await fetch('/api/v2/time', {
+          method: 'GET',
+          headers: { Authorization: `Bearer ${authToken}` },
+          credentials: 'omit',
+        });
+
+        if (!res.ok) {
+          throw new Error(`Session check failed (${res.status})`);
+        }
+
+        const profileRes = await fetch('/api/auth/profile', {
+          method: 'GET',
+          headers: { Authorization: `Bearer ${authToken}` },
+          credentials: 'omit',
+        });
+
+        if (!profileRes.ok) {
+          throw new Error(`Profile check failed (${profileRes.status})`);
+        }
+
+        const profileData = await profileRes.json().catch(() => null);
+        if (!cancelled) setSessionReady(true);
+        if (!cancelled) setCurrentUser(profileData?.user || null);
+      } catch {
+        if (!cancelled) handleLogout();
+      }
+    };
+
+    verifyPersistedSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authToken, handleLogout]);
+
   // Initial load - fetch data
   useEffect(() => {
     if (isAuthenticated) {
@@ -494,6 +548,16 @@ export default function App() {
   // ============================================
   // RENDER
   // ============================================
+
+  if (authToken && !sessionReady) {
+    return (
+      <div className="app-shell" style={{ minHeight: '100vh', display: 'grid', placeItems: 'center' }}>
+        <div className="panel" style={{ padding: '24px 32px', maxWidth: '480px', width: '100%', textAlign: 'center' }}>
+          Verifying session...
+        </div>
+      </div>
+    );
+  }
 
   // Login screen
   if (!isAuthenticated) {
@@ -545,6 +609,7 @@ export default function App() {
         dispatch={dispatch}
         callApi={callApi}
         handleLogout={handleLogout}
+        currentUser={currentUser}
         forceCheckStatus={forceCheckStatus}
         handleMiningCall={handleMiningCall}
         handleOpenMrrPools={handleOpenMrrPools}

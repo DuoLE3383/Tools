@@ -1,6 +1,10 @@
 // routes/coinGecko.js
 import { asyncHandler } from "../utils.js";
-import { getStoredCoinPriceCatalog, fetchAllCoinGeckoMarketPrices } from "../priceProvider.js";
+import {
+  getStoredCoinPriceCatalog,
+  fetchAllCoinGeckoMarketPrices,
+  fetchCoinGeckoSimplePrices,
+} from "../priceProvider.js";
 import { fetchAndStoreCoinPrices } from "../priceFetcher.js";
 
 async function getCachedCoinPrices(ids) {
@@ -25,7 +29,7 @@ async function getCachedCoinPrices(ids) {
     return filtered;
   }
 
-  const liveCatalog = await fetchAllCoinGeckoMarketPrices();
+  const liveCatalog = await fetchCoinGeckoSimplePrices(requested);
   const liveFiltered = {};
   for (const key of requested) {
     if (liveCatalog[key]) {

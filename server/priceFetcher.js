@@ -2,6 +2,7 @@
 import { db } from './db.js';
 import { getCmcPrices } from './cmcClient.js';
 import { dbAllAsync, dbRunAsync } from './mrr/db-utils.js';
+import { fetchAllCoinGeckoMarketPrices } from './priceProvider.js';
 
 // Configuration
 const PRICE_FETCH_CONFIG = {
@@ -706,12 +707,24 @@ async function fetchAndSyncPrices() {
   if (initialCoinList.length === 0) {
     throw new Error('Could not retrieve any coins to process, neither from API nor cache.');
   }
-  const allFetchedCoins = initialCoinList.filter(Boolean);
+  const initialCoinIds = initialCoinList
+    .map((coin) => coin?.id)
+    .filter(Boolean);
+  const liveCatalog = await fetchAllCoinGeckoMarketPrices(initialCoinIds);
+  const allFetchedCoins = Array.from(
+    new Map(
+      Object.values(liveCatalog)
+        .filter(Boolean)
+        .map((coin) => [String(coin.coin_id || coin.id || coin.symbol || '').toLowerCase(), coin]),
+    ).values(),
+  );
+  const merged = mergeCoinData(initialCoinList.filter(Boolean), allFetchedCoins);
   const sourceStats = {
-    coingecko: { count: allFetchedCoins.length },
+    coingecko: { count: merged.merged.length },
+    fallback: { count: Math.max(0, merged.merged.length - initialCoinList.length) },
   };
 
-  return { allFetchedCoins, failedSources: [], sourceStats };
+  return { allFetchedCoins: merged.merged, failedSources: [], sourceStats };
 }
 
 /**

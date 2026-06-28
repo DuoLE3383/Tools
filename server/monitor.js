@@ -915,7 +915,13 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
               const completionKey = `${r.id}_completion_70`;
               const lastAlert = lastAlertTimes.get(completionKey) || 0;
               if (now - lastAlert > ALERT_COOLDOWN_MS) {
-                const msg = TelegramTemplates.completionAlert(acct, r, info, efficiency, displayTarget, resolveRentalAlgo(r, info));
+                const msg = TelegramTemplates.completionAlert(
+                  acct, 
+                  r, 
+                  info, 
+                  efficiency, 
+                  displayTarget, 
+                  resolveRentalAlgo(r, info));
                 queueTelegramMessage(msg, {
                   type: 'ALMOST COMPLETE',
                   label: `Completion alert ${acct} ${r.id}`,

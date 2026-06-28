@@ -15,6 +15,17 @@ import {
 import { fetchMarketPrice } from "../../core/marketApi.js";
 export const NiceHashOrderContext = createContext();
 
+const REFRESH_TIMER_KEY = "__nicehashOrdersRefreshTimer";
+
+function clearSharedRefreshTimer() {
+  if (typeof window === "undefined") return;
+  const timer = window[REFRESH_TIMER_KEY];
+  if (timer) {
+    clearInterval(timer);
+    window[REFRESH_TIMER_KEY] = null;
+  }
+}
+
 export function NiceHashOrderProvider({ children, nhClient, callApi }) {
   // Core state
   const [nicehashOrders, setNicehashOrders] = useState([]);
@@ -204,10 +215,17 @@ export function NiceHashOrderProvider({ children, nhClient, callApi }) {
   useEffect(() => {
     if (!nhClient) return;
 
+    clearSharedRefreshTimer();
+
     const intervalId = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
       console.log("[NiceHashOrderContext] Auto-refreshing orders...");
       fetchNiceHashOrders();
     }, 60000); // 1 minute
+
+    if (typeof window !== "undefined") {
+      window[REFRESH_TIMER_KEY] = intervalId;
+    }
 
     return () => clearInterval(intervalId);
   }, [nhClient, fetchNiceHashOrders]);

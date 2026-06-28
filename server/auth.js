@@ -9,6 +9,14 @@ const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-for-dev-only';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '1h';
 const BCRYPT_ROUNDS = parseInt(process.env.BCRYPT_ROUNDS, 10) || 10;
 const AUTH_EPOCH_KEY = 'auth_epoch';
+const DEFAULT_ADMIN_ROLE = 'admin';
+const DEFAULT_USER_ROLE = 'user';
+const PUBLIC_API_PATHS = [
+  '/api/v2/time',
+  '/api/v2/prices/coingecko',
+  '/api/v2/prices/ws',
+  '/api/v2/mining-stats',
+];
 
 if (!process.env.JWT_SECRET) {
   console.error('❌ FATAL: JWT_SECRET is not defined.');
@@ -34,6 +42,16 @@ function dbGet(sql, params = []) {
   });
 }
 
+function dbAll(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    if (!db) return reject(new Error('Database not initialized'));
+    db.all(sql, params, (err, rows) => {
+      if (err) reject(err);
+      else resolve(rows);
+    });
+  });
+}
+
 function getExpiresInMs() {
   const raw = String(JWT_EXPIRES_IN).trim();
   const match = raw.match(/^(\d+)([smhd])$/i);
@@ -55,6 +73,14 @@ export async function initAuthStore() {
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
   )`);
+  await dbRun(`CREATE TABLE IF NOT EXISTS auth_users (
+    username TEXT PRIMARY KEY,
+    password_hash TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'user',
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`);
   await dbRun(`CREATE TABLE IF NOT EXISTS auth_sessions (
     username TEXT PRIMARY KEY,
     session_id TEXT NOT NULL,
@@ -66,6 +92,7 @@ export async function initAuthStore() {
     user_agent TEXT,
     ip TEXT
   )`);
+  await ensureBootstrapAdminUser();
 }
 
 async function getAuthEpoch() {
@@ -82,6 +109,87 @@ async function setAuthEpoch(value) {
      ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
     [AUTH_EPOCH_KEY, String(value)],
   );
+}
+
+function normalizeUsername(username) {
+  return String(username || '').trim();
+}
+
+function getBootstrapAdminUsername() {
+  return normalizeUsername(process.env.ADMIN_USER);
+}
+
+function getBootstrapAdminPassword() {
+  return String(process.env.ADMIN_PASS || '').trim();
+}
+
+async function ensureBootstrapAdminUser() {
+  const adminUsername = getBootstrapAdminUsername();
+  const adminPassword = getBootstrapAdminPassword();
+  if (!adminUsername || !adminPassword) return;
+
+  const existing = await dbGet(`SELECT username FROM auth_users WHERE username = ?`, [adminUsername]);
+  if (existing) return;
+
+  const passwordHash = adminPassword.startsWith('$2')
+    ? adminPassword
+    : await hashPassword(adminPassword);
+
+  const now = Date.now();
+  await dbRun(
+    `INSERT INTO auth_users (username, password_hash, role, active, created_at, updated_at)
+     VALUES (?, ?, ?, 1, ?, ?)`,
+    [adminUsername, passwordHash, DEFAULT_ADMIN_ROLE, now, now],
+  );
+  console.log(`[auth] Bootstrap admin user seeded: ${adminUsername}`);
+}
+
+async function getUserByUsername(username) {
+  await initAuthStore();
+  return dbGet(`SELECT * FROM auth_users WHERE username = ? LIMIT 1`, [normalizeUsername(username)]);
+}
+
+async function listUsers() {
+  await initAuthStore();
+  return dbAll(
+    `SELECT username, role, active, created_at, updated_at
+     FROM auth_users
+     ORDER BY role DESC, username ASC`,
+  );
+}
+
+async function createUser({ username, password, role = DEFAULT_USER_ROLE }) {
+  await initAuthStore();
+  const safeUsername = normalizeUsername(username);
+  if (!safeUsername) {
+    const err = new Error('Username is required.');
+    err.statusCode = 400;
+    throw err;
+  }
+  if (!password || String(password).length < 8) {
+    const err = new Error('Password must be at least 8 characters.');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const normalizedRole = String(role || DEFAULT_USER_ROLE).trim().toLowerCase();
+  const finalRole = normalizedRole === 'admin' ? DEFAULT_ADMIN_ROLE : DEFAULT_USER_ROLE;
+  const existing = await getUserByUsername(safeUsername);
+  if (existing) {
+    const err = new Error(`User "${safeUsername}" already exists.`);
+    err.statusCode = 409;
+    throw err;
+  }
+
+  const now = Date.now();
+  const passwordHash = await hashPassword(String(password));
+  await dbRun(
+    `INSERT INTO auth_users (username, password_hash, role, active, created_at, updated_at)
+     VALUES (?, ?, ?, 1, ?, ?)`,
+    [safeUsername, passwordHash, finalRole, now, now],
+  );
+
+  return { username: safeUsername, role: finalRole, active: 1, created_at: now, updated_at: now };
 }
 
 export async function invalidateAllSessions(reason = 'startup') {
@@ -158,6 +266,11 @@ export const verifyToken = async (token, reqMeta = {}) => {
 };
 
 export const authMiddleware = (req, res, next) => {
+  const requestPath = String(req.originalUrl || req.url || '').split('?')[0];
+  if (PUBLIC_API_PATHS.some((prefix) => requestPath === prefix || requestPath.startsWith(`${prefix}/`))) {
+    return next();
+  }
+
   let token = '';
   const authHeader = req.headers?.authorization;
 
@@ -189,7 +302,14 @@ export const authMiddleware = (req, res, next) => {
     })
     .catch(() => {
       return res.status(403).json({ success: false, error: 'Invalid or expired token.' });
-    });
+  });
+};
+
+export const requireAdmin = (req, res, next) => {
+  if (req.user?.role !== DEFAULT_ADMIN_ROLE) {
+    return res.status(403).json({ success: false, error: 'Admin access required.' });
+  }
+  next();
 };
 
 export const hashPassword = async (plain) => bcrypt.hash(plain, BCRYPT_ROUNDS);
@@ -197,6 +317,12 @@ export const verifyPassword = async (plain, hash) => bcrypt.compare(plain, hash)
 
 async function issueTokenForUser(username, req) {
   await initAuthStore();
+  const user = await getUserByUsername(username);
+  if (!user) {
+    const err = new Error(`User "${username}" not found.`);
+    err.statusCode = 401;
+    throw err;
+  }
   const sessionId = randomUUID();
   const jti = randomUUID();
   const epoch = await getAuthEpoch();
@@ -211,7 +337,7 @@ async function issueTokenForUser(username, req) {
     ip: req?.ip,
   });
 
-  return generateToken({ username, sid: sessionId, jti, epoch });
+  return generateToken({ username, sid: sessionId, jti, epoch, role: user.role || DEFAULT_USER_ROLE });
 }
 
 // ---------- Default Router (mountable) ----------
@@ -227,31 +353,17 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Username and password required.' });
     }
 
-    const expectedUser = process.env.ADMIN_USER;
-    const adminPass = process.env.ADMIN_PASS;
-
-    if (!expectedUser || !adminPass) {
-      console.error('❌ Login Failed: ADMIN_USER or ADMIN_PASS is undefined in process.env');
-      return res.status(500).json({ success: false, error: 'Server configuration error: Authentication credentials are not set.' });
-    }
-
-    if (username !== expectedUser) {
+    const user = await getUserByUsername(username);
+    if (!user || Number(user.active) !== 1) {
       return res.status(401).json({ success: false, error: 'Invalid credentials.' });
     }
 
-    // Support both plain text and bcrypt hashes for convenience
-    let isValid = false;
-    if (adminPass.startsWith('$2')) {
-      isValid = await verifyPassword(password, adminPass);
-    } else {
-      isValid = (password === adminPass);
-    }
-
+    const isValid = await verifyPassword(password, user.password_hash);
     if (!isValid) {
       return res.status(401).json({ success: false, error: 'Invalid credentials.' });
     }
 
-    const token = await issueTokenForUser(username, req);
+    const token = await issueTokenForUser(user.username, req);
     res.json({ success: true, token });
   } catch (error) {
     console.error('❌ Login Error:', error);
@@ -272,8 +384,47 @@ router.post('/logout', authMiddleware, async (req, res) => {
 });
 
 // Example protected route â€“ you can also mount it separately
-router.get('/profile', (req, res) => {
+router.get('/profile', authMiddleware, (req, res) => {
   res.json({ user: req.user });
+});
+
+router.get('/users', authMiddleware, requireAdmin, async (req, res) => {
+  try {
+    const users = await listUsers();
+    res.json({ success: true, users });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message || 'Failed to list users.' });
+  }
+});
+
+router.post('/users', authMiddleware, requireAdmin, async (req, res) => {
+  try {
+    const created = await createUser(req.body || {});
+    res.status(201).json({ success: true, user: created });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ success: false, error: error.message || 'Failed to create user.' });
+  }
+});
+
+router.put('/users/:username/disable', authMiddleware, requireAdmin, async (req, res) => {
+  try {
+    const username = normalizeUsername(req.params.username);
+    if (!username) {
+      return res.status(400).json({ success: false, error: 'Username is required.' });
+    }
+    await initAuthStore();
+    const result = await dbRun(
+      `UPDATE auth_users SET active = 0, updated_at = ? WHERE username = ?`,
+      [Date.now(), username],
+    );
+    if (!result.changes) {
+      return res.status(404).json({ success: false, error: `User "${username}" not found.` });
+    }
+    await dbRun(`UPDATE auth_sessions SET active = 0 WHERE username = ?`, [username]);
+    res.json({ success: true, username });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ success: false, error: error.message || 'Failed to disable user.' });
+  }
 });
 
 // Export the router as default

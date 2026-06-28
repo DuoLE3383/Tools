@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import Pools from "./Pools";
 import Modal from "./Modal";
 import NiceHash from "./nicehash/NiceHash";
@@ -10,6 +11,7 @@ export default function Dashboard({
   dispatch,
   callApi,
   handleLogout,
+  currentUser,
   forceCheckStatus,
   handleMiningCall,
   handleOpenMrrPools,
@@ -17,6 +19,130 @@ export default function Dashboard({
   setNhPoolClient,
   setMrrClient,
 }) {
+  const isAdmin = String(currentUser?.role || "").toLowerCase() === "admin";
+  const [usersModalOpen, setUsersModalOpen] = useState(false);
+  const [users, setUsers] = useState([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [usersError, setUsersError] = useState("");
+  const [newUser, setNewUser] = useState({
+    username: "",
+    password: "",
+    role: "user",
+  });
+
+  useEffect(() => {
+    if (!usersModalOpen) return;
+
+    let cancelled = false;
+    const loadUsers = async () => {
+      setUsersLoading(true);
+      setUsersError("");
+      try {
+        const result = await callApi("/api/auth/users", { silent: true });
+        if (cancelled) return;
+        if (result?.success && Array.isArray(result.users)) {
+          setUsers(result.users);
+        } else {
+          setUsersError(result?.error || result?.message || "Failed to load users.");
+        }
+      } catch (error) {
+        if (!cancelled) setUsersError(error.message || String(error));
+      } finally {
+        if (!cancelled) setUsersLoading(false);
+      }
+    };
+
+    loadUsers();
+    return () => {
+      cancelled = true;
+    };
+  }, [usersModalOpen, callApi]);
+
+  useEffect(() => {
+    if (!isAdmin && usersModalOpen) {
+      setUsersModalOpen(false);
+    }
+  }, [isAdmin, usersModalOpen]);
+
+  const handleCreateUser = async (e) => {
+    e.preventDefault();
+    setUsersLoading(true);
+    setUsersError("");
+    try {
+      const payload = {
+        username: newUser.username.trim(),
+        password: newUser.password,
+        role: newUser.role,
+      };
+      const result = await callApi("/api/auth/users", {
+        method: "POST",
+        body: payload,
+        showModal: true,
+      });
+      if (result?.success) {
+        setNewUser({ username: "", password: "", role: "user" });
+        const refresh = await callApi("/api/auth/users", { silent: true });
+        if (refresh?.success && Array.isArray(refresh.users)) {
+          setUsers(refresh.users);
+        }
+      } else {
+        setUsersError(result?.error || result?.message || "Failed to create user.");
+      }
+    } catch (error) {
+      setUsersError(error.message || String(error));
+    } finally {
+      setUsersLoading(false);
+    }
+  };
+
+  const handleDisableUser = async (username) => {
+    if (!window.confirm(`Disable user "${username}"?`)) return;
+    setUsersLoading(true);
+    setUsersError("");
+    try {
+      const result = await callApi(`/api/auth/users/${encodeURIComponent(username)}/disable`, {
+        method: "PUT",
+        showModal: true,
+      });
+      if (result?.success) {
+        setUsers((prev) =>
+          prev.map((user) =>
+            user.username === username ? { ...user, active: 0 } : user,
+          ),
+        );
+      } else {
+        setUsersError(result?.error || result?.message || "Failed to disable user.");
+      }
+    } catch (error) {
+      setUsersError(error.message || String(error));
+    } finally {
+      setUsersLoading(false);
+    }
+  };
+
+  const navigateTo = (path) => {
+    window.history.pushState({}, "", path);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    dispatch({
+      type: "SET_VIEW",
+      payload: path === "/cryptorate" ? "cryptorate" : path === "/mining" ? "mining" : "dashboard",
+    });
+  };
+
+  const handleNavClick = (path) => (event) => {
+    if (
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey
+    ) {
+      return;
+    }
+    event.preventDefault();
+    navigateTo(path);
+  };
+
   return (
     <div
       className="app-shell dashboard-shell"
@@ -52,9 +178,29 @@ export default function Dashboard({
                 flexWrap: "wrap",
               }}
             >
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "2px",
+                  marginRight: "10px",
+                  minWidth: "160px",
+                  justifyContent: "center",
+                }}
+              >
+                <span style={{ fontSize: "11px", opacity: 0.55 }}>Logged in as</span>
+                <span style={{ fontSize: "13px", fontWeight: 700 }}>
+                  {currentUser?.username || "Unknown user"}
+                </span>
+                <span style={{ fontSize: "11px", opacity: 0.7, textTransform: "uppercase" }}>
+                  {currentUser?.role || "unknown"}
+                </span>
+              </div>
               <button
                 className="btn-pro secondary"
-                onClick={forceCheckStatus}
+                onClick={() => {
+                  forceCheckStatus();
+                }}
                 style={{ fontSize: "10px" }}
               >
                 Force Check
@@ -75,6 +221,19 @@ export default function Dashboard({
               >
                 Logout
               </button>
+              {isAdmin && (
+                <button
+                  className="btn-pro secondary"
+                  onClick={() => setUsersModalOpen(true)}
+                  style={{ fontSize: "10px" }}
+                >
+                  Users
+                </button>
+              )}
+
+
+
+              {/* Calculator - Modal */}
               <button
                 className="btn-pro secondary"
                 onClick={() =>
@@ -84,26 +243,40 @@ export default function Dashboard({
               >
                 Calculator
               </button>
-              <button
+
+              {/* Live Rates */}
+              <a
+                href="/cryptorate"
                 className="btn-pro secondary"
-                onClick={() => {
-                  window.history.pushState({}, "", "/cryptorate");
-                  dispatch({ type: "SET_VIEW", payload: "cryptorate" });
+                onClick={handleNavClick("/cryptorate")}
+                style={{
+                  fontSize: "10px",
+                  textAlign: "center",
+                  textDecoration: "none",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
                 }}
-                style={{ fontSize: "10px" }}
               >
                 Live Rates
-              </button>
-              <button
+              </a>
+
+              {/* Mining */}
+              <a
+                href="/mining"
                 className="btn-pro secondary"
-                onClick={() => {
-                  window.history.pushState({}, "", "/mining");
-                  window.dispatchEvent(new PopStateEvent("popstate"));
+                onClick={handleNavClick("/mining")}
+                style={{
+                  fontSize: "10px",
+                  textAlign: "center",
+                  textDecoration: "none",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
                 }}
-                style={{ fontSize: "10px" }}
               >
                 Mining
-              </button>
+              </a>
             </div>
           </div>
         </div>
@@ -190,15 +363,19 @@ export default function Dashboard({
                 >
                   Open Calculator
                 </button>
-                <button
+                <a
+                  href="/cryptorate"
                   className="btn-pro secondary"
-                  onClick={() => {
-                    window.history.pushState({}, "", "/cryptorate");
-                    dispatch({ type: "SET_VIEW", payload: "cryptorate" });
+                  onClick={handleNavClick("/cryptorate")}
+                  style={{
+                    textDecoration: "none",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
                   }}
                 >
                   Live Rates
-                </button>
+                </a>
               </div>
             </div>
 
@@ -219,6 +396,116 @@ export default function Dashboard({
       </main>
 
       {/* MODALS */}
+      {isAdmin && (
+        <Modal
+          isOpen={usersModalOpen}
+          onClose={() => setUsersModalOpen(false)}
+          title="User Management"
+          maxWidth="900px"
+        >
+          <div style={{ display: "grid", gap: "18px" }}>
+            <form
+              onSubmit={handleCreateUser}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr 160px auto",
+                gap: "10px",
+                alignItems: "end",
+              }}
+            >
+              <div>
+                <label className="label-pro">Username</label>
+                <input
+                  className="select-pro"
+                  value={newUser.username}
+                  onChange={(e) =>
+                    setNewUser((prev) => ({ ...prev, username: e.target.value }))
+                  }
+                  autoComplete="off"
+                  required
+                />
+              </div>
+              <div>
+                <label className="label-pro">Password</label>
+                <input
+                  type="password"
+                  className="select-pro"
+                  value={newUser.password}
+                  onChange={(e) =>
+                    setNewUser((prev) => ({ ...prev, password: e.target.value }))
+                  }
+                  minLength={8}
+                  required
+                />
+              </div>
+              <div>
+                <label className="label-pro">Role</label>
+                <select
+                  className="select-pro"
+                  value={newUser.role}
+                  onChange={(e) =>
+                    setNewUser((prev) => ({ ...prev, role: e.target.value }))
+                  }
+                >
+                  <option value="user">User</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+              <button className="btn-pro primary" type="submit" disabled={usersLoading}>
+                {usersLoading ? "Saving..." : "Add User"}
+              </button>
+            </form>
+
+            {usersError && (
+              <div style={{ color: "#f87171", fontSize: "13px" }}>{usersError}</div>
+            )}
+
+            <div style={{ maxHeight: "50vh", overflow: "auto" }}>
+              <table className="pro-table">
+                <thead>
+                  <tr>
+                    <th>USERNAME</th>
+                    <th>ROLE</th>
+                    <th>STATUS</th>
+                    <th>UPDATED</th>
+                    <th style={{ textAlign: "right" }}>ACTIONS</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {usersLoading && users.length === 0 ? (
+                    <tr>
+                      <td colSpan="5">Loading users...</td>
+                    </tr>
+                  ) : users.length === 0 ? (
+                    <tr>
+                      <td colSpan="5">No users found.</td>
+                    </tr>
+                  ) : (
+                    users.map((user) => (
+                      <tr key={user.username}>
+                        <td>{user.username}</td>
+                        <td>{user.role}</td>
+                        <td>{Number(user.active) === 1 ? "Active" : "Disabled"}</td>
+                        <td>{user.updated_at ? new Date(Number(user.updated_at)).toLocaleString() : "-"}</td>
+                        <td style={{ textAlign: "right" }}>
+                          <button
+                            className="btn-pro secondary"
+                            onClick={() => handleDisableUser(user.username)}
+                            disabled={Number(user.active) !== 1 || usersLoading}
+                          >
+                            Disable
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </Modal>
+      )}
+
       <Modal
         isOpen={state.responseModalOpen}
         onClose={() =>

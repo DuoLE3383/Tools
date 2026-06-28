@@ -29,6 +29,11 @@ export function createApiClient({ onState, onAuthError } = {}) {
     const apiBase = "";
 
     const headers = { ...fetchOptions.headers };
+    const storedToken = typeof localStorage !== "undefined" ? localStorage.getItem("token") : "";
+    const isLoginRoute = String(path || "").startsWith("/api/auth/login");
+    if (storedToken && !headers.Authorization && !headers.authorization && !isLoginRoute) {
+      headers.Authorization = `Bearer ${storedToken}`;
+    }
     let body = fetchOptions.body;
     if (body && typeof body === "object" && !(body instanceof FormData)) {
       body = JSON.stringify(body);

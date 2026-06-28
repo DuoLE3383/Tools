@@ -139,7 +139,13 @@ export const TelegramTemplates = {
     );
   },
 
-  completionAlert: (acct, r, info, efficiency, target, algo) => {
+  completionAlert: (
+    acct,
+    r,
+    info, 
+    efficiency, 
+    target, 
+    algo) => {
     return (
       `🏁 <b>[ALMOST COMPLETE]</b>\n` +
       `<b>Algo:</b> <code>${escapeHtml(algo)}</code>\n` +
@@ -157,6 +163,7 @@ export const TelegramTemplates = {
     r,
     info = { price: {} },
     efficiency,
+    adv,
     avg,
     suffix,
     algo,

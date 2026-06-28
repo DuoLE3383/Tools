@@ -7,6 +7,46 @@ import { getAlgorithmUnit } from "../../src/core/mapping.js";
 import { saveToDatabase } from "./_helpers.js"; // see below
 
 export function registerNiceHashRoutes(app) {
+  const getStoredPoolClient = (poolId) => new Promise((resolve) => {
+    db.get(
+      `SELECT nhClient FROM nh_pools WHERE id = ? ORDER BY last_updated DESC LIMIT 1`,
+      [String(poolId || "")],
+      (err, row) => resolve(err ? null : (row?.nhClient || null)),
+    );
+  });
+
+  const getPoolDetailsAcrossAccounts = async (poolId, preferredClientParam) => {
+    const attempted = new Set();
+    const candidates = [];
+    const preferred = String(preferredClientParam || "BT").toUpperCase();
+    const storedClient = await getStoredPoolClient(poolId);
+
+    if (preferred) candidates.push(preferred);
+    if (storedClient) candidates.push(String(storedClient).toUpperCase());
+
+    for (const acct of Object.keys(nhConfigs)) {
+      const { clientName } = resolveNhClient(acct);
+      if (clientName) candidates.push(clientName);
+    }
+
+    for (const clientName of candidates) {
+      if (attempted.has(clientName)) continue;
+      attempted.add(clientName);
+
+      const { client } = resolveNhClient(clientName);
+      if (!client) continue;
+
+      try {
+        const data = await getNiceHashApp(client).pools.getPoolDetails(poolId);
+        if (data && !data.error) {
+          return { ok: true, data, clientName };
+        }
+      } catch {}
+    }
+
+    return { ok: false };
+  };
+
   // Middleware for NiceHash client resolution
   app.use("/api/v2", (req, res, next) => {
     if (req.path.startsWith("/mrr/") || req.path === "/algos/mapping" || req.path === "/extracted-pools") return next();
@@ -332,7 +372,10 @@ export function registerNiceHashRoutes(app) {
         stmt.finalize();
       });
     }
-    res.json(data);
+    res.json({
+      ...data,
+      list: pools.map(p => ({ ...p, nhClient: p.nhClient || clientName })),
+    });
   }));
   app.get("/api/v2/pool/:poolId", asyncHandler(async (req, res) => {
     const clientParam = String(req.query.client || "BT").toUpperCase();
@@ -349,7 +392,15 @@ export function registerNiceHashRoutes(app) {
         } catch {}
       }
     }
-    res.json(await req.nhApp.pools.getPoolDetails(req.params.poolId));
+    const currentClientName = res.get("X-NH-Client") || clientParam;
+    const result = await getPoolDetailsAcrossAccounts(req.params.poolId, currentClientName);
+    if (result.ok) {
+      res.set("X-NH-Client", result.clientName);
+      return res.json(result.data);
+    }
+    return res.status(400).json({
+      error: `Unable to fetch pool ${req.params.poolId} for client ${clientParam}.`,
+    });
   }));
   app.post("/api/v2/pool", asyncHandler(async (req, res) => res.json(await req.nhApp.pools.createPool(req.body))));
   app.post("/api/v2/pools/verify", asyncHandler(async (req, res) => res.json(await req.nhApp.pools.verifyPool(req.body))));

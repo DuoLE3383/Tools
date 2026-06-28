@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import Modal from "./Modal"; // Import the new Modal component
-import { poolHelpers as ph, poolApi, apiFetch } from "../core/poolUtils";
+import {
+  poolHelpers as ph,
+  poolApi,
+  apiFetch,
+  sanitizeNhClientTag,
+} from "../core/poolUtils";
 import { getAlgoDisplayName } from "../core/mapping";
 
 export default function Pools({
@@ -95,7 +100,7 @@ export default function Pools({
       if (result.ok && Array.isArray(result.data)) {
         const mapped = result.data.map((p) => {
           // Re-map handles to ensure they target correct NiceHash accounts (BT, PH, LN, NHATLINH)
-          let nhHandle = p.nhClient || p.client || "BT";
+          let nhHandle = sanitizeNhClientTag(p.nhClient || p.client, nhClient);
           const u = String(p.username || "").toLowerCase();
           if (u.includes("solomining")) nhHandle = "PH";
           else if (u.includes("luckymining")) nhHandle = "NHATLINH";
@@ -291,7 +296,7 @@ export default function Pools({
 
     setDetailsLoading(true);
     try {
-      const targetClient = pool.client || pool.nhClient || nhClient;
+      const targetClient = sanitizeNhClientTag(pool.nhClient || pool.client, nhClient);
       const result = await poolApi.get(poolId, targetClient);
 
       if (!result.ok) {
@@ -329,7 +334,7 @@ export default function Pools({
       const poolId = ph.getId(selected);
       if (poolId) {
         try {
-          const targetClient = selected.client || selected.nhClient || nhClient;
+          const targetClient = sanitizeNhClientTag(selected.nhClient || selected.client, nhClient);
           const details = (await poolApi.get(poolId, targetClient)).data;
           const fullPayload = ph.buildVerifyBody(details);
           return await performVerification(fullPayload, details);
@@ -348,8 +353,10 @@ export default function Pools({
 
   async function performVerification(payload, poolDetails) {
     try {
-      const targetClient =
-        poolDetails.client || poolDetails.nhClient || nhClient;
+      const targetClient = sanitizeNhClientTag(
+        poolDetails.nhClient || poolDetails.client,
+        nhClient,
+      );
       let result = await poolApi.verify(payload, targetClient); // Pass nhClient
 
       if (result.status === 429) {
@@ -401,11 +408,10 @@ export default function Pools({
     }
 
     try {
-      const targetClient =
-        overrideClient ||
-        poolDetails.client ||
-        poolDetails.nhClient ||
-        nhClient;
+      const targetClient = sanitizeNhClientTag(
+        overrideClient || poolDetails.nhClient || poolDetails.client,
+        nhClient,
+      );
       let result;
       if (useBrowser) {
         // Gọi endpoint Chromedriver mới
@@ -479,7 +485,7 @@ export default function Pools({
         const poolAlgo = ph.getAlgo(pool);
         const nameAlgoKey = `${poolName}|${poolAlgo}`;
         const key = ph.getKey(pool, i);
-        const poolClient = pool.client || pool.nhClient || nhClient;
+        const poolClient = sanitizeNhClientTag(pool.nhClient || pool.client, nhClient);
 
         let skipReason = "";
         if (pool.name?.toLowerCase() === "active")
@@ -1500,14 +1506,14 @@ export default function Pools({
                     {getAlgoDisplayName(ph.getAlgo(pool))}
                   </code>
                   {(pool.client || pool.nhClient) && (
-                    <span
+                  <span
                       style={{
                         fontSize: "9px",
                         color: "#10b981",
                         marginTop: "2px",
                       }}
                     >
-                      Account: {pool.client || pool.nhClient}
+                      Account: {sanitizeNhClientTag(pool.client || pool.nhClient, nhClient)}
                     </span>
                   )}
                 </div>
@@ -1576,7 +1582,7 @@ export default function Pools({
                           borderRadius: "4px",
                         }}
                       >
-                        {pool.client || pool.nhClient || nhClient}
+                        {sanitizeNhClientTag(pool.client || pool.nhClient || nhClient, nhClient)}
                       </span>
                     </td>
                     <td style={{ textAlign: "right" }}>

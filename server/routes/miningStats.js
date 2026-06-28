@@ -29,7 +29,7 @@ export function registerMiningStatsRoutes(app) {
       if (!json?.success || !json?.result) throw new Error("Mining-Dutch API returned invalid data");
       const coinStats = Object.entries(json.result).map(([algorithm, data]) => ({
         algorithm,
-        coin: algorithm.toUpperCase(),
+        coin: "",
         btcPerDay: Number.isFinite(parseFloat(data.expected || data.average || 0)) ? parseFloat(data.expected || data.average || 0) : 0,
         usdPerDay: 0,
         miners: 0,
@@ -66,7 +66,7 @@ export function registerMiningStatsRoutes(app) {
           if (!json?.success || !json?.result) throw new Error("Invalid data");
           const coinStats = Object.entries(json.result).map(([algorithm, data]) => ({
             algorithm,
-            coin: algorithm.toUpperCase(),
+            coin: "",
             btcPerDay: Number.isFinite(parseFloat(data.expected || data.average || 0)) ? parseFloat(data.expected || data.average || 0) : 0,
             usdPerDay: 0,
             miners: 0,

@@ -1,6 +1,14 @@
 import * as XLSX from "xlsx";
 
 const DEFAULT_VERIFICATION_LOCATION = "ANY";
+const KNOWN_NH_CLIENTS = new Set(["BT", "PH", "LN", "NHATLINH", "VN", "ALL"]);
+
+export function sanitizeNhClientTag(value, fallback = "BT") {
+  const candidate = String(value || "").trim().toUpperCase();
+  if (KNOWN_NH_CLIENTS.has(candidate)) return candidate;
+  const safeFallback = String(fallback || "BT").trim().toUpperCase();
+  return KNOWN_NH_CLIENTS.has(safeFallback) ? safeFallback : "BT";
+}
 
 /** Safely extracts an array from various MRR API response shapes */
 export function extractArray(
@@ -50,7 +58,23 @@ const LOCATION_MAP = {
  * Shared API wrapper
  */
 export async function apiFetch(path, options = {}) {
-  const res = await fetch(path, options);
+  const headers = { ...(options.headers || {}) };
+  const storedToken =
+    typeof localStorage !== "undefined" ? localStorage.getItem("token") : "";
+
+  if (
+    storedToken &&
+    !headers.Authorization &&
+    !headers.authorization &&
+    !String(path || "").startsWith("/api/auth/")
+  ) {
+    headers.Authorization = `Bearer ${storedToken}`;
+  }
+
+  const res = await fetch(path, {
+    ...options,
+    headers,
+  });
   const contentType = res.headers.get("content-type") || "";
   const data = contentType.includes("application/json")
     ? await res.json()
@@ -94,6 +118,14 @@ export const poolHelpers = {
         typeof item === "object" && !Array.isArray(item)
           ? { ...item }
           : { value: item };
+      const normalizedClient = sanitizeNhClientTag(
+        obj.nhClient ?? obj.client,
+        obj.nhClient ?? obj.client ?? "BT",
+      );
+      obj.nhClient = normalizedClient;
+      if (obj.client !== undefined) {
+        obj.client = sanitizeNhClientTag(obj.client, normalizedClient);
+      }
       if (!obj.id && !obj.poolId && !obj.name)
         obj.__generatedId = `gen-${index}`;
       return obj;
