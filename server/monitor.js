@@ -8,6 +8,10 @@ import { getBtcPriceData } from '../src/core/priceUtils.js';
 
 const getAlgoDisplayName = (code) => {
   if (!code) return 'N/A';
+  const normalized = normalizeAlgoForNiceHash(code);
+  if (normalized && normalized !== 'UNKNOWN') {
+    return ALGO_DISPLAY_NAMES[normalized] || normalized;
+  }
   const uc = String(code).toUpperCase();
   return ALGO_DISPLAY_NAMES[uc] || code;
 };

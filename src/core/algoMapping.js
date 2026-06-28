@@ -59,7 +59,12 @@ export const algoMap = {
  */
 export function normalizeAlgoForNiceHash(algo) {
   if (!algo) return '';
-  const cleanAlgo = String(algo).toUpperCase().trim().replace(/\s*\(.*\)/g, '').replace(/[^A-Z0-9]/g, '');
+  const source =
+    typeof algo === 'object'
+      ? algo.algorithm || algo.algo || algo.name || algo.type || algo.displayName || algo.enumName || algo.value || algo.id || ''
+      : algo;
+  const cleanAlgo = String(source).toUpperCase().trim().replace(/\s*\(.*\)/g, '').replace(/[^A-Z0-9]/g, '');
+  if (cleanAlgo.includes('HASHIMOTOS') || cleanAlgo.includes('HASHIMOTO')) return 'DAGGERHASHIMOTO';
   return algoMap[cleanAlgo] || cleanAlgo;
 }
 
@@ -68,8 +73,12 @@ export function normalizeAlgoForNiceHash(algo) {
  */
 export function mapNiceHashToMRR(algo) {
   if (!algo) return '';
-  const entry = Object.entries(algoMap).find(([mrr, nh]) => nh === algo.toUpperCase());
-  return entry ? entry[0] : algo.toUpperCase();
+  const source =
+    typeof algo === 'object'
+      ? algo.algorithm || algo.algo || algo.name || algo.type || algo.displayName || algo.enumName || algo.value || algo.id || ''
+      : algo;
+  const entry = Object.entries(algoMap).find(([mrr, nh]) => nh === String(source).toUpperCase());
+  return entry ? entry[0] : String(source).toUpperCase();
 }
 
 /**

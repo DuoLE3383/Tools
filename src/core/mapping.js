@@ -225,14 +225,46 @@ export const PROFITABILITY_TIERS = {
   LOW: { min: 0, emoji: "📊", color: "#0099ff" }
 };
 
+function extractAlgoText(algo) {
+  if (!algo) return "";
+  if (typeof algo === "string" || typeof algo === "number") return String(algo);
+  if (typeof algo !== "object") return String(algo);
+
+  const candidates = [
+    algo.algo,
+    algo.algorithm,
+    algo.name,
+    algo.type,
+    algo.displayName,
+    algo.enumName,
+    algo.value,
+    algo.id,
+    algo.raw,
+  ];
+
+  for (const candidate of candidates) {
+    if (candidate === undefined || candidate === null) continue;
+    if (typeof candidate === "object") {
+      const nested = extractAlgoText(candidate);
+      if (nested) return nested;
+      continue;
+    }
+    const text = String(candidate).trim();
+    if (text) return text;
+  }
+
+  return String(algo).trim();
+}
+
 /**
  * Normalize algorithm name for NiceHash API
  * @param {string} algo - Raw algorithm name
  * @returns {string} Normalized algorithm name or "UNKNOWN"
  */
 export function normalizeAlgoForNiceHash(algo) {
-  if (!algo) return "UNKNOWN";
-  const normalized = String(algo).toUpperCase().trim();
+  const extracted = extractAlgoText(algo);
+  if (!extracted) return "UNKNOWN";
+  const normalized = extracted.toUpperCase().trim();
 
   // Direct mapping
   if (NICEHASH_ALGO_MAP[normalized]) {
@@ -244,7 +276,11 @@ export function normalizeAlgoForNiceHash(algo) {
     return "SHA256ASICBOOST";
   if (normalized.includes("SHA256")) return "SHA256";
   if (normalized.includes("SCRYPT")) return "SCRYPT";
+  if (normalized.includes("HASHIMOTOS")) return "DAGGERHASHIMOTO";
+  if (normalized.includes("HASHIMOTO")) return "DAGGERHASHIMOTO";
   if (normalized.includes("DAGGERHASHIMOTO")) return "DAGGERHASHIMOTO";
+  if (normalized.includes("DAGGER HASHIMOTO")) return "DAGGERHASHIMOTO";
+  if (normalized.includes("DAGGER-HASHIMOTO")) return "DAGGERHASHIMOTO";
   if (normalized.includes("ETCHASH")) return "ETCHASH";
   if (normalized.includes("KAWPOW")) return "KAWPOW";
   if (normalized.includes("RANDOMX")) return "RANDOMXMONERO";
@@ -273,7 +309,7 @@ export function normalizeAlgoForNiceHash(algo) {
  */
 export function mapNiceHashToMRR(nicehashAlgo) {
   if (!nicehashAlgo) return "unknown";
-  const normalized = String(nicehashAlgo).toUpperCase().trim();
+  const normalized = extractAlgoText(nicehashAlgo).toUpperCase().trim();
   return MRR_ALGO_MAP[normalized] || normalized.toLowerCase();
 }
 
@@ -284,7 +320,7 @@ export function mapNiceHashToMRR(nicehashAlgo) {
  */
 export function mapMRRToNiceHash(mrrAlgo) {
   if (!mrrAlgo) return "unknown";
-  const normalized = String(mrrAlgo).toLowerCase().trim();
+  const normalized = extractAlgoText(mrrAlgo).toLowerCase().trim();
   for (const [niceHash, mrr] of Object.entries(MRR_ALGO_MAP)) {
     if (mrr === normalized) return niceHash;
   }
@@ -298,7 +334,7 @@ export function mapMRRToNiceHash(mrrAlgo) {
  */
 export function getAlgorithmUnit(algo) {
   if (!algo) return "H/s";
-  const normalized = String(algo).toUpperCase().trim();
+  const normalized = extractAlgoText(algo).toUpperCase().trim();
   return ALGO_UNITS[normalized] || "H/s";
 }
 
@@ -309,7 +345,7 @@ export function getAlgorithmUnit(algo) {
  */
 export function getMrrAlgorithmUnit(algo) {
   if (!algo) return "TH";
-  const normalized = String(algo).toUpperCase().trim();
+  const normalized = extractAlgoText(algo).toUpperCase().trim();
   const niceHashAlgo = normalizeAlgoForNiceHash(normalized);
   return MRR_ALGO_UNITS[normalized] || MRR_ALGO_UNITS[niceHashAlgo] || "TH";
   
@@ -324,8 +360,9 @@ export const getAlgoDisplayName = (algo) => getAlgorithmDisplayName(algo);
 
 export function getAlgorithmDisplayName(algo) {
   if (!algo) return "Unknown";
-  const normalized = String(algo).toUpperCase().trim();
-  return ALGO_DISPLAY_NAMES[normalized] || algo;
+  const source = extractAlgoText(algo);
+  const normalized = source.toUpperCase().trim();
+  return ALGO_DISPLAY_NAMES[normalized] || source || "Unknown";
 }
 
 /**
@@ -457,7 +494,7 @@ function getUnitMultiplier(unit) {
  */
 export function isAsicBoost(algo) {
   if (!algo) return false;
-  const normalized = String(algo).toUpperCase().trim();
+  const normalized = extractAlgoText(algo).toUpperCase().trim();
   return normalized === "SHA256ASICBOOST" || 
          normalized === "SHA256AB" ||
          normalized.includes("ASICBOOST");
@@ -471,7 +508,7 @@ export function isAsicBoost(algo) {
  */
 export function getMrrAlgoKey(algo) {
   if (!algo) return "sha256";
-  const normalized = String(algo).toUpperCase().trim();
+  const normalized = normalizeAlgoForNiceHash(algo);
   
   // If it's AsicBoost, use sha256ab
   if (isAsicBoost(normalized)) {
