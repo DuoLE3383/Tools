@@ -222,7 +222,7 @@ export default function App() {
     // Deduplicate inflight requests (GET only)
     if (method === 'GET') {
       const inflight = apiCache.current.getInflight(cacheKey);
-      if (inflight) {
+      if (inflight && !background) { // Allow background refreshes to proceed
         addDebugLog(`Deduplicating: ${path}`, 'api');
         return inflight;
       }
@@ -253,19 +253,20 @@ export default function App() {
       if (qs) finalPath += (finalPath.includes('?') ? '&' : '?') + qs;
     }
 
-    addDebugLog(`API: ${method} ${finalPath}`, 'api');
+    const requestPromise = (async () => {
+      const startedAt = performance.now();
+      addDebugLog(`API: ${method} ${finalPath}`, 'api');
 
-    if (!silent) {
+      if (!silent && !background) {
       dispatch({ type: 'SET_LOADING', payload: true });
       dispatch({ type: 'SET_ERROR', payload: '' });
-    }
+      }
 
-    const requestPromise = (async () => {
       try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
 
-        const res = await fetch(finalPath, {
+        const response = await fetch(finalPath, {
           ...options,
           method,
           headers,
@@ -274,92 +275,77 @@ export default function App() {
           credentials: 'omit',
           signal: controller.signal,
         });
-
         clearTimeout(timeoutId);
 
         let data = null;
-        if (res.status !== 204 && res.status !== 205) {
-          const text = await res.text();
+        if (response.status !== 204 && response.status !== 205) {
+          const text = await response.text();
           try {
             data = text ? JSON.parse(text) : null;
           } catch {
             data = text;
           }
         }
-
+        
         const duration = Math.round(performance.now() - startedAt);
         dispatch({
           type: 'SET_LAST_CALL',
-          payload: { method, path: finalPath, status: `${res.status} ${res.statusText}`, durationMs: duration }
+          payload: { method, path: finalPath, status: `${response.status} ${response.statusText}`, durationMs: duration }
         });
 
-        // Handle 401 - unauthorized
-        if (res.status === 401) {
+        if (response.status === 401) {
           const isProxyFailure = data?.msg?.includes('Invalid Key') || data?.message?.includes('Invalid Key');
           if (!isProxyFailure) {
             addDebugLog('Session expired (401), logging out', 'error');
             handleLogout();
           }
-          return { success: false, error: 'Unauthorized' };
+          throw new Error('Unauthorized');
         }
 
-        // Check for API errors
-        const isError = !res.ok || (data && typeof data === 'object' &&
+        const isError = !response.ok || (data && typeof data === 'object' &&
           (data.success === false || data.error || data.errors));
 
         if (isError) {
           const errorMsg = typeof data === 'string' ? data :
-            data?.errors?.[0]?.message || data?.error || data?.message || res.statusText;
-          addDebugLog(`API Error ${res.status}: ${errorMsg}`, 'error');
-          if (!silent) dispatch({ type: 'SET_ERROR', payload: errorMsg });
-          if (options.showModal) {
-            dispatch({ type: 'SET_MODAL', payload: { content: data || { error: errorMsg }, open: true } });
-          }
-          return { success: false, error: errorMsg };
+            data?.errors?.[0]?.message || data?.error || data?.message || response.statusText;
+          throw new Error(errorMsg);
         }
 
-        // Success
-        if (!silent) dispatch({ type: 'SET_ERROR', payload: '' });
+        // --- Success Path ---
+        if (!silent && !background) dispatch({ type: 'SET_ERROR', payload: '' });
+        if (options.showModal && data) dispatch({ type: 'SET_MODAL', payload: { content: data, open: true } });
 
-        if (options.showModal && data) {
-          dispatch({ type: 'SET_MODAL', payload: { content: data, open: true } });
-        }
-
-        // Update section state
         const detectedSection = section || (
           path.includes('/pools') ? 'pools' :
             path.includes('/mining') || path.includes('/hashpower') ? 'mining' :
               path.includes('/rigs') ? 'rigs' : ''
         );
-        updateSectionState(detectedSection, data);
+        if (!background) updateSectionState(detectedSection, data);
 
-        // Cache successful GET responses (not price requests)
         if (method === 'GET' && data && !isPriceReq) {
           const ttl = path.includes('/pools') || path.includes('/algorithms') ? 300000 : 30000;
           apiCache.current.set(cacheKey, data, ttl);
         }
 
         return data || { success: true };
+
       } catch (err) {
         let errorMsg = err.message || String(err);
         if (err.name === 'AbortError') {
           errorMsg = 'Request timeout (30s)';
         } else if (errorMsg.includes('Failed to fetch') || errorMsg.includes('ERR_CONNECTION_REFUSED')) {
-          errorMsg = 'Backend server unreachable. Please ensure the server is running.';
+          errorMsg = 'Backend server unreachable.';
         }
 
-        if (!silent) {
+        addDebugLog(`API Error: ${errorMsg}`, 'error');
+        if (!silent && !background) {
           dispatch({ type: 'SET_ERROR', payload: errorMsg });
-          dispatch({
-            type: 'SET_LAST_CALL',
-            payload: { method, path: finalPath, status: 'Failed', durationMs: Math.round(performance.now() - startedAt) }
-          });
+          if (options.showModal) dispatch({ type: 'SET_MODAL', payload: { content: { error: errorMsg }, open: true } });
         }
-
-        return { success: false, error: errorMsg };
+        return { success: false, error: errorMsg }; // Return error object for callers
       } finally {
         apiCache.current.deleteInflight(cacheKey);
-        if (!silent) dispatch({ type: 'SET_LOADING', payload: false });
+        if (!silent && !background) dispatch({ type: 'SET_LOADING', payload: false });
       }
     })();
 

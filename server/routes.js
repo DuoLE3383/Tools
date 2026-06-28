@@ -67,11 +67,7 @@ export function registerRoutes(app) {
   // ==========================
 
   // Start price fetcher job (CoinGecko prices)
-  const priceFetchInterval = parseInt(process.env.PRICE_FETCH_INTERVAL) || 15;
-  startPriceFetcherJob(priceFetchInterval);
-  console.log(`[Routes] ✅ Price fetcher started (${priceFetchInterval}min interval)`);
-
-  // Start HeroMiners monitor if addresses configured
+  // This job is now started in the main index.js to prevent double initialization.
   const heroMinersAddresses = process.env.HEROMINERS_ADDRESSES;
   if (heroMinersAddresses) {
     try {

@@ -172,6 +172,19 @@ async function startServer() {
     registerRoutes(app);
     console.log('[Routes] All routes registered');
 
+    // SPA catch-all – must be after API routes so /api/* takes priority
+    // This should be registered BEFORE createApp's built-in static catch-all
+    app.get(/.*/, (req, res) => {
+      if (req.path.startsWith('/api')) {
+        return res.status(404).json({ error: 'Not Found' });
+      }
+      res.sendFile(path.join(distPath, 'index.html'), (err) => {
+        if (err) {
+          res.status(404).json({ error: 'Not Found', path: req.path });
+        }
+      });
+    });
+
     // Create HTTP server
     const server = http.createServer(app);
 

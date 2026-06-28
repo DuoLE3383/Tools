@@ -1,5 +1,6 @@
 // server/price-fetcher.js
 import { db } from './db.js';
+import { getCmcPrices } from './cmcClient.js';
 import { dbAllAsync, dbRunAsync } from './mrr/db-utils.js';
 
 async function fetchAndStoreCoinPrices() {
@@ -12,13 +13,16 @@ async function fetchAndStoreCoinPrices() {
     const [cmcCoins, coingeckoCoins] = await Promise.all([cmcCoinsPromise, coingeckoCoinsPromise]);
 
     const idToSlugMap = new Map();
+    const idToSymbolMap = new Map(); // For CMC fallback
     cmcCoins.forEach(c => idToSlugMap.set(c.slug.toLowerCase(), c.slug.toLowerCase()));
     coingeckoCoins.forEach(c => {
       // Prefer CMC slug if a symbol match exists, otherwise use CoinGecko ID
       const cmcMatch = cmcCoins.find(cmc => cmc.symbol.toLowerCase() === c.symbol.toLowerCase());
       const slug = cmcMatch ? cmcMatch.slug.toLowerCase() : c.id.toLowerCase();
       idToSlugMap.set(c.id.toLowerCase(), slug);
+      idToSymbolMap.set(c.id.toLowerCase(), c.symbol.toUpperCase());
     });
+    cmcCoins.forEach(c => idToSymbolMap.set(c.slug.toLowerCase(), c.symbol.toUpperCase()));
 
     const allCoinIds = [...new Set([...cmcCoins.map(c => c.slug.toLowerCase()), ...coingeckoCoins.map(c => c.id.toLowerCase())])];
 
@@ -48,8 +52,33 @@ async function fetchAndStoreCoinPrices() {
         console.log(`[PriceFetcher] Fetching chunk ${i / CHUNK_SIZE + 1} for ${chunk.length} coins.`);
         const response = await fetch(apiUrl);
         if (!response.ok) {
-          console.error(`[PriceFetcher] Chunk failed with status ${response.status}.`);
-          continue; // Skip to the next chunk
+          // If rate-limited (429), try fetching this chunk from CoinMarketCap as a fallback
+          if (response.status === 429 && process.env.CMC_API) {
+            console.warn(`[PriceFetcher] CoinGecko rate limit hit. Attempting fallback to CoinMarketCap for this chunk.`);
+            try {
+              const symbolsInChunk = chunk.map(id => idToSymbolMap.get(id)).filter(Boolean);
+              if (symbolsInChunk.length > 0) {
+                const cmcData = await getCmcPrices(symbolsInChunk);
+                const transformedCoins = Object.entries(cmcData).map(([symbol, priceData]) => ({
+                  id: chunk.find(id => idToSymbolMap.get(id) === symbol), // Find original ID
+                  symbol: symbol,
+                  name: symbol, // Name is not available from this CMC endpoint
+                  current_price: priceData.usd,
+                  // CMC data is minimal, so we fill what we can and default the rest
+                  market_cap: 0,
+                  total_volume: 0,
+                  price_change_percentage_24h: 0,
+                }));
+                allFetchedCoins.push(...transformedCoins);
+                console.log(`[PriceFetcher] ✅ CMC Fallback successful for ${transformedCoins.length} coins.`);
+              }
+            } catch (cmcError) {
+              console.error(`[PriceFetcher] ❌ CMC fallback also failed: ${cmcError.message}`);
+            }
+          } else {
+            console.error(`[PriceFetcher] Chunk failed with status ${response.status}.`);
+          }
+          continue;
         }
         const coins = await response.json();
         if (Array.isArray(coins)) {
@@ -105,6 +134,6 @@ async function fetchAndStoreCoinPrices() {
 export function startPriceFetcherJob(intervalMinutes = 15) {
   const intervalMs = intervalMinutes * 60 * 1000;
   console.log(`[PriceFetcher] Scheduling coin price updates every ${intervalMinutes} minutes.`);
-  fetchAndStoreCoinPrices(); // Run immediately on start
+  // fetchAndStoreCoinPrices(); // Run immediately on start - DISABLED to prevent startup API storm.
   setInterval(fetchAndStoreCoinPrices, intervalMs);
 }

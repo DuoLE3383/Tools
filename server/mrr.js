@@ -1,5 +1,6 @@
 import fs from 'fs/promises';
 import path from 'path';
+import express from 'express';
 import { createHash, createHmac } from 'crypto';
 import { db } from './db.js';
 import { normalizeCredential, sanitizeMrrEndpoint } from './utils.js';
@@ -625,3 +626,19 @@ export async function fetchAggregatedRentals(query = {}, clientParam = 'BT') {
     clientName: isAll ? 'ALL' : clientParam,
   };
 }
+
+// ---------- Default Router (mountable) ----------
+const router = express.Router();
+
+router.get('/rentals', async (req, res) => {
+  try {
+    const { client: clientParam, ...query } = req.query;
+    const { statusCode, data, clientName } = await fetchAggregatedRentals(query, clientParam);
+    res.set('X-MRR-Client', clientName);
+    res.status(statusCode).json(data);
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+export default router;

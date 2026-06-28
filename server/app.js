@@ -39,12 +39,6 @@ export function createApp({ distPath }) {
 
   if (distPath) {
     app.use(express.static(distPath));
-    app.get(/.*/, (req, res) => {
-      if (req.path.startsWith('/api')) {
-        return res.status(404).json({ error: 'Not Found' });
-      }
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
   }
 
   return app;
@@ -89,9 +83,6 @@ export async function initializeApp(env) {
         startMonitor();
       });
   }, 15000);
-
-  // Start mining opportunity scanner for Telegram alerts
-  setTimeout(() => startMiningOpportunityScanner(), 30000);
 
   try {
     const { client } = resolveNhClient('BT');
