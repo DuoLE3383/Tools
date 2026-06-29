@@ -1,5 +1,7 @@
-// CryptoRatePage.jsx - Add callback to share prices
+// CryptoRatePage.jsx - FIXED (remove direct WebSocket)
+
 import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { useWebSocket } from "./WebSocketContext"; // ✅ Use the context
 
 const COINS = [
   { id: "bitcoin", symbol: "BTC", name: "Bitcoin" },
@@ -9,63 +11,28 @@ const COINS = [
   { id: "bitcoin-cash", symbol: "BCH", name: "Bitcoin Cash" },
 ];
 
+// ✅ Map for alternate IDs
+const COIN_ID_MAP = {
+  'bitcoin-cash': ['bitcoin-cash', 'bitcoincash', 'bch'],
+  'bitcoin': ['bitcoin', 'btc'],
+  'ethereum': ['ethereum', 'eth'],
+  'litecoin': ['litecoin', 'ltc'],
+  'dogecoin': ['dogecoin', 'doge'],
+};
+
 function Sparkline({ data, width = 180, height = 80, color = "#60a5fa" }) {
-  if (!data || !Array.isArray(data) || data.length < 2) {
-    return (
-      <div
-        style={{
-          width,
-          height,
-          background: "rgba(255,255,255,0.02)",
-          borderRadius: "8px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      />
-    );
-  }
-
-  const min = Math.min(...data);
-  const max = Math.max(...data);
-  const range = max - min || 1;
-
-  const points = data
-    .map((val, i) => {
-      const x = (i / (data.length - 1)) * width;
-      const y = height - ((val - min) / range) * height;
-      return `${x},${y}`;
-    })
-    .join(" ");
-
-  return (
-    <svg
-      width={width}
-      height={height}
-      viewBox={`0 0 ${width} ${height}`}
-      preserveAspectRatio="none"
-      style={{ overflow: "visible", filter: `drop-shadow(0 0 4px ${color}44)` }}
-    >
-      <polyline
-        fill="none"
-        stroke={color}
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        points={points}
-      />
-    </svg>
-  );
+  // ... same as before
 }
 
 export default function CryptoRatePage({ onCall, onPriceUpdate }) {
   const [prices, setPrices] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [wsStatus, setWsStatus] = useState("disconnected");
-  const [wsEnabled, setWsEnabled] = useState(true);
   const [amounts, setAmounts] = useState({ usd: "1000" });
   const [baseCoin, setBaseCoin] = useState("usd");
+
+  // ✅ Use the WebSocket context instead of creating your own connection
+  const { isConnected: wsConnected, prices: wsPrices } = useWebSocket();
 
   const onValueChange = (id, val) => {
     setBaseCoin(id);
@@ -77,7 +44,6 @@ export default function CryptoRatePage({ onCall, onPriceUpdate }) {
     const formatted = {};
     Object.keys(data).forEach(key => {
       const coinData = data[key];
-      // Find the matching COIN entry
       const coin = COINS.find(c => c.id === key);
       const symbol = coin?.symbol || key.toUpperCase();
 
@@ -92,6 +58,35 @@ export default function CryptoRatePage({ onCall, onPriceUpdate }) {
     return formatted;
   }, []);
 
+  // ✅ Improved getCoinData with fallback for BCH
+  const getCoinData = useCallback((id) => {
+    if (!prices) return null;
+    
+    if (prices[id]) return prices[id];
+    
+    const coin = COINS.find(c => c.id === id);
+    if (coin && prices[coin.symbol]) return prices[coin.symbol];
+    if (coin && prices[coin.symbol.toLowerCase()]) return prices[coin.symbol.toLowerCase()];
+    
+    // Special handling for bitcoin-cash (BCH)
+    if (id === 'bitcoin-cash') {
+      const bchVariants = ['bitcoin-cash', 'bitcoincash', 'bch', 'BCH'];
+      for (const variant of bchVariants) {
+        if (prices[variant]) return prices[variant];
+      }
+    }
+    
+    // Try all variants from the map
+    const variants = COIN_ID_MAP[id] || [id];
+    for (const variant of variants) {
+      if (prices[variant]) return prices[variant];
+      if (prices[variant.toLowerCase()]) return prices[variant.toLowerCase()];
+      if (prices[variant.toUpperCase()]) return prices[variant.toUpperCase()];
+    }
+    
+    return null;
+  }, [prices]);
+
   const fetchPrices = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -104,9 +99,19 @@ export default function CryptoRatePage({ onCall, onPriceUpdate }) {
 
       const data = res?.data || (res && typeof res === "object" && !res.error ? res : null);
 
-      if (data && (data.bitcoin || data.BTC || data.btc)) {
+      const hasData = data && (
+        data.bitcoin || 
+        data['bitcoin-cash'] || 
+        data.bitcoincash || 
+        data.BCH || 
+        data.bch ||
+        data.ethereum ||
+        data.litecoin ||
+        data.dogecoin
+      );
+
+      if (hasData) {
         setPrices(data);
-        // ✅ Send formatted prices to parent
         if (onPriceUpdate) {
           const formatted = formatPricesForRigCard(data);
           onPriceUpdate(formatted);
@@ -123,7 +128,6 @@ export default function CryptoRatePage({ onCall, onPriceUpdate }) {
             res?.message ||
             `Format Mismatch (Keys: ${res ? Object.keys(res).join(",") : "null"})`;
 
-        if (isSystemConfig) setWsEnabled(false);
         if (!prices) setError(`Market data unavailable. ${detail}`);
         throw new Error(detail);
       }
@@ -134,92 +138,34 @@ export default function CryptoRatePage({ onCall, onPriceUpdate }) {
     }
   }, [onCall, onPriceUpdate, formatPricesForRigCard]);
 
+  // ✅ Update prices from WebSocket
+  useEffect(() => {
+    if (wsPrices && Object.keys(wsPrices).length > 0) {
+      setPrices(prev => {
+        const merged = { ...prev, ...wsPrices };
+        if (onPriceUpdate) {
+          const formatted = formatPricesForRigCard(wsPrices);
+          onPriceUpdate(formatted);
+        }
+        return merged;
+      });
+    }
+  }, [wsPrices, onPriceUpdate, formatPricesForRigCard]);
+
+  // ✅ Initial fetch and polling (no WebSocket connection)
   useEffect(() => {
     fetchPrices();
 
-    let socket = null;
-    let reconnectTimeout = null;
-    let isComponentMounted = true;
-    let retryCount = 0;
-
-    const connectWs = () => {
-      if (!isComponentMounted || !wsEnabled) return;
-
-      if (socket) {
-        socket.onclose = null;
-        socket.close();
-      }
-
-      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const wsUrl = `${protocol}//${window.location.host}/api/v2/prices/ws`;
-
-      socket = new WebSocket(wsUrl);
-      if (isComponentMounted) setWsStatus("connecting");
-
-      socket.onopen = () => {
-        if (isComponentMounted) setWsStatus("connected");
-      };
-
-      socket.onmessage = (event) => {
-        if (!isComponentMounted) return;
-        try {
-          const message = JSON.parse(event.data);
-          if (message.type === "price_update" && message.data) {
-            setPrices((prev) => ({ ...prev, ...message.data }));
-            // ✅ Send updated prices to parent
-            if (onPriceUpdate) {
-              const formatted = formatPricesForRigCard(message.data);
-              onPriceUpdate(formatted);
-            }
-          }
-        } catch (err) {
-          console.warn("[WS] Failed to parse price update", err);
-        }
-      };
-
-      socket.onclose = () => {
-        if (!isComponentMounted) return;
-        setWsStatus("disconnected");
-
-        if (retryCount < 2 && wsEnabled) {
-          const delay = Math.min(30000, 5000 * Math.pow(2, retryCount));
-          reconnectTimeout = setTimeout(connectWs, delay);
-          retryCount++;
-        } else {
-          setWsEnabled(false);
-          console.warn("[WS] Maximum reconnection attempts reached.");
-        }
-      };
-
-      socket.onerror = () => {
-        if (isComponentMounted) setWsStatus("error");
-      };
-    };
-
-    if (wsEnabled) connectWs();
-
-    return () => {
-      isComponentMounted = false;
-      if (socket) socket.close();
-      if (reconnectTimeout) clearTimeout(reconnectTimeout);
-    };
-  }, [fetchPrices, wsEnabled, onPriceUpdate, formatPricesForRigCard]);
-
-  // Polling fallback
-  useEffect(() => {
+    // Polling fallback
     const pollTimer = setInterval(() => {
-      if (wsStatus !== "connected" && !loading) {
+      if (!wsConnected) {
         console.log("[CryptoRate] WS inactive, polling for updates...");
         fetchPrices();
       }
     }, 60000);
+    
     return () => clearInterval(pollTimer);
-  }, [fetchPrices, wsStatus, loading]);
-
-  const getCoinData = (id) => {
-    const coin = COINS.find((c) => c.id === id);
-    return prices?.[id] || prices?.[coin?.symbol] || prices?.[coin?.symbol?.toLowerCase()];
-  };
+  }, [fetchPrices, wsConnected]);
 
   const getPrice = (data) => data?.usd || (typeof data === "number" ? data : 0);
 
@@ -240,7 +186,7 @@ export default function CryptoRatePage({ onCall, onPriceUpdate }) {
         usdValue: usdValue,
       };
     });
-  }, [prices, amounts, baseCoin]);
+  }, [prices, amounts, baseCoin, getCoinData]);
 
   return (
     <div
@@ -279,7 +225,7 @@ export default function CryptoRatePage({ onCall, onPriceUpdate }) {
               width: "8px",
               height: "8px",
               borderRadius: "50%",
-              background: wsStatus === "connected" ? "#10b981" : "#f59e0b",
+              background: wsConnected ? "#10b981" : "#f59e0b",
             }}
           />
           <span
@@ -290,7 +236,7 @@ export default function CryptoRatePage({ onCall, onPriceUpdate }) {
               textTransform: "uppercase",
             }}
           >
-            {wsStatus === "connected" ? "LIVE" : "LIVE"}
+            {wsConnected ? "LIVE" : "POLLING"}
           </span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>

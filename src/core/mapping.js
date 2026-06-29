@@ -25,7 +25,7 @@ export const ALGO_MAPPING = {
   "SCRYPT": {
     "displayName": "Scrypt",
     "niceHash": "SCRYPT",
-    "unit": "GH",
+    "unit": "MH",
     "niceHashUnit": "TH",
     "mrrUnit": "GH"
   },
@@ -784,12 +784,12 @@ export function calculatePriceComparison(mrrPrice, mrrAlgo, nhPrice, nhAlgo) {
   if (nhPriceNum <= 0 || mrrPriceNum <= 0) return null;
 
   // Get units for each
-  const mrrUnit = getMrrUnit(mrrAlgo);
+  const mrrUnit = getMrrUnit(mrrAlgo) * 1000;
   const nhUnit = getNiceHashUnit(nhAlgo);
   
   // Normalize both to H/s for comparison
-  const mrrPriceNorm = normalizeValue(mrrPriceNum, mrrUnit, 'H');
-  const nhPriceNorm = normalizeValue(nhPriceNum, nhUnit, 'H');
+  const mrrPriceNorm = normalizeValue(mrrPriceNum, mrrUnit, 'KH');
+  const nhPriceNorm = normalizeValue(nhPriceNum, nhUnit, 'MH') ;
 
   if (nhPriceNorm > 0) {
     return ((mrrPriceNorm - nhPriceNorm) / nhPriceNorm) * 100;

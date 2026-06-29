@@ -1,4 +1,4 @@
-// RentedRigCard.jsx - CLEAN WORKING VERSION
+// RentedRigCard.jsx - COMPLETE FIXED VERSION
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { CountdownTimer } from "./MiningRigRental";
@@ -8,6 +8,8 @@ import {
   getStatusClass,
   getRoiColor,
   getNiceHashPriceValue,
+  getNiceHashPriceWithUnit, // ✅ Added
+  convertPriceBetweenUnits,  // ✅ Added
 } from "../../core/mrrUtils.js";
 
 // ✅ Import from central mapping
@@ -168,6 +170,10 @@ const RentedRigCard = ({
   const idLabel = isRented && rentalId ? "Rental" : "Rig";
   const [nowMs, setNowMs] = useState(0);
   
+  // ✅ Define cur from rawCur
+  const rawCur = info?.rawCur || rig.hashrate?.current || 0;
+  const cur = Number.isFinite(parseFloat(rawCur)) ? parseFloat(rawCur) : 0;
+  
   // ── MRR rate state ──
   const [mrrRateData, setMrrRateData] = useState({ raw: 0, normalized: 0 });
   const [loadingRate, setLoadingRate] = useState(false);
@@ -230,6 +236,7 @@ const RentedRigCard = ({
         }
 
         if (rawRate > 0) {
+          // ✅ Use convertNiceHashToMrr to normalize the rate
           const normalizedRate = convertNiceHashToMrr(rawRate, normalizedAlgo);
           const rateData = { raw: rawRate, normalized: normalizedRate };
           setMrrRateData(rateData);
@@ -248,11 +255,17 @@ const RentedRigCard = ({
     fetchRate();
   }, [normalizedAlgo]);
 
-  // ── Get my order price ──
-  const myPrice = useMemo(() => {
-    if (!nhOrders || nhOrders.length === 0) return 0;
-    return getNiceHashPriceValue(nhOrders[0]?.price || nhOrders[0]?.rawOrder?.price || nhOrders[0]);
-  }, [nhOrders]);
+  // ── Get my order price with unit ──
+  const myPriceInfo = useMemo(() => {
+    if (!nhOrders || nhOrders.length === 0) {
+      return { price: 0, unit: nhUnit };
+    }
+    const priceSource = nhOrders[0]?.price || nhOrders[0]?.rawOrder?.price || nhOrders[0];
+    return getNiceHashPriceWithUnit(priceSource);
+  }, [nhOrders, nhUnit]);
+
+  const myPrice = myPriceInfo.price;
+  const myPriceUnit = myPriceInfo.unit || nhUnit;
 
   // ── Calculate spread ──
   const spread = useMemo(() => {
@@ -492,7 +505,7 @@ const RentedRigCard = ({
               My Order Price
             </div>
             <div style={{ color: "#60a5fa", fontWeight: 900, fontSize: "11px", lineHeight: 1.1, marginTop: "3px" }}>
-              {formatPrice(myPrice)} BTC/{nhUnit}/Day
+              {formatPrice(myPrice)} BTC/{myPriceUnit}/Day
             </div>
             {spread !== null && (
               <div style={{
@@ -536,7 +549,11 @@ const RentedRigCard = ({
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: "8px", marginBottom: "2px" }}>
                 <span style={{ opacity: 0.55, textTransform: "uppercase" }}>Progress</span>
-                <span style={{ fontSize: "16px", fontWeight: 800, color: timeProgress > 90 ? "#f87171" : "#8b5cf6" }}>
+                <span style={{
+                  fontSize: "16px",
+                  fontWeight: 800,
+                  color: timeProgress > 90 ? "#f87171" : "#8b5cf6",
+                }}>
                   {timeProgress.toFixed(2)}%
                 </span>
               </div>

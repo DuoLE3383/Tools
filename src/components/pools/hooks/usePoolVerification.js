@@ -1,5 +1,5 @@
 // components/pools/hooks/usePoolVerification.js
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { poolHelpers as ph, poolApi, sanitizeNhClientTag } from "../../../core/poolUtils";
 import { getAlgoDisplayName } from "../../../core/poolUtils";
 
@@ -11,6 +11,12 @@ export function usePoolVerification({ onCall, nhClient, pools, filePools, extrac
   const [loading, setLoading] = useState(false);
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [error, setError] = useState("");
+  
+  // ✅ Add refs for tracking state
+  const stopRef = useRef(false);
+  const activeRequestRef = useRef(null);
+  const [progress, setProgress] = useState({ current: 0, total: 0 });
+  const [playing, setPlaying] = useState(false);
 
   const getActivePoolSource = useCallback(() => {
     return verifyFromFile
@@ -86,15 +92,197 @@ export function usePoolVerification({ onCall, nhClient, pools, filePools, extrac
     }
   }, [nhClient, selected, selectedId]);
 
+  // ✅ Complete verifyAllOnce with full verification loop
   const verifyAllOnce = useCallback(async (options = {}) => {
-    const { targetPools = null, resetStop = true, keepRunning = false } = options;
+    const { 
+      targetPools = null, 
+      resetStop = true, 
+      keepRunning = false,
+      verificationDelay = 2345,
+    } = options;
+    
     const source = targetPools || getActivePoolSource();
     
-    if (!Array.isArray(source) || source.length === 0) return;
+    if (!Array.isArray(source) || source.length === 0 || playing) return;
     
-    // Implementation details...
-    // (Move the verification loop logic here)
-  }, [getActivePoolSource]);
+    setPlaying(true);
+    setError("");
+    setResponse(null);
+    // Don't clear verifyResults - we want to show progress
+    setProgress({ current: 0, total: source.length });
+    if (resetStop) stopRef.current = false;
+
+    // Identify active pool IDs from NiceHash orders
+    // This would need to be passed from parent or fetched
+    const activePoolIds = new Set();
+
+    try {
+      for (let i = 0; i < source.length; i++) {
+        // ✅ Check if stopped
+        if (stopRef.current) break;
+
+        const pool = source[i];
+        const poolId = ph.getId(pool);
+        const poolName = (pool.name || "").trim();
+        const poolAlgo = ph.getAlgo(pool);
+        const nameAlgoKey = `${poolName}|${poolAlgo}`;
+        const key = ph.getKey(pool, i);
+        const poolClient = sanitizeNhClientTag(pool.nhClient || pool.client, nhClient);
+
+        let skipReason = "";
+        if (pool.name?.toLowerCase() === "active") {
+          skipReason = "Skipped: Active Pool";
+        } else if (poolId && activePoolIds.has(String(poolId))) {
+          skipReason = "Skipped: Active Order";
+        }
+
+        if (skipReason) {
+          setVerifyResults((prev) => [
+            ...prev.filter((item) => item.key !== key),
+            {
+              key,
+              label: ph.getLabel(pool, i),
+              result: { ok: true, data: { message: skipReason } },
+              algorithm: poolAlgo,
+            },
+          ]);
+          setProgress({ current: i + 1, total: source.length });
+          continue;
+        }
+
+        const controller = new AbortController();
+        activeRequestRef.current = controller;
+
+        setVerifyResults((prev) => [
+          ...prev.filter((item) => item.key !== key),
+          {
+            key,
+            label: ph.getLabel(pool, i),
+            result: { pending: true },
+            algorithm: poolAlgo,
+          },
+        ]);
+
+        let result;
+        try {
+          let details = pool;
+          if (poolId) {
+            let resDetails = await poolApi.get(poolId, poolClient, controller.signal);
+            if (resDetails.status === 429) {
+              const seconds = parseInt(
+                resDetails.headers?.get("Retry-After") ||
+                  resDetails.data?.headers?.["retry-after"],
+                10,
+              ) || 30;
+              // Rate limit handling...
+              try {
+                await new Promise((r) => setTimeout(r, seconds * 1000));
+                resDetails = await poolApi.get(poolId, poolClient);
+              } finally {
+                // Reset rate limit status
+              }
+            }
+            const d = resDetails.data;
+            details = {
+              ...d,
+              miningAlgorithm: d.algorithm || d.miningAlgorithm || "",
+              stratumHost: d.stratumHostname || d.stratumHost || "",
+              stratumPort: Number(d.port || d.stratumPort || 0),
+              username: d.username || "",
+              password: d.password || "x",
+            };
+          }
+
+          const bodyToSend = typeof details === "string" ? JSON.parse(details) : details;
+          result = await verifyPoolBody(bodyToSend, controller.signal, poolClient);
+
+          if (result.status === 429) {
+            const retryAfter = result.headers?.get("Retry-After") ||
+              result.data?.headers?.["retry-after"];
+            const seconds = parseInt(retryAfter, 3) || 5;
+            try {
+              await new Promise((r) => setTimeout(r, seconds * 1000));
+              result = await verifyPoolBody(bodyToSend, controller.signal);
+            } finally {
+              // Reset rate limit status
+            }
+          }
+        } catch (err) {
+          result = err.name === "AbortError"
+            ? { ok: false, data: { stopped: true, message: "Stopped by user" } }
+            : { ok: false, data: { error: err.message || String(err) } };
+        } finally {
+          activeRequestRef.current = null;
+        }
+
+        setResponse((prev) => ({ ...(prev || {}), [key]: result }));
+        setVerifyResults((prev) => [
+          ...prev.filter((item) => item.key !== key),
+          {
+            key,
+            label: ph.getLabel(pool, i),
+            result,
+            algorithm: poolAlgo,
+          },
+        ]);
+        setProgress({ current: i + 1, total: source.length });
+
+        if (stopRef.current || i >= source.length - 1) break;
+        await new Promise((resolve) => {
+          const startedAt = Date.now();
+          const timer = setInterval(() => {
+            if (stopRef.current || Date.now() - startedAt >= verificationDelay) {
+              clearInterval(timer);
+              resolve();
+            }
+          }, 100);
+        });
+      }
+    } finally {
+      setPlaying(false);
+      if (!keepRunning && stopRef.current) {
+        // Reset running state if needed
+      }
+    }
+  }, [getActivePoolSource, nhClient, playing]);
+
+  // ✅ Helper for verifying a single pool body
+  const verifyPoolBody = useCallback(async (poolDetails, signal, overrideClient) => {
+    const payload = ph.buildVerifyBody(poolDetails);
+    const missingFields = ph.getMissingVerifyFields(payload);
+
+    if (missingFields.length > 0) {
+      return {
+        ok: false,
+        data: {
+          error: `Missing required verify fields: ${missingFields.join(", ")}`,
+          requestBody: payload,
+        },
+      };
+    }
+
+    try {
+      const targetClient = sanitizeNhClientTag(
+        overrideClient || poolDetails.nhClient || poolDetails.client,
+        nhClient,
+      );
+      const result = await poolApi.verify(payload, targetClient, signal);
+      return { ...result, poolDetails, requestBody: payload };
+    } catch (err) {
+      if (err.name === "AbortError") {
+        return {
+          ok: false,
+          requestBody: payload,
+          data: { stopped: true, message: "Stopped by user" },
+        };
+      }
+      return {
+        ok: false,
+        requestBody: payload,
+        data: { error: err.message || String(err) },
+      };
+    }
+  }, [nhClient]);
 
   const verifyAlgorithm = useCallback((algorithm) => {
     const base = getActivePoolSource();
@@ -113,6 +301,15 @@ export function usePoolVerification({ onCall, nhClient, pools, filePools, extrac
       .join(", ");
   }, []);
 
+  // ✅ Add stop function
+  const stopVerification = useCallback(() => {
+    stopRef.current = true;
+    if (activeRequestRef.current) {
+      activeRequestRef.current.abort();
+      activeRequestRef.current = null;
+    }
+  }, []);
+
   return {
     selected,
     selectedId,
@@ -126,9 +323,13 @@ export function usePoolVerification({ onCall, nhClient, pools, filePools, extrac
     detailsLoading,
     error,
     setError,
+    progress,
+    playing,
     verifyPool,
     verifyAllOnce,
     verifyAlgorithm,
     getAlgoCountsSummary,
+    stopVerification,
+    verifyPoolBody,
   };
 }

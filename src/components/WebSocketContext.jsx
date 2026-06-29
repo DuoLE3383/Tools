@@ -1,7 +1,10 @@
+// components/WebSocketContext.jsx - COMPLETE WITH EXPORTS
+
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 
 const WebSocketContext = createContext(null);
 
+// ✅ Make sure this is exported
 export function WebSocketProvider({ children, token, autoConnect = true }) {
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -14,9 +17,8 @@ export function WebSocketProvider({ children, token, autoConnect = true }) {
   const MAX_RECONNECT_ATTEMPTS = 5;
 
   const connect = useCallback(() => {
-    // ✅ Don't connect if no token
     if (!token) {
-      console.log('[WS] No token available, skipping connection');
+      console.log('[WS] No token available - skipping connection');
       return;
     }
 
@@ -34,37 +36,62 @@ export function WebSocketProvider({ children, token, autoConnect = true }) {
     setError(null);
 
     try {
-      // ✅ Use relative path with token
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const wsUrl = `${protocol}//${window.location.host}/api/v2/prices/ws?token=${encodeURIComponent(token)}`;
+      const host = window.location.host;
+      const wsUrl = `${protocol}//${host}/api/v2/prices/ws?token=${encodeURIComponent(token)}`;
+      
       console.log('[WS] Connecting...');
 
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
+      const timeout = setTimeout(() => {
+        if (ws.readyState !== WebSocket.OPEN) {
+          console.warn('[WS] Connection timeout');
+          ws.close();
+          setIsConnecting(false);
+          setError('Connection timeout');
+        }
+      }, 10000);
+
       ws.onopen = () => {
         console.log('[WS] Connected');
+        clearTimeout(timeout);
         setIsConnected(true);
         setIsConnecting(false);
         setError(null);
         reconnectAttempts.current = 0;
 
-        // Send ping to start communication
-        ws.send(JSON.stringify({ type: 'ping' }));
-        ws.send(JSON.stringify({ type: 'get_prices' }));
+        // ✅ Send initial ping
+        try {
+          ws.send(JSON.stringify({ 
+            type: 'ping',
+            action: 'ping',
+            requestId: Date.now().toString()
+          }));
+        } catch (err) {
+          console.error('[WS] Failed to send initial ping:', err);
+        }
       };
 
       ws.onmessage = (event) => {
         try {
+          if (!event.data) return;
           const data = JSON.parse(event.data);
-          console.log('[WS] Received:', data.type);
+          
+          if (data.type) {
+            console.log('[WS] Received:', data.type);
+          }
+          
           setLastMessage(data);
 
           if (data.type === 'price_update' && data.data) {
-            setPrices(data.data);
+            setPrices(prev => ({ ...prev, ...data.data }));
           }
         } catch (err) {
-          console.error('[WS] Parse error:', err);
+          if (event.data && event.data.length > 0) {
+            console.error('[WS] Parse error:', err.message);
+          }
         }
       };
 
@@ -76,13 +103,14 @@ export function WebSocketProvider({ children, token, autoConnect = true }) {
 
       ws.onclose = (event) => {
         console.log(`[WS] Disconnected: ${event.code}`);
+        clearTimeout(timeout);
         setIsConnected(false);
         setIsConnecting(false);
         wsRef.current = null;
 
         // ✅ Only reconnect if we have a token
-        if (token && reconnectAttempts.current < MAX_RECONNECT_ATTEMPTS) {
-          const delay = 3000 * Math.pow(2, reconnectAttempts.current);
+        if (token && event.code !== 1000 && reconnectAttempts.current < MAX_RECONNECT_ATTEMPTS) {
+          const delay = Math.min(3000 * Math.pow(2, reconnectAttempts.current), 30000);
           console.log(`[WS] Reconnecting in ${delay}ms...`);
           
           reconnectTimerRef.current = setTimeout(() => {
@@ -105,7 +133,11 @@ export function WebSocketProvider({ children, token, autoConnect = true }) {
     }
     
     if (wsRef.current) {
-      wsRef.current.close();
+      try {
+        wsRef.current.close(1000, 'Client disconnected');
+      } catch (err) {
+        // Ignore
+      }
       wsRef.current = null;
     }
     
@@ -116,28 +148,34 @@ export function WebSocketProvider({ children, token, autoConnect = true }) {
   const sendMessage = useCallback((data) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       try {
-        wsRef.current.send(JSON.stringify(data));
+        const message = {
+          ...data,
+          requestId: data.requestId || Date.now().toString(),
+          timestamp: new Date().toISOString()
+        };
+        wsRef.current.send(JSON.stringify(message));
         return true;
       } catch (err) {
         console.error('[WS] Send error:', err);
         return false;
       }
     }
+    console.warn('[WS] Cannot send message: not connected');
     return false;
   }, []);
 
-  // ✅ Auto-connect only when token is available
+  // Auto-connect when token becomes available
   useEffect(() => {
     if (autoConnect && token) {
-      connect();
-    } else if (!token && wsRef.current) {
-      // ✅ Disconnect if token is removed
-      disconnect();
+      const timer = setTimeout(() => {
+        connect();
+      }, 500);
+      return () => clearTimeout(timer);
     }
     return () => {
       disconnect();
     };
-  }, [token, autoConnect, connect, disconnect]);
+  }, [token, autoConnect]);
 
   const value = {
     isConnected,
@@ -158,6 +196,7 @@ export function WebSocketProvider({ children, token, autoConnect = true }) {
   );
 }
 
+// ✅ Make sure this is exported
 export function useWebSocket() {
   const context = useContext(WebSocketContext);
   if (!context) {
@@ -165,3 +204,6 @@ export function useWebSocket() {
   }
   return context;
 }
+
+// ✅ Also export the context itself if needed
+export { WebSocketContext };

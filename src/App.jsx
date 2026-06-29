@@ -1,6 +1,7 @@
 // App.jsx — centralized state + per-page routing
 
 import { WebSocketProvider } from './components/WebSocketContext';
+import { NiceHashOrderProvider } from './components/nicehash/NiceHashContext.jsx';
 import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 import Modal from "./components/Modal";
 import HashCompletionCalculator from "./components/ProfitCompletion.jsx";
@@ -42,7 +43,7 @@ const initialState = {
   nhPoolClient: "BT",
   view: initialView,
   currentUser: null,
-  coinPrices: null, // Add coin prices to global state
+  coinPrices: null,
 };
 
 function reducer(state, action) {
@@ -200,25 +201,15 @@ function AppContent({ authToken, onLoginSuccess, onLogout, callApi, setAuthToken
     if (!authToken) return undefined;
 
     const verifySession = () => {
-      console.log('[Session] Verifying session...');
       callApi("/api/v2/time", { silent: true })
-        .then(response => {
-          if (response && response.success) {
-            console.log('[Session] Verification successful.');
-          } else {
-            // This case might occur if the API returns { success: false } but not a 401/403
-            console.warn('[Session] Verification check returned an API error:', response?.error || 'Unknown error');
-          }
-        })
         .catch((err) => {
-          // This catches network errors or errors thrown by apiClient (like 401/403)
-          // The onAuthError handler in apiClient will handle logout, but we log it here for visibility.
           console.error('[Session] Verification failed:', err.message);
         });
     };
 
     verifySession();
     const interval = setInterval(verifySession, 30000);
+    return () => clearInterval(interval);
   }, [authToken, callApi]);
 
   // ── Navigation ──
@@ -341,37 +332,41 @@ function AppContent({ authToken, onLoginSuccess, onLogout, callApi, setAuthToken
     return <Login onLoginSuccess={onLoginSuccess} onCall={callApi} />;
   }
 
+  // ✅ Wrap the ENTIRE app with providers
+  // ✅ WebSocketProvider needs a valid token to connect
   return (
     <WebSocketProvider token={authToken}>
-      <div className="app-shell">
-        {renderPage()}
+      <NiceHashOrderProvider nhClient={state.nhOrderClient} callApi={callApi}>
+        <div className="app-shell">
+          {renderPage()}
 
-        {/* ─── GLOBAL MODALS ─── */}
-        <Modal
-          isOpen={state.responseModalOpen}
-          onClose={() => dispatch({ type: "SET_RESPONSE_MODAL", payload: false })}
-          title="API Response Details"
-          maxWidth="1100px"
-        >
-          {state.lastCall && (
-            <div className="response-meta" style={{ marginBottom: "15px", opacity: 0.8, fontSize: "12px" }}>
-              <span>{state.lastCall.method} {state.lastCall.path} — {state.lastCall.status} ({state.lastCall.durationMs}ms)</span>
-            </div>
-          )}
-          <pre className="response-body modal" style={{ maxHeight: "60vh", overflow: "auto" }}>
-            {JSON.stringify(state.responseModalContent || state.output, null, 2)}
-          </pre>
-        </Modal>
+          {/* ─── GLOBAL MODALS ─── */}
+          <Modal
+            isOpen={state.responseModalOpen}
+            onClose={() => dispatch({ type: "SET_RESPONSE_MODAL", payload: false })}
+            title="API Response Details"
+            maxWidth="1100px"
+          >
+            {state.lastCall && (
+              <div className="response-meta" style={{ marginBottom: "15px", opacity: 0.8, fontSize: "12px" }}>
+                <span>{state.lastCall.method} {state.lastCall.path} — {state.lastCall.status} ({state.lastCall.durationMs}ms)</span>
+              </div>
+            )}
+            <pre className="response-body modal" style={{ maxHeight: "60vh", overflow: "auto" }}>
+              {JSON.stringify(state.responseModalContent || state.output, null, 2)}
+            </pre>
+          </Modal>
 
-        <Modal
-          isOpen={state.completionModalOpen}
-          onClose={() => dispatch({ type: "SET_COMPLETION_MODAL", payload: false })}
-          title="Rental Completion Calculator"
-          maxWidth="750px"
-        >
-          <HashCompletionCalculator {...state.completionCalculatorContext} />
-        </Modal>
-      </div>
+          <Modal
+            isOpen={state.completionModalOpen}
+            onClose={() => dispatch({ type: "SET_COMPLETION_MODAL", payload: false })}
+            title="Rental Completion Calculator"
+            maxWidth="750px"
+          >
+            <HashCompletionCalculator {...state.completionCalculatorContext} />
+          </Modal>
+        </div>
+      </NiceHashOrderProvider>
     </WebSocketProvider>
   );
 }

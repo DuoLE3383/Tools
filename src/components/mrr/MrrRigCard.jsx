@@ -575,7 +575,7 @@ const MrrRigCard = ({
     buyNhPrice > 0
       ? Number.parseFloat(nhOrder?.add_fee ?? nhOrder?.priceWithFee ?? 0) > 0
         ? Number.parseFloat(nhOrder.add_fee ?? nhOrder.priceWithFee)
-        : buyNhPrice
+        : buyNhPrice / 1000
       : 0;
   
   // ✅ Use getNiceHashUnit for NiceHash unit
@@ -609,7 +609,7 @@ const MrrRigCard = ({
   const roiLabel = useMemo(() => {
     if (roiPercent !== null) return formatPercent(roiPercent);
     if (niceHashSourcePrice > 0) {
-      if (finalMrrRate <= 0)
+      if (finalMrrRate >= 0)
         return isLoadingMrrRate ? "Loading..." : "No MRR rate";
       return "Waiting for data";
     }

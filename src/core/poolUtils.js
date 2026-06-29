@@ -197,17 +197,21 @@ export const poolHelpers = {
   getVerifyMessage: (result) => {
     const data = result?.data || result;
     if (!data) return "No response";
+
+    // Prioritize specific error or status messages
     if (data.error) return data.error;
     if (data.message) return data.message;
     if (data.stopped) return data.message || "Stopped";
+
+    // If logs are present, use the last one for a summary
     if (Array.isArray(data.logs) && data.logs.length > 0) {
       return (
         data.logs[data.logs.length - 1]?.message || "Verification completed"
       );
     }
-    return poolHelpers.isVerifySuccess(result)
-      ? "Verified"
-      : "Verification failed";
+
+    // Fallback for simple success/fail cases
+    return poolHelpers.isVerifySuccess(result) ? "Verified" : "Verification failed";
   },
 
   getVerifyLogs: (result) => {
