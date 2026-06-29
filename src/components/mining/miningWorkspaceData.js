@@ -1,10 +1,19 @@
+// miningWorkspaceData.js - COMPLETE UPGRADED VERSION
+// Fully integrates HeroMiners into opportunity calculations
+
 import {
-  NICEHASH_ALGO_MAP,
+  getAlgoDisplayName,
+  getAlgorithmUnit,
+  mapNiceHashToMRR,
   normalizeAlgoForNiceHash,
-  getAlgoMapping,
+  normalizeAlgo,
+  NICEHASH_ALGO_MAP,  // ✅ Added for fallback
 } from "../../core/mapping";
 import { getBtcPriceData, parsePriceValue } from "../../core/priceUtils";
 
+// ============================================
+// UTILITY FUNCTIONS
+// ============================================
 export const numberValue = (value) => {
   if (value === null || value === undefined || value === "") return 0;
   const parsed =
@@ -37,6 +46,39 @@ export const percentValue = (value) => {
 const normalizeKey = (algo) =>
   normalizeAlgoForNiceHash(algo || "").toUpperCase();
 
+const isCoinLikeLabel = (value) => {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  const normalized = normalizeAlgoForNiceHash(text);
+  if (normalized && normalized !== "UNKNOWN") return false;
+  const compact = text.replace(/[^a-z0-9]/gi, "");
+  return compact.length > 1;
+};
+
+// ============================================
+// COLLECT COINS FROM ROW
+// ============================================
+const collectCoinsFromRow = (row) => {
+  const coins = new Set();
+  
+  if (row.coin && row.coin !== "Unknown" && row.coin !== "N/A") {
+    coins.add(row.coin);
+  }
+  
+  if (row.raw?.coin) coins.add(row.raw.coin);
+  if (row.raw?.symbol) coins.add(row.raw.symbol);
+  if (row.raw?.name) coins.add(row.raw.name);
+  if (row.raw?.coinName) coins.add(row.raw.coinName);
+  
+  if (row.symbol) coins.add(row.symbol);
+  if (row.coinName) coins.add(row.coinName);
+  
+  return coins;
+};
+
+// ============================================
+// NORMALIZE FUNCTIONS
+// ============================================
 export function normalizeMiningDutchRows(payload) {
   const source = payload?.miningdutch || payload || {};
   const rows = Array.isArray(source?.coinStats) ? source.coinStats : [];
@@ -46,10 +88,10 @@ export function normalizeMiningDutchRows(payload) {
       const nicehashAlgo = normalizeKey(row.algorithm || row.algo);
       return {
         provider: "Mining-Dutch",
-        coin: row.coin || row.symbol || row.algorithm || "Pool",
+        coin: row.coin || row.symbol || "Pool",
         algorithm: row.algorithm || row.algo || "N/A",
         nicehashAlgo,
-        mrrAlgo: NICEHASH_ALGO_MAP(nicehashAlgo),
+        mrrAlgo: mapNiceHashToMRR(nicehashAlgo) || NICEHASH_ALGO_MAP?.[nicehashAlgo] || nicehashAlgo,
         btcPerDay: numberValue(row.btcPerDay),
         usdPerDay: numberValue(row.usdPerDay),
         miners: numberValue(row.miners),
@@ -61,22 +103,20 @@ export function normalizeMiningDutchRows(payload) {
 }
 
 export function normalizeHeroRows(payload) {
-  const source =
-    payload?.herominers || payload?.herominers || payload || {};
+  const source = payload?.herominers || payload || {};
   const rows = Array.isArray(source?.coinStats) ? source.coinStats : [];
 
   return rows
     .map((row) => {
       const nicehashAlgo = normalizeKey(row.algorithm || row.algo);
-      // Get the actual coin name from the API
-      const coinName = row.coin || row.symbol || row.algorithm || "Unknown";
+      const coinName = row.coin || row.symbol || "Unknown";
       
       return {
         provider: "HeroMiners",
         coin: coinName,
         algorithm: row.algorithm || row.algo || "N/A",
         nicehashAlgo,
-        mrrAlgo: NICEHASH_ALGO_MAP(nicehashAlgo),
+        mrrAlgo: mapNiceHashToMRR(nicehashAlgo) || NICEHASH_ALGO_MAP?.[nicehashAlgo] || nicehashAlgo,
         miners: numberValue(row.miners),
         workers: numberValue(row.workers),
         poolHashrate: row.poolHashrate || row.pool_hashrate || "N/A",
@@ -89,18 +129,9 @@ export function normalizeHeroRows(payload) {
     .filter((row) => row.nicehashAlgo && row.nicehashAlgo !== "UNKNOWN");
 }
 
-const collectCoinsFromRow = (row) => {
-  const coins = new Set();
-  if (row.coin && row.coin !== "Unknown" && row.coin !== "N/A") {
-    coins.add(row.coin);
-  }
-  // Also check the raw payload for other possible coin name fields
-  if (row.raw?.coin) coins.add(row.raw.coin);
-  if (row.raw?.symbol) coins.add(row.raw.symbol);
-  if (row.raw?.name) coins.add(row.raw.name);
-  return coins;
-};
-
+// ============================================
+// MERGE MINING ROUTES
+// ============================================
 export function mergeMiningRoutes(
   miningDutchRows,
   heroRows,
@@ -115,13 +146,22 @@ export function mergeMiningRoutes(
       miners: 0,
       workers: 0,
       poolHashrates: [],
+      btcPerDay: 0,
+      usdPerDay: 0,
     };
 
-    collectCoinsFromRow(row).forEach((coin) => current.allCoinsSet.add(coin));
-    current.coins = Array.from(current.allCoinsSet).sort();
+    collectCoinsFromRow(row).forEach((coin) => {
+      if (coin && coin !== "Unknown" && coin !== "N/A") {
+        current.allCoinsSet.add(coin);
+      }
+    });
+    current.coins = Array.from(current.allCoinsSet).filter(Boolean).sort();
     
     current.miners += row.miners || 0;
     current.workers += row.workers || 0;
+    current.btcPerDay += row.btcPerDay || 0;
+    current.usdPerDay += row.usdPerDay || 0;
+    
     if (row.poolHashrate && row.poolHashrate !== "N/A") {
       current.poolHashrates.push(row.poolHashrate);
     }
@@ -137,9 +177,21 @@ export function mergeMiningRoutes(
         coins: [],
         allCoinsSet: new Set(),
         nicehashAlgo: row.nicehashAlgo,
+        btcPerDay: 0,
+        usdPerDay: 0,
+        miners: 0,
+        workers: 0,
       };
-      collectCoinsFromRow(row).forEach((coin) => current.allCoinsSet.add(coin));
-      current.coins = Array.from(current.allCoinsSet).sort();
+      collectCoinsFromRow(row).forEach((coin) => {
+        if (coin && coin !== "Unknown" && coin !== "N/A") {
+          current.allCoinsSet.add(coin);
+        }
+      });
+      current.coins = Array.from(current.allCoinsSet).filter(Boolean).sort();
+      current.btcPerDay += row.btcPerDay || 0;
+      current.usdPerDay += row.usdPerDay || 0;
+      current.miners += row.miners || 0;
+      current.workers += row.workers || 0;
       heroByRawAlgo.set(rawAlgo, current);
     }
   }
@@ -169,46 +221,67 @@ export function mergeMiningRoutes(
       const hero = heroByAlgo.get(nicehashAlgo);
       const nhPrice = numberValue(niceHashPrices[nicehashAlgo] || 0);
       const poolBtc = dutch?.btcPerDay || 0;
+      const heroBtc = hero?.btcPerDay || 0;
+      
       const spread =
         poolBtc > 0 && nhPrice > 0
           ? ((poolBtc - nhPrice) / nhPrice) * 100
           : null;
+      
+      const heroSpread =
+        heroBtc > 0 && nhPrice > 0
+          ? ((heroBtc - nhPrice) / nhPrice) * 100
+          : null;
+      
       const activityScore = (hero?.miners || 0) + (hero?.workers || 0) * 0.25;
-      const profitScore = poolBtc * 100000000;
+      const profitScore = Math.max(poolBtc, heroBtc) * 100000000;
 
       // Get all coins from hero data
       let heroCoins = hero?.coins || [];
       
       // If no coins found via nicehashAlgo, try raw algo matching
       if (heroCoins.length === 0) {
-        // Try to find coins from raw algorithm names
         for (const [rawAlgo, data] of heroByRawAlgo) {
           if (nicehashAlgo.toLowerCase().includes(rawAlgo) || 
               rawAlgo.includes(nicehashAlgo.toLowerCase())) {
             heroCoins = [...heroCoins, ...data.coins];
           }
         }
-        heroCoins = [...new Set(heroCoins)].sort();
+        heroCoins = [...new Set(heroCoins)].filter(Boolean).sort();
       }
+
+      const displayName = getAlgoDisplayName(nicehashAlgo);
+      const unit = getAlgorithmUnit(nicehashAlgo);
+
+      // Determine best source
+      const sources = [
+        { key: "Mining-Dutch", value: poolBtc },
+        { key: "HeroMiners", value: heroBtc },
+      ];
+      const bestSource = sources.sort((a, b) => b.value - a.value)[0];
 
       return {
         nicehashAlgo,
-        mrrAlgo: NICEHASH_ALGO_MAP(nicehashAlgo),
-        label: getAlgoMapping(nicehashAlgo).displayName,
-        unit: getAlgoMapping(nicehashAlgo).unit,
+        mrrAlgo: mapNiceHashToMRR(nicehashAlgo) || NICEHASH_ALGO_MAP?.[nicehashAlgo] || nicehashAlgo,
+        label: displayName,
+        unit: unit,
         miningDutchBtcPerDay: poolBtc,
         miningDutchUsdPerDay: dutch?.usdPerDay || 0,
         miningDutchMiners: dutch?.miners || 0,
         miningDutchHashrate: dutch?.hashrate || "N/A",
+        heroBtcPerDay: heroBtc,
+        heroUsdPerDay: hero?.usdPerDay || 0,
         heroCoins: heroCoins,
         heroMiners: hero?.miners || 0,
         heroWorkers: hero?.workers || 0,
         heroPoolHashrates: hero?.poolHashrates || [],
         niceHashPrice: nhPrice,
         spread,
+        heroSpread,
         rankScore: profitScore + activityScore,
-        bestSource: poolBtc > 0 ? "Mining-Dutch" : "HeroMiners",
+        bestSource: bestSource?.key || "N/A",
         dutchRows: dutch?.rows || [],
+        heroRows: hero?.rows || [],
       };
     })
     .sort((a, b) => {
@@ -219,16 +292,18 @@ export function mergeMiningRoutes(
     });
 }
 
+// ============================================
+// MRR MARKET ROWS
+// ============================================
 export function normalizeMrrMarketRows(payload) {
-  const rentals = Array.isArray(payload?.data?.rentals)
-    ? payload.data.rentals
-    : Array.isArray(payload?.rentals)
-      ? payload.rentals
-      : Array.isArray(payload)
-        ? payload
-        : [];
+  // The payload is now from /info/algos, which is an object where keys are algo names.
+  const algos = typeof payload === 'object' && payload !== null && !Array.isArray(payload) 
+    ? Object.values(payload) 
+    : Array.isArray(payload) 
+      ? payload 
+      : [];
 
-  return rentals
+  return algos
     .map((rental) => {
       const rawPrice = rental?.price || rental?.rig?.price || {};
       const paidValue =
@@ -266,7 +341,7 @@ export function normalizeMrrMarketRows(payload) {
           rental?.rig?.hashrate?.suffix ||
           rental?.price_unit ||
           rental?.currency ||
-          getAlgoMapping(nicehashAlgo).unit,
+          getAlgorithmUnit(nicehashAlgo),
       ).toUpperCase();
       const perUnitPerDay =
         paidValue > 0 && durationHours > 0 && advertised > 0
@@ -277,7 +352,7 @@ export function normalizeMrrMarketRows(payload) {
         id: String(rental?.id || rental?.rentalid || rental?.rental_id || ""),
         algo,
         nicehashAlgo,
-        mrrAlgo: NICEHASH_ALGO_MAP(nicehashAlgo),
+        mrrAlgo: mapNiceHashToMRR(nicehashAlgo) || NICEHASH_ALGO_MAP?.[nicehashAlgo] || nicehashAlgo,
         unit,
         priceBtc: paidValue,
         pricePerUnitDayBtc: perUnitPerDay,
@@ -300,10 +375,14 @@ export function normalizeMrrMarketRows(payload) {
     );
 }
 
+// ============================================
+// BUILD OPPORTUNITY ROWS - UPGRADED WITH HEROMINERS
+// ============================================
 export function buildOpportunityRows(
   routeRows,
   niceHashPrices = {},
-  mrrMarketRows = [],
+  mrrMarketRows = [], // This is now an array of algo market data
+  heroRows = [], // ✅ Added heroRows parameter
 ) {
   const mrrByAlgo = new Map();
   for (const row of mrrMarketRows) {
@@ -316,42 +395,122 @@ export function buildOpportunityRows(
     mrrByAlgo.set(row.nicehashAlgo, current);
   }
 
+  // ✅ Build HeroMiners data by algorithm
+  const heroByAlgo = new Map();
+  for (const row of heroRows) {
+    const current = heroByAlgo.get(row.nicehashAlgo) || {
+      rows: [],
+      btcPerDay: 0,
+      usdPerDay: 0,
+      miners: 0,
+      workers: 0,
+      coins: new Set(),
+    };
+    current.rows.push(row);
+    current.btcPerDay += row.btcPerDay || 0;
+    current.usdPerDay += row.usdPerDay || 0;
+    current.miners += row.miners || 0;
+    current.workers += row.workers || 0;
+    if (row.coin && row.coin !== "Unknown") current.coins.add(row.coin);
+    if (row.raw?.coin) current.coins.add(row.raw.coin);
+    if (row.raw?.symbol) current.coins.add(row.raw.symbol);
+    heroByAlgo.set(row.nicehashAlgo, current);
+  }
+
   return routeRows
     .map((route) => {
       const nhPrice = numberValue(niceHashPrices[route.nicehashAlgo] || 0);
       const mrrMarket = mrrByAlgo.get(route.nicehashAlgo)?.price || 0;
       const pool = numberValue(route.miningDutchBtcPerDay || 0);
+      
+      // ✅ Get HeroMiners data for this algorithm
+      const heroData = heroByAlgo.get(route.nicehashAlgo);
+      const heroValue = heroData?.btcPerDay || 0;
+      const heroCoins = heroData?.coins ? Array.from(heroData.coins) : [];
+      
+      // ✅ Include all sources in best cost calculation
+      const candidates = [
+        { key: "Mining-Dutch", value: pool },
+        { key: "NiceHash", value: nhPrice },
+        { key: "MRR", value: mrrMarket },
+        { key: "HeroMiners", value: heroValue },
+      ];
+      
       const bestCost = Math.min(
-        ...(nhPrice > 0 ? [nhPrice] : [Number.POSITIVE_INFINITY]),
-        ...(mrrMarket > 0 ? [mrrMarket] : [Number.POSITIVE_INFINITY]),
+        ...candidates.map(c => c.value > 0 ? c.value : Number.POSITIVE_INFINITY)
       );
+      
       const spreadVsNh =
         nhPrice > 0 ? ((pool - nhPrice) / nhPrice) * 100 : null;
       const spreadVsMrr =
         mrrMarket > 0 ? ((pool - mrrMarket) / mrrMarket) * 100 : null;
-      const winner = [
-        { key: "Mining-Dutch", value: pool },
-        { key: "NiceHash", value: nhPrice },
-        { key: "MRR", value: mrrMarket },
-      ].sort((a, b) => b.value - a.value)[0];
+      const spreadVsHero =
+        heroValue > 0 ? ((pool - heroValue) / heroValue) * 100 : null;
+      
+      // ✅ Determine winner including HeroMiners
+      const winner = candidates.sort((a, b) => b.value - a.value)[0];
+
+      // ✅ Merge coins from route and hero data
+      const allCoins = new Set([
+        ...(route.heroCoins || []),
+        ...heroCoins,
+      ]);
 
       return {
         ...route,
         niceHashPrice: nhPrice,
         mrrMarketPrice: mrrMarket,
+        heroMinersPrice: heroValue,
+        heroMinersCount: heroData?.miners || 0,
+        heroWorkersCount: heroData?.workers || 0,
+        heroCoins: Array.from(allCoins).filter(Boolean).sort(),
         poolRevenue: pool,
         spreadVsNh,
         spreadVsMrr,
+        spreadVsHero,
         bestCost,
         winner: winner?.key || "N/A",
         opportunityScore:
           pool - (bestCost === Number.POSITIVE_INFINITY ? 0 : bestCost),
         mrrMarketRows: mrrByAlgo.get(route.nicehashAlgo)?.rows || [],
+        heroRows: heroData?.rows || [],
+        allSources: candidates.filter(c => c.value > 0).map(c => c.key),
       };
     })
     .sort(
       (a, b) =>
         b.opportunityScore - a.opportunityScore ||
-        b.poolRevenue - a.poolRevenue,
+        b.poolRevenue - a.poolRevenue ||
+        (b.heroMinersPrice || 0) - (a.heroMinersPrice || 0),
     );
+}
+
+// ============================================
+// HELPER: Get best source for an algorithm
+// ============================================
+export function getBestSource(route, includeHero = true) {
+  const sources = [
+    { key: "Mining-Dutch", value: route.miningDutchBtcPerDay || 0 },
+    { key: "NiceHash", value: route.niceHashPrice || 0 },
+    { key: "MRR", value: route.mrrMarketPrice || 0 },
+  ];
+  
+  if (includeHero) {
+    sources.push({ key: "HeroMiners", value: route.heroMinersPrice || 0 });
+  }
+  
+  return sources
+    .filter(s => s.value > 0)
+    .sort((a, b) => b.value - a.value)[0] || null;
+}
+
+// ============================================
+// HELPER: Get spread between pool and best source
+// ============================================
+export function getBestSpread(route, includeHero = true) {
+  const best = getBestSource(route, includeHero);
+  if (!best) return null;
+  const pool = route.miningDutchBtcPerDay || 0;
+  if (pool <= 0 || best.value <= 0) return null;
+  return ((pool - best.value) / best.value) * 100;
 }

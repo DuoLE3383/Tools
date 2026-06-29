@@ -1,7 +1,60 @@
-import * as XLSX from "xlsx";
+// poolUtils.js - COMPLETE VERSION
 
+import * as XLSX from "xlsx";
+// ✅ Import from mapping
+import { getAlgoMapping, normalizeAlgo } from "./mapping.js";
+
+// ============================================
+// CONSTANTS
+// ============================================
 const DEFAULT_VERIFICATION_LOCATION = "ANY";
 const KNOWN_NH_CLIENTS = new Set(["BT", "PH", "LN", "NHATLINH", "VN", "ALL"]);
+
+// ============================================
+// ✅ EXPORT: Algorithm Display Helpers
+// ============================================
+
+/**
+ * Gets the user-friendly display name for an algorithm.
+ * @param {string} algo - The algorithm name (any format)
+ * @returns {string} The display name
+ */
+export function getAlgoDisplayName(algo) {
+  if (!algo) return 'Unknown';
+  
+  const mapping = getAlgoMapping(algo);
+  if (mapping && mapping.displayName) {
+    return mapping.displayName;
+  }
+  
+  return String(algo)
+    .split(/[\s_-]/)
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+}
+
+/**
+ * Gets the normalized algorithm key.
+ * @param {string} algo - The algorithm name (any format)
+ * @returns {string} The normalized key
+ */
+export function getAlgoKey(algo) {
+  return normalizeAlgo(algo) || 'UNKNOWN';
+}
+
+/**
+ * Gets the hashrate unit for an algorithm.
+ * @param {string} algo - The algorithm name (any format)
+ * @returns {string} The unit (e.g., 'GH', 'TH')
+ */
+export function getAlgorithmUnit(algo) {
+  const mapping = getAlgoMapping(algo);
+  return mapping.unit || 'H';
+}
+
+// ============================================
+// EXPORT: Client Helpers
+// ============================================
 
 export function sanitizeNhClientTag(value, fallback = "BT") {
   const candidate = String(value || "").trim().toUpperCase();
@@ -9,6 +62,10 @@ export function sanitizeNhClientTag(value, fallback = "BT") {
   const safeFallback = String(fallback || "BT").trim().toUpperCase();
   return KNOWN_NH_CLIENTS.has(safeFallback) ? safeFallback : "BT";
 }
+
+// ============================================
+// EXPORT: Array Helpers
+// ============================================
 
 /** Safely extracts an array from various MRR API response shapes */
 export function extractArray(
@@ -24,15 +81,18 @@ export function extractArray(
     if (Array.isArray(payload[key])) return payload[key];
   }
 
-  // If payload.data contains an array, recurse once to look for array keys inside the envelope
   if (payload.data && typeof payload.data === "object") {
     return extractArray(payload.data, keys);
   }
 
   return [];
 }
+
+// ============================================
+// EXPORT: Location Helpers
+// ============================================
+
 const LOCATION_MAP = {
-  // NiceHash API v2 pool verification service locations
   EU: "EUROPE",
   EUROPE: "EUROPE",
   USA: "USA",
@@ -54,9 +114,10 @@ const LOCATION_MAP = {
   ANY: "ANY",
 };
 
-/**
- * Shared API wrapper
- */
+// ============================================
+// EXPORT: API Helpers
+// ============================================
+
 export async function apiFetch(path, options = {}) {
   const headers = { ...(options.headers || {}) };
   const storedToken =
@@ -82,9 +143,10 @@ export async function apiFetch(path, options = {}) {
   return { ok: res.ok, status: res.status, data, headers: res.headers };
 }
 
-/**
- * Pool Data Helpers
- */
+// ============================================
+// EXPORT: Pool Data Helpers
+// ============================================
+
 export const poolHelpers = {
   getKey: (p, i = 0) =>
     String(p?.id || p?.poolId || p?.name || p?.__generatedId || `gen-${i}`),
@@ -269,18 +331,11 @@ export const poolHelpers = {
     });
   },
 
-  /**
-   * Formats a raw hashrate number into a human-readable string.
-   * @param {number} hashrate - Hashrate in base units (H/s)
-   * @param {string} algo - Optional algorithm to determine base units
-   */
   formatHashrate: (hashrate, algo = "") => {
     if (!hashrate || isNaN(hashrate)) return "0 H/s";
     const val = parseFloat(hashrate);
     const units = ["H/s", "KH/s", "MH/s", "GH/s", "TH/s", "PH/s", "EH/s"];
 
-    // MRR values are often already in higher units depending on the algo,
-    // but standard normalization works best:
     let i = 0;
     let displayVal = val;
     while (displayVal >= 1000 && i < units.length - 1) {
@@ -295,7 +350,6 @@ poolHelpers.normalizeMrrPoolsForExport = (mrrPoolData) => {
   if (!mrrPoolData || mrrPoolData.success === false) return [];
 
   let results = [];
-  // This logic is similar to MrrPoolsTable's data normalization
   if (
     mrrPoolData?.data &&
     typeof mrrPoolData.data === "object" &&
@@ -311,7 +365,6 @@ poolHelpers.normalizeMrrPoolsForExport = (mrrPoolData) => {
       !extracted[0].pools &&
       (extracted[0].user || extracted[0].host || extracted[0].stratumHost)
     ) {
-      // It's a flat list of pools, not grouped by rig/rental
       results = [{ id: "UnknownRigOrRental", pools: extracted }];
     } else {
       results = extracted;
@@ -329,7 +382,7 @@ poolHelpers.normalizeMrrPoolsForExport = (mrrPoolData) => {
         Host: pool.host || pool.stratumHost,
         Port: pool.port || pool.stratumPort,
         Username: pool.user || pool.username,
-        Password: pool.pass || pool.password, // Include password for completeness, but be mindful of security
+        Password: pool.pass || pool.password,
         Algorithm: pool.algo || pool.algorithm || pool.type,
         Status: pool.status,
       });
@@ -338,9 +391,10 @@ poolHelpers.normalizeMrrPoolsForExport = (mrrPoolData) => {
   return exportableData;
 };
 
-/**
- * Shared API Actions
- */
+// ============================================
+// EXPORT: API Actions
+// ============================================
+
 export const poolApi = {
   list: (client) =>
     apiFetch(`/api/v2/pools${client ? `?client=${client}` : ""}`),
@@ -374,3 +428,10 @@ export const poolApi = {
     return apiFetch(`/api/v2/mrr/rigs?${query.toString()}`);
   },
 };
+
+// ============================================
+// EXPORT: All functions individually (for named imports)
+// ============================================
+
+// Re-export all functions so they can be imported individually
+// This is already done above with export function syntax

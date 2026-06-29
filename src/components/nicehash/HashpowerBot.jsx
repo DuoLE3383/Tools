@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, memo } from "react";
-import { apiFetch } from "../core/poolUtils";
+import { apiFetch } from "../../core/poolUtils";
 
 /**
  * Sub-component for Logs to prevent re-rendering the whole bot on every log entry

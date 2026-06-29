@@ -1,3 +1,5 @@
+// MrrRigCard.jsx - FIXED VERSION
+
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { CountdownTimer } from "./MiningRigRental";
 import {
@@ -10,15 +12,98 @@ import {
   getRoiColor,
   getNiceHashPriceValue,
 } from "../../core/mrrUtils.js";
+
+// ✅ Import from central mapping
 import {
   HASHRATE_SUFFIXES,
-  ALGO_MAPPING,
   normalizeAlgoForNiceHash,
   getMrrAlgorithmUnit,
+  getAlgoDisplayName,
+  getAlgorithmUnit,
+  mapNiceHashToMRR,
   calculatePriceComparison,
-  getMrrAlgoKey,
   isAsicBoost,
+  normalizeAlgo,
+  getAlgoMapping,  // ✅ Added for better mapping
+  getMrrUnit,      // ✅ Added for MRR unit
+  getNiceHashUnit, // ✅ Added for NiceHash unit
+  convertNiceHashToMrr, // ✅ Added for unit conversion
 } from "../../core/mapping.js";
+
+// ============================================
+// ✅ HELPER: Get MRR API key from algorithm
+// ============================================
+function getMrrAlgoKey(normalizedAlgo) {
+  if (!normalizedAlgo || normalizedAlgo === 'UNKNOWN') return null;
+  
+  // Use the central mapping to get the algorithm info
+  const mapping = getAlgoMapping(normalizedAlgo);
+  if (!mapping || !mapping.niceHash) return null;
+  
+  // Map NiceHash algorithm to MRR API key
+  const niceHashAlgo = mapping.niceHash;
+  
+  const keyMap = {
+    'SCRYPT': 'scrypt',
+    'SHA256': 'sha256',
+    'SHA256ASICBOOST': 'sha256ab',
+    'RANDOMXMONERO': 'randomx',
+    'KAWPOW': 'kawpow',
+    'DAGGERHASHIMOTO': 'daggerhashimoto',
+    'ETHASH': 'daggerhashimoto',
+    'ETCHASH': 'etchash',
+    'EQUIHASH': 'equihash',
+    'CRYPTONIGHT': 'cryptonight',
+    'CRYPTONIGHTV7': 'cryptonight',
+    'CRYPTONIGHTV8': 'cryptonight',
+    'CRYPTONIGHTR': 'cryptonight',
+    'X11': 'x11',
+    'X13': 'x13',
+    'X15': 'x15',
+    'X16R': 'x16r',
+    'X16RV2': 'x16rv2',
+    'LYRA2RE': 'lyra2re',
+    'LYRA2REV2': 'lyra2rev2',
+    'LYRA2REV3': 'lyra2rev3',
+    'LYRA2Z': 'lyra2z',
+    'SCRYPTN': 'scryptn',
+    'NEOSCRYPT': 'neoscrypt',
+    'BLAKE256R8': 'blake256r8',
+    'BLAKE256R14': 'blake256r14',
+    'BLAKE2S': 'blake2s',
+    'KECCAK': 'keccak',
+    'NIST5': 'nist5',
+    'QUBIT': 'qubit',
+    'QUARK': 'quark',
+    'WHIRLPOOLX': 'whirlpoolx',
+    'DECRED': 'decred',
+    'SIA': 'sia',
+    'LBRY': 'lbry',
+    'PASCAL': 'pascal',
+    'ZHASH': 'zhash',
+    'BEAM': 'beam',
+    'BEAMV2': 'beamv2',
+    'BEAMV3': 'beamv3',
+    'GRINCUCKAROO29': 'grincuckaroo29',
+    'GRINCUCKATOO31': 'grincuckatoo31',
+    'CUCKOOCYCLE': 'cuckoo',
+    'HANDSHAKE': 'handshake',
+    'AUTOLYKOS': 'autolykos',
+    'OCTOPUS': 'octopus',
+    'VERUSHASH': 'verushash',
+    'KHEAVYHASH': 'kheavyhash',
+    'KASPA': 'kheavyhash',
+    'NEXAPOW': 'nexapow',
+    'ALEPHIUM': 'alephium',
+    'FISHHASH': 'fishhash',
+    'IRONFISH': 'ironfish',
+    'KARLSENHASH': 'karlsenhash',
+    'PYRINHASH': 'pyrinhash',
+    'EAGLESONG': 'eaglesong',
+  };
+  
+  return keyMap[niceHashAlgo] || null;
+}
 
 // ─── Helper: Format hashrate with unit ──────────────────────────────────
 function formatHashrateWithUnit(value, unit) {
@@ -73,11 +158,11 @@ const COINGECKO_BY_CURRENCY = {
 };
 const PRICE_CURRENCIES = ["BTC", "ETH", "LTC", "DOGE", "BCH"];
 const FALLBACK_BTC_RATES = {
-  ETH: 0.052,
-  LTC: 0.00078,
-  DOGE: 0.0000018,
-  BCH: 0.00042,
-  ETC: 0.00042,
+  ETH: 0.02635,
+  LTC: 0.000715,
+  DOGE: 0.00000117,
+  BCH: 0.00327,
+  ETC: 0.000117,
 };
 
 const resolvePaidPrice = (priceSource, convertedSource) => {
@@ -181,7 +266,13 @@ const MrrRigCard = ({
     rig.type ||
     algoName;
   const normalizedAlgo = normalizeAlgoForNiceHash(rawAlgo);
-  const mrrUnit = getMrrAlgorithmUnit(normalizedAlgo || rawAlgo);
+  
+  // ✅ Use getMrrUnit for MRR unit
+  const mrrUnit = getMrrUnit(normalizedAlgo || rawAlgo);
+  
+  // ✅ Use getNiceHashUnit for NiceHash unit
+  const nhUnit = getNiceHashUnit(normalizedAlgo || rawAlgo);
+  
   const mrrApiKey = getMrrAlgoKey(normalizedAlgo);
   const isAsicBoostAlgo = isAsicBoost(normalizedAlgo);
 
@@ -241,11 +332,14 @@ const MrrRigCard = ({
       setMrrRateError(null);
 
       const primaryKey = getMrrAlgoKey(normalizedAlgo);
+      if (!primaryKey) {
+        setMrrRateError('No MRR key for this algorithm');
+        setIsLoadingMrrRate(false);
+        return;
+      }
+      
       const keysToTry = [primaryKey];
-      if (
-        normalizedAlgo === "SHA256ASICBOOST" ||
-        normalizedAlgo === "SHA256AB"
-      ) {
+      if (normalizedAlgo === "SHA256ASICBOOST" || normalizedAlgo === "SHA256AB") {
         if (primaryKey !== "sha256") keysToTry.push("sha256");
       }
 
@@ -256,8 +350,10 @@ const MrrRigCard = ({
         try {
           const url = `/api/v2/mrr/market/algos/${key}`;
           const response = await fetch(url);
-          if (!response.ok)
-            throw new Error(`Proxy returned ${response.status}`);
+          if (!response.ok) {
+            console.warn(`MRR API returned ${response.status} for ${key}`);
+            continue;
+          }
           const data = await response.json();
 
           let foundRate = 0;
@@ -316,7 +412,6 @@ const MrrRigCard = ({
     rig.algorithm,
     rig.type,
     algoName,
-    mrrUnit,
     info?.rawAds,
     rig.hashrate?.advertised,
   ]);
@@ -448,7 +543,7 @@ const MrrRigCard = ({
     mrrMarketRate > 0
       ? `MRR API (${mrrUsedKey || mrrApiKey})`
       : calculatedMrrRate > 0
-        ? ""
+        ? "Calculated from rental"
         : infoMrrRate > 0
           ? "From rental info"
           : isLoadingMrrRate
@@ -482,9 +577,9 @@ const MrrRigCard = ({
         ? Number.parseFloat(nhOrder.add_fee ?? nhOrder.priceWithFee)
         : buyNhPrice
       : 0;
-  const myNhUnit = ALGO_MAPPING(
-    normalizeAlgoForNiceHash(algoName || rawAlgo),
-  );
+  
+  // ✅ Use getNiceHashUnit for NiceHash unit
+  const myNhUnit = getNiceHashUnit(normalizedAlgo || rawAlgo) || 'KH';
 
   const marketPriceData = algoMarketPrices?.[algoName];
   const marketPriceValue = marketPriceData
@@ -493,24 +588,23 @@ const MrrRigCard = ({
   const niceHashSourcePrice =
     marketPriceValue > 0 ? marketPriceValue : buyNhPriceWithFee;
 
-  const fromMultiplier = HASHRATE_SUFFIXES[cleanHashrateUnit(myNhUnit)] || 1;
-  const toMultiplier = HASHRATE_SUFFIXES[cleanHashrateUnit(mrrUnit)] || 1;
-  const niceHashPriceInMrrUnit =
-    niceHashSourcePrice > 0
-      ? niceHashSourcePrice * (toMultiplier / fromMultiplier)
-      : 0;
+  // ✅ Convert NiceHash price to MRR unit for proper comparison
+  const niceHashPriceInMrrUnit = useMemo(() => {
+    if (niceHashSourcePrice <= 0) return 0;
+    // Use the conversion helper from mapping
+    return convertNiceHashToMrr(niceHashSourcePrice, normalizedAlgo || rawAlgo);
+  }, [niceHashSourcePrice, normalizedAlgo, rawAlgo]);
 
+  // ✅ ROI calculation with proper unit conversion
   const roiPercent = useMemo(() => {
-    if (niceHashSourcePrice > 0 && finalMrrRate > 0) {
-      return calculatePriceComparison(
-        finalMrrRate,
-        mrrUnit,
-        niceHashSourcePrice,
-        myNhUnit,
-      );
-    }
-    return null;
-  }, [finalMrrRate, mrrUnit, niceHashSourcePrice, myNhUnit]);
+    if (finalMrrRate <= 0 || niceHashPriceInMrrUnit <= 0) return null;
+    return calculatePriceComparison(
+      finalMrrRate,
+      mrrUnit,
+      niceHashPriceInMrrUnit,
+      mrrUnit, // Both are now in MRR units
+    );
+  }, [finalMrrRate, mrrUnit, niceHashPriceInMrrUnit]);
 
   const roiLabel = useMemo(() => {
     if (roiPercent !== null) return formatPercent(roiPercent);
@@ -522,7 +616,7 @@ const MrrRigCard = ({
     return "No NH price";
   }, [roiPercent, niceHashSourcePrice, finalMrrRate, isLoadingMrrRate]);
 
-  const displayAlgo = ALGO_MAPPING(normalizedAlgo || rawAlgo);
+  const displayAlgo = getAlgoDisplayName(normalizedAlgo || rawAlgo);
 
   const elapsedMs =
     nowMs > 0 && totalMs > 0
@@ -592,8 +686,13 @@ const MrrRigCard = ({
         marginLeft: "4px",
         border: "1px solid rgba(245, 158, 11, 0.3)",
       }}
-    ></span>
+    >
+      ASIC Boost
+    </span>
   ) : null;
+
+  // ... rest of the JSX remains the same
+  // (The return statement with all the UI elements stays unchanged)
 
   return (
     <article className="rig-card" style={shellStyle}>
@@ -711,7 +810,6 @@ const MrrRigCard = ({
               </span>
             )}
           </div>
-          {/* ❌ Removed the error message block */}
         </div>
 
         {/* ROI Badge */}
@@ -1210,7 +1308,7 @@ const MrrRigCard = ({
         </section>
       </div>
 
-      {/* ─── Pools (unchanged) ─── */}
+      {/* ─── Pools ─── */}
       {expandedPools.has(rig.id) && (info || rig.host) && (
         <div
           className="rig-pool-summary"
@@ -1276,7 +1374,7 @@ const MrrRigCard = ({
         </div>
       )}
 
-      {/* ─── Buttons (unchanged) ─── */}
+      {/* ─── Buttons ─── */}
       <div
         style={{
           display: "flex",

@@ -4,6 +4,7 @@
 // ==========================
 
 import { db } from './db.js';
+import fs from 'fs';
 import { mrrApiCall, mrrConfigs } from './mrr.js';
 import { resolveNhClient, getNiceHashApp, isAggregate, nhConfigs } from './nh.js';
 import { extractRentalInfo, extractRigInfo } from './utils.js';

@@ -3,10 +3,12 @@ import { registerCoinGeckoRoutes } from "./routes/coinGecko.js";
 import { registerNiceHashRoutes } from "./routes/nicehash.js";
 import { registerMrrRoutes } from "./routes/mrr.js";
 import { registerMiscRoutes } from "./routes/misc.js";
-import { registerMiningStatsRoutes } from "./routes/miningStats.js";
-import { registerHeroMinersRoutes } from "./miners/herominers-routes.js"; // This handles HeroMiners specific endpoints
-import { startPriceFetcherJob } from "./price-fetcher.js";
+import { registerMiningStatsRoutes } from "./routes/miningStats.js"; // This was missing from your provided file list, but is in the fix.
+import { registerHeroMinersRoutes } from "./miners/herominers-routes.js";
+import { startPriceFetcherJob } from "./routes/price-fetcher.js";
 import { startHeroMinersMonitor } from "./miners/herominers-monitor.js";
+
+let servicesStarted = false;
 
 // ==========================
 //  ROUTE REGISTRATION
@@ -53,10 +55,9 @@ export function registerRoutes(app) {
   // Misc routes - utility endpoints
   registerMiscRoutes(app);
   console.log('[Routes] ✅ Misc routes registered');
-
+  
   // Mining stats routes - general mining data
   registerMiningStatsRoutes(app);
-  console.log('[Routes] ✅ Mining Stats routes registered');
 
   // HeroMiners routes - pool stats
   registerHeroMinersRoutes(app);
@@ -65,6 +66,11 @@ export function registerRoutes(app) {
   // ==========================
   //  BACKGROUND SERVICES
   // ==========================
+
+  if (servicesStarted) {
+    console.log('[Routes] ℹ️ Background services already started, skipping initialization.');
+    return;
+  }
 
   // Start price fetcher job (CoinGecko prices)
   // This job is now started in the main index.js to prevent double initialization.
@@ -82,6 +88,8 @@ export function registerRoutes(app) {
   } else {
     console.log('[Routes] ℹ️ HeroMiners monitor skipped (no addresses configured)');
   }
+
+  servicesStarted = true;
 
   // ==========================
   //  ERROR HANDLING
@@ -121,7 +129,7 @@ export function registerRoutes(app) {
     res.status(statusCode).json(response);
   });
 
-  console.log('[Routes] ✅ All routes registered successfully');
+  console.log('[Routes] ✅ All routes registered');
 }
 
 // ==========================

@@ -4,7 +4,7 @@ import express from 'express';
 
 // ---------- Configuration ----------
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-for-dev-only';
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '1h';
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '24h';
 const BCRYPT_ROUNDS = parseInt(process.env.BCRYPT_ROUNDS, 10) || 10;
 
 /**
@@ -37,8 +37,15 @@ export const generateToken = (payload) => {
 };
 
 export const verifyToken = (token) => {
-  try { return jwt.verify(token, JWT_SECRET); }
-  catch { return null; }
+  if (!token) return null;
+  
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    return decoded;
+  } catch (err) {
+    console.error('[Auth] Token verification failed:', err.message);
+    return null;
+  }
 };
 
 export const authMiddleware = (req, res, next) => {

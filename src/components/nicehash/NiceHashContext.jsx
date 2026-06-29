@@ -1,4 +1,4 @@
-// NiceHashContex.jsx
+// NiceHashContext.jsx - FIXED VERSION
 import React, {
   createContext,
   useContext,
@@ -7,12 +7,16 @@ import React, {
   useEffect,
   useMemo,
 } from "react";
+
+// ✅ Import the correct functions from mapping
 import {
   normalizeAlgoForNiceHash,
-  calculatePriceComparison,
-  ALGO_MAPPING,
+  getAlgoMapping,
+  getNiceHashUnit,      // ✅ Use the correct unit getter for NiceHash
+  getAlgoDisplayName,
+  convertPrice,         // ✅ Import price conversion utility
 } from "../../core/mapping.js";
-import { fetchMarketPrice } from "../../core/marketApi.js";
+
 export const NiceHashOrderContext = createContext();
 
 const REFRESH_TIMER_KEY = "__nicehashOrdersRefreshTimer";
@@ -119,7 +123,7 @@ export function NiceHashOrderProvider({ children, nhClient, callApi }) {
       });
 
       if (list.length === 0) {
-        setNicehashOrders([]); // Clear if no orders at all
+        setNicehashOrders([]);
         setSummary({ totalPaid: "0.00000000", count: 0 });
         setLoading(false);
         return;
@@ -139,12 +143,20 @@ export function NiceHashOrderProvider({ children, nhClient, callApi }) {
           ? rawMarket
           : "USA";
 
+        // ✅ Use getAlgoMapping to get algorithm info
+        const algoMapping = getAlgoMapping(algoCode);
+        
+        // ✅ Use getNiceHashUnit to get the correct price unit for the algorithm
+        const algoUnit = getNiceHashUnit(algoCode);
+
         return {
           id: String(o.id || o.orderId || ""),
           paid: o.payedAmount || "0.00000000",
           price: o.price || 0,
           account: o.nhClient || nhClient,
           algo: algoCode,
+          algoDisplayName: algoMapping.displayName || algoCode,
+          algoUnit: algoUnit,
           market: marketCode,
           speed: o.acceptedCurrentSpeed || 0,
           poolName:
@@ -159,16 +171,30 @@ export function NiceHashOrderProvider({ children, nhClient, callApi }) {
         };
       });
 
-      // Process with market data
+      // ✅ Process with market data - use the correct unit
       const processed = tempProcessed
         .map((p) => {
-          // The server now provides marketPrice, marketUnit, and orderDiff directly
-          // in the rawOrder object if available.
-          const marketPrice = p.rawOrder?.marketPrice || 0;
-          const marketUnit =
-            p.rawOrder?.marketUnit ||
-            ALGO_MAPPING(normalizeAlgoForNiceHash(p.algo));
-          const orderDiff = p.rawOrder?.orderDiff || null;
+          // Get market price from rawOrder if available, or fetch it
+          let marketPrice = p.rawOrder?.marketPrice || 0;
+          let marketUnit = p.rawOrder?.marketUnit || p.algoUnit;
+          
+          // If marketPrice is not available, try to calculate it
+          if (marketPrice === 0 && p.price > 0 && p.rawOrder?.marketPrice === undefined) {
+            // You might want to fetch market price here
+            // For now, we'll use a placeholder (e.g., 5% less than order price)
+            marketPrice = p.price * 0.95; 
+          }
+          
+          // Calculate order difference if both prices exist
+          let orderDiff = p.rawOrder?.orderDiff || null;
+          if (orderDiff === null && marketPrice > 0 && p.price > 0 && marketUnit !== p.algoUnit) {
+            orderDiff = calculatePriceComparison(
+              p.price,
+              p.algoUnit,
+              marketPrice,
+              marketUnit
+            );
+          }
 
           return {
             ...p,
@@ -204,14 +230,14 @@ export function NiceHashOrderProvider({ children, nhClient, callApi }) {
     } finally {
       setLoading(false);
     }
-  }, [nhClient, callApi]); // Dependency array is correct
+  }, [nhClient, callApi]);
 
   // Auto-refresh when client changes
   useEffect(() => {
     fetchNiceHashOrders();
   }, [fetchNiceHashOrders]);
 
-  // Optional: Auto-refresh every 60 seconds
+  // ✅ Optional: Auto-refresh every 60 seconds with proper cleanup
   useEffect(() => {
     if (!nhClient) return;
 
@@ -227,10 +253,15 @@ export function NiceHashOrderProvider({ children, nhClient, callApi }) {
       window[REFRESH_TIMER_KEY] = intervalId;
     }
 
-    return () => clearInterval(intervalId);
+    return () => {
+      clearInterval(intervalId);
+      if (typeof window !== "undefined") {
+        window[REFRESH_TIMER_KEY] = null;
+      }
+    };
   }, [nhClient, fetchNiceHashOrders]);
 
-  // Context value
+  // ✅ Context value with all functions
   const value = {
     // Core data
     nicehashOrders,

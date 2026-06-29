@@ -42,9 +42,9 @@ export function initNhConfigs(env) {
 
     },
     LN: {
-      apiKey: normalizeCredential(env.NICEHASH_API_KEY_KIMLOAN),
-      apiSecret: normalizeCredential(env.NICEHASH_API_SECRET_KIMLOAN),
-      orgId: normalizeCredential(env.NICEHASH_ORG_ID_KIMLOAN),
+      apiKey: normalizeCredential(env.NICEHASH_API_KEY_LN),
+      apiSecret: normalizeCredential(env.NICEHASH_API_SECRET_LN),
+      orgId: normalizeCredential(env.NICEHASH_ORG_ID_LN),
       environment: normalizeCredential(env.NICEHASH_ENVIRONMENT || 'production'),
 
     },

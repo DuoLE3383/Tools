@@ -1,53 +1,70 @@
-export function createApiClient({ onState } = {}) {
+// core/apiClient.js - FIXED
+
+const API_BASE = '/api'; // ✅ Use relative path for proxy
+
+export function createApiClient({ onAuthError, onState }) {
   return async function callApi(path, options = {}) {
     const startedAt = performance.now();
-    const method = options.method || "GET";
-    const { query, section, ...fetchOptions } = options;
-    let finalPath = path;
+    const method = options.method || 'GET';
+    const { query, section, silent = false, background = false, noCache = false, ...fetchOptions } = options;
 
+    // ✅ Skip if not authenticated and path requires auth
+    const token = localStorage.getItem('token');
+    if (!token && !path.includes('/auth/')) {
+      console.warn('[API] No auth token, skipping call');
+      return { success: false, error: 'Not authenticated' };
+    }
+
+    const headers = {
+      'Content-Type': 'application/json',
+      ...fetchOptions.headers,
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+    };
+
+    // Build query string
+    let finalPath = path.startsWith('/api') ? path : `/api${path.startsWith('/') ? path : `/${path}`}`;
+    
     const enrichedQuery = { ...query };
-    if (path.startsWith("/api/v2/")) enrichedQuery.ts = Date.now();
-
-    if (Object.keys(enrichedQuery).length > 0) {
+    if (enrichedQuery && Object.keys(enrichedQuery).length > 0) {
       const params = new URLSearchParams();
       Object.entries(enrichedQuery).forEach(([key, value]) => {
-        if (value !== undefined && value !== null)
-          params.append(key, String(value));
+        if (value !== undefined && value !== null) params.append(key, String(value));
       });
       const qs = params.toString();
-      if (qs) finalPath += (finalPath.includes("?") ? "&" : "?") + qs;
+      if (qs) finalPath += (finalPath.includes('?') ? '&' : '?') + qs;
     }
 
-    if (!options.silent) {
-      onState?.({
-        type: "request-start",
-        payload: { section, method, path: finalPath },
-      });
-    }
-
-    // Use relative API paths so development proxy and production same-origin routing both work.
-    const apiBase = "";
-
-    const headers = { ...fetchOptions.headers };
     let body = fetchOptions.body;
-    if (body && typeof body === "object" && !(body instanceof FormData)) {
+    if (body && typeof body === 'object' && !(body instanceof FormData)) {
       body = JSON.stringify(body);
-      headers["Content-Type"] = headers["Content-Type"] || "application/json";
+    }
+
+    if (onState) {
+      onState({
+        type: 'request-start',
+        payload: { method, path: finalPath },
+      });
     }
 
     try {
-      const res = await fetch(`${apiBase}${finalPath}`, {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+      const response = await fetch(finalPath, {
         ...fetchOptions,
         method,
         headers,
         body,
-        mode: "cors",
-        credentials: "omit",
+        signal: controller.signal,
+        credentials: 'include',
       });
 
+      clearTimeout(timeoutId);
+
       let data = null;
-      if (res.status !== 204 && res.status !== 205) {
-        const text = await res.text();
+      const contentType = response.headers.get('content-type') || '';
+      if (response.status !== 204 && response.status !== 205) {
+        const text = await response.text();
         try {
           data = text ? JSON.parse(text) : null;
         } catch {
@@ -55,65 +72,67 @@ export function createApiClient({ onState } = {}) {
         }
       }
 
-      if (!options.silent) {
-        onState?.({
-          type: "request-finish",
+      const durationMs = Math.round(performance.now() - startedAt);
+
+      if (onState) {
+        onState({
+          type: 'request-finish',
           payload: {
             method,
             path: finalPath,
-            status: `${res.status} ${res.statusText}`,
-            durationMs: Math.round(performance.now() - startedAt),
+            status: `${response.status} ${response.statusText}`,
+            durationMs,
           },
         });
       }
 
-      const isAppError =
-        !res.ok ||
-        (data &&
-          typeof data === "object" &&
-          (data.success === false || data.error || data.errors)) ||
-        (typeof data === "string" && data.length > 0 && !data.startsWith("{"));
+      // ✅ Handle authentication errors
+      if (response.status === 401 || response.status === 403) {
+        if (onAuthError) onAuthError();
+        throw new Error('Unauthorized');
+      }
 
-      if (!isAppError && (res.status === 304 || res.ok)) {
-        if (!options.silent)
-          onState?.({
-            type: "request-success",
-            payload: { status: res.status, statusText: res.statusText, data },
-          });
-      } else if (!options.silent) {
-        const errorMsg =
-          typeof data === "string"
-            ? data
-            : data?.errors?.[0]?.message ||
-              data?.error ||
-              data?.message ||
-              data?.data?.message ||
-              res.statusText;
-        onState?.({
-          type: "request-error",
-          payload: {
-            status: res.status,
-            errorMsg,
-            data,
-            showModal: !!options.showModal,
-          },
+      // ✅ Handle response
+      const isError = !response.ok || (data && (data.success === false || data.error || data.errors));
+
+      if (isError) {
+        const errorMsg = typeof data === 'string' ? data :
+          data?.errors?.[0]?.message || data?.error || data?.message || response.statusText;
+        throw new Error(errorMsg);
+      }
+
+      // ✅ Success
+      if (onState) {
+        onState({
+          type: 'request-success',
+          payload: { data, status: response.status, statusText: response.statusText },
         });
       }
 
-      return data || (res.ok ? { success: true } : null);
+      return data || { success: true };
+
     } catch (err) {
-      if (!options.silent) {
-        onState?.({
-          type: "request-failed",
-          payload: {
-            error: err.message || String(err),
-            durationMs: Math.round(performance.now() - startedAt),
-          },
+      let errorMsg = err.message || String(err);
+      if (err.name === 'AbortError') {
+        errorMsg = 'Request timeout (30s)';
+      }
+
+      if (onState) {
+        onState({
+          type: 'request-error',
+          payload: { errorMsg, data: null, status: 0, showModal: options.showModal },
+        });
+        onState({
+          type: 'request-failed',
+          payload: { error: errorMsg, durationMs: Math.round(performance.now() - startedAt) },
         });
       }
-      throw err;
+
+      return { success: false, error: errorMsg };
     } finally {
-      if (!options.silent) onState?.({ type: "request-end" });
+      if (onState) {
+        onState({ type: 'request-end' });
+      }
     }
   };
 }

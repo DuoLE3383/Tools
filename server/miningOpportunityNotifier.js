@@ -2,10 +2,7 @@ import path from "path";
 import fs from "node:fs/promises";
 import sqlite3 from "sqlite3";
 import * as cheerio from "cheerio";
-import {
-  normalizeAlgo,
-  ALGO_MAPPING,
-} from "../src/core/mapping.js";
+import { normalizeAlgo, getAlgoDisplayName } from "../src/core/mapping.js";
 import { fetchAndSaveCoinPrices, getCoinPricesFromDb } from "./coinGecko/coinGeckoClient.js";
 import { getBtcPrice } from "./utils/priceUtils.js";
 import { getCoinGeckoId } from "./coinGecko/coinMapping.js";
@@ -353,7 +350,7 @@ export async function scanMiningOpportunities(force = false) {
 
     opportunities.push({
       algo,
-      label: ALGO_MAPPING(algo),
+      label: getAlgoDisplayName(algo),
       poolBtcPerDay: poolBtc,
       nhPriceBtc: nhPrice,
       mrrPriceBtc: mrrPrice,
@@ -405,7 +402,15 @@ export async function scanMiningOpportunities(force = false) {
 
   const positiveCount = opportunities.filter(o => (o.spreadPct ?? 0) > 0).length;
 
-  return { success: true, scannedAt: capturedAt, totalAlgos: algos.length, opportunities: opportunities.slice(0, 20), notificationsSent: notifyMessages.length, positiveCount };
+  return {
+    success: true,
+    scannedAt: capturedAt,
+    totalAlgos: algos.length,
+    opportunities: opportunities.slice(0, 20),
+    notificationsSent: notifyMessages.length,
+    positiveCount,
+    data: opportunities, // Ensure the full data is returned for the frontend to process
+  };
 }
 
 // =========================

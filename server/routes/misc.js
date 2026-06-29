@@ -6,6 +6,7 @@ import { db } from "../db.js";
 import { saveToDatabase } from "./_helpers.js";
 import fs from "fs/promises";
 import path from "path";
+import { scanMiningOpportunities } from "../miningOpportunityNotifier.js";
 
 const DATA_DIR = path.resolve(process.cwd(), "data");
 const hasToken = !!process.env.TELEGRAM_BOT_TOKEN;
@@ -71,11 +72,10 @@ export function registerMiscRoutes(app) {
 
   // ─── Manual Price Update ───────────────────────────────────
   app.post("/api/v2/prices/update", asyncHandler(async (req, res) => {
-    const { fetchAndStoreCoinPrices } = await import("../price-fetcher.js");
     try {
       console.log("[Prices] Manual price update triggered from frontend");
-      await fetchAndStoreCoinPrices();
-      res.json({ success: true, message: "Coin prices updated successfully" });
+      const result = await scanMiningOpportunities(true);
+      res.json({ success: true, message: "Mining opportunities scan and price update completed.", ...result });
     } catch (err) {
       console.error("[Prices] Manual update failed:", err.message);
       res.status(500).json({ success: false, error: err.message });

@@ -1,4 +1,5 @@
-// start.js
+// start.js - with better error handling
+
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -9,19 +10,20 @@ const __dirname = path.dirname(__filename);
 console.log('🚀 Starting NiceHash Tool...');
 console.log('📁 Working directory:', __dirname);
 
-// Function to kill all processes on exit
 let processes = [];
 
 function cleanup() {
   console.log('\n🛑 Shutting down...');
   processes.forEach(p => {
     try {
-      p.kill();
+      p.kill('SIGTERM');
     } catch (e) {
       // ignore
     }
   });
-  process.exit(0);
+  setTimeout(() => {
+    process.exit(0);
+  }, 1000);
 }
 
 process.on('SIGINT', cleanup);
@@ -29,38 +31,32 @@ process.on('SIGTERM', cleanup);
 
 // Start backend
 console.log('📡 Starting backend server...');
+
+// ✅ Use process.argv to pass args properly
 const backend = spawn('node', ['index.js'], {
-  stdio: 'pipe',
-  shell: true,  // Use shell: true for Windows compatibility
-  env: { ...process.env }
+  stdio: ['ignore', 'pipe', 'pipe'], // Separate stdout/stderr
+  env: { ...process.env, RUN_MAIN: 'true' }
 });
 
 processes.push(backend);
 
 let backendReady = false;
+let errorBuffer = '';
 
 backend.stdout.on('data', (data) => {
-  const output = data.toString().trim();
-  if (output) console.log('[📡]', output);
+  const output = data.toString();
+  if (output.trim()) console.log('[📡]', output.trim());
   
-  // Check if backend is ready
-  if (
-    output.includes('Listening on: http://localhost:3000') ||
-    output.includes('Listening on: http://127.0.0.1:3000')
-  ) {
+  if (output.includes('Listening on: http://localhost:3000') ||
+      output.includes('Listening on: http://127.0.0.1:3000')) {
     backendReady = true;
     console.log('✅ Backend ready! Starting frontend...');
     
-    // Start frontend after a short delay
     setTimeout(() => {
       console.log('🎨 Starting frontend...');
-      
-      // Use 'npm.cmd' on Windows, 'npm' on Unix
       const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-      
       const frontend = spawn(npmCmd, ['run', 'dev'], {
         stdio: 'inherit',
-        shell: true,  // Use shell: true for Windows
         env: { ...process.env }
       });
       processes.push(frontend);
@@ -68,21 +64,19 @@ backend.stdout.on('data', (data) => {
       frontend.on('error', (err) => {
         console.error('❌ Frontend error:', err.message);
       });
-      
-      frontend.on('close', (code) => {
-        if (code !== 0 && code !== null) {
-          console.error(`❌ Frontend exited with code ${code}`);
-        }
-      });
     }, 1500);
   }
 });
 
 backend.stderr.on('data', (data) => {
-  const error = data.toString().trim();
-  // Don't log ECONNREFUSED errors (they're expected during startup)
-  if (error && !error.includes('ECONNREFUSED') && !error.includes('DeprecationWarning')) {
-    console.error('[Backend Error]', error);
+  const error = data.toString();
+  errorBuffer += error;
+  
+  // Log errors but ignore deprecation warnings
+  if (!error.includes('DeprecationWarning') && 
+      !error.includes('ECONNREFUSED') &&
+      !error.includes('UV_HANDLE_CLOSING')) {
+    console.error('[Backend Error]', error.trim());
   }
 });
 
@@ -93,9 +87,13 @@ backend.on('error', (err) => {
 backend.on('close', (code) => {
   if (code !== 0 && code !== null) {
     console.error(`❌ Backend exited with code ${code}`);
+    if (errorBuffer) {
+      console.error('📋 Last errors:', errorBuffer);
+    }
   }
   if (!backendReady) {
     console.log('❌ Backend failed to start. Please check the errors above.');
+    cleanup();
   }
 });
 

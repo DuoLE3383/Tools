@@ -1,10 +1,14 @@
-// index.js – corrected startup
+// index.js – CORRECTED STARTUP
+
 import 'dotenv/config';
 import express from 'express';
 import http from 'http';
 import cors from 'cors';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
+import sqlite3 from 'sqlite3';
+
 import { setupWebSocket } from './server/ws.js';
 import { registerRoutes } from './server/routes.js';
 import { startMiningOpportunityScanner } from './server/miningOpportunityNotifier.js';
@@ -12,13 +16,21 @@ import { createApp, initializeApp } from './server/app.js';
 import { verifyToken } from './server/auth.js';
 import { resolveNhClient, getNiceHashApp, nhConfigs } from './server/nh.js';
 import { mrrApiCall, initMrrConfigs, mrrConfigs, defaultMrrClient } from './server/mrr.js';
-import sqlite3 from 'sqlite3';
 import { migrateOldCsvToDb } from './server/migrate.js';
 import { initMiningTrainingDb } from './server/miningTrainingDb.js';
 import { setDb } from './server/db.js';
 import { fetchAndSaveCoinPrices } from './server/coinGecko/coinGeckoClient.js';
-// ✅ CORRECT IMPORT – use the scripts folder
-import { mergeDatabases } from './data/merge.js';
+
+// ✅ Handle mergeDatabases import with fallback
+let mergeDatabases;
+try {
+  const mergeModule = await import('./data/merge.js');
+  mergeDatabases = mergeModule.mergeDatabases || mergeModule.default || (() => {});
+  console.log('[init] ✅ mergeDatabases loaded successfully');
+} catch (err) {
+  console.warn('[init] ⚠️ mergeDatabases not found, skipping database merge');
+  mergeDatabases = async () => { console.log('[init] Database merge skipped (module not found)'); };
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -26,6 +38,8 @@ const distPath = path.join(__dirname, 'dist', 'client');
 
 const DATA_DIR = path.join(__dirname, 'data');
 const STATS_DB_PATH = path.join(DATA_DIR, 'stats.db');
+
+// ✅ Client tags - consolidated
 const VALID_NH_CLIENT_TAGS = new Set(['BT', 'PH', 'LN', 'NHATLINH', 'VN', 'ALL']);
 const VALID_MRR_CLIENT_TAGS = new Set(['BT', 'SL', 'LN', 'LUCKY', 'VN', 'ALL']);
 
@@ -54,7 +68,11 @@ app.get('/', (req, res) => {
     service: 'NiceHash API Toolbox',
     status: 'running',
     version: '1.0.0',
-    endpoints: { health: '/api/health', time: '/api/v2/time', mining: '/api/v2/mining-stats' }
+    endpoints: { 
+      health: '/api/health', 
+      time: '/api/v2/time', 
+      mining: '/api/v2/mining-stats' 
+    }
   });
 });
 
@@ -65,12 +83,18 @@ let dbInstance;
 
 function initDatabase() {
   return new Promise((resolve, reject) => {
+    // Ensure data directory exists
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+
     dbInstance = new sqlite3.Database(STATS_DB_PATH, (dbErr) => {
       if (dbErr) return reject(dbErr);
+      
       // Enable WAL with proper busy timeout and synchronous settings for performance
       dbInstance.serialize(() => {
         dbInstance.run('PRAGMA journal_mode = WAL;', (err) => {
-        if (err) console.warn('[db] Failed to enable WAL mode:', err.message);
+          if (err) console.warn('[db] Failed to enable WAL mode:', err.message);
         });
         dbInstance.run('PRAGMA busy_timeout = 5000;', (err) => {
           if (err) console.warn('[db] Failed to set busy timeout:', err.message);
@@ -78,21 +102,43 @@ function initDatabase() {
         dbInstance.run('PRAGMA synchronous = NORMAL;', (err) => {
           if (err) console.warn('[db] Failed to set synchronous mode:', err.message);
         });
-      })
+        dbInstance.run('PRAGMA cache_size = -20000;', (err) => {
+          if (err) console.warn('[db] Failed to set cache_size:', err.message);
+        });
+      });
 
+      // Create tables
       dbInstance.run(`CREATE TABLE IF NOT EXISTS stats_cache (
-        key TEXT PRIMARY KEY, data TEXT, ts INTEGER
-      )`, (err) => { if (err) reject(err); });
+        key TEXT PRIMARY KEY, 
+        data TEXT, 
+        ts INTEGER
+      )`, (err) => { 
+        if (err) reject(err); 
+      });
+      
       dbInstance.run(`CREATE TABLE IF NOT EXISTS api_errors (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        timestamp TEXT, source TEXT, content_type TEXT, content TEXT
-      )`, (err) => { if (err) console.error(`[db] Failed to create api_errors table: ${err.message}`); });
+        timestamp TEXT, 
+        source TEXT, 
+        content_type TEXT, 
+        content TEXT
+      )`, (err) => { 
+        if (err) console.error(`[db] Failed to create api_errors table: ${err.message}`); 
+      });
+      
       dbInstance.run(`CREATE TABLE IF NOT EXISTS mrr_nonces (
-        client TEXT PRIMARY KEY, last_nonce TEXT
-      )`, (err) => { if (err) reject(err); });
+        client TEXT PRIMARY KEY, 
+        last_nonce TEXT
+      )`, (err) => { 
+        if (err) reject(err); 
+      });
+      
       dbInstance.run(`CREATE TABLE IF NOT EXISTS settings (
-        key TEXT PRIMARY KEY, value TEXT
-      )`, (err) => { if (err) console.error(`[db] Failed to create settings table: ${err.message}`); });
+        key TEXT PRIMARY KEY, 
+        value TEXT
+      )`, (err) => { 
+        if (err) console.error(`[db] Failed to create settings table: ${err.message}`); 
+      });
       
       // Add indexes for performance
       dbInstance.run(`CREATE INDEX IF NOT EXISTS idx_stats_cache_ts ON stats_cache(ts)`, (err) => {
@@ -132,15 +178,15 @@ function loadStats() {
         return resolve();
       }
       if (rows && rows.length > 0) {
-        const statsCache = new Map();
         rows.forEach(row => {
           try {
-            statsCache.set(row.key, { data: JSON.parse(row.data), ts: row.ts });
+            // Just log the count, don't store in memory to save RAM
+            JSON.parse(row.data);
           } catch (e) {
             console.error(`[db] Failed to parse row ${row.key}:`, e.message);
           }
         });
-        console.log('[db] Loaded cached stats from SQLite database');
+        console.log(`[db] Loaded ${rows.length} cached stats from SQLite database`);
       }
       resolve();
     });
@@ -161,7 +207,7 @@ async function startServer() {
       await mergeDatabases();
       console.log('[init] Database merge completed.');
     } catch (mergeErr) {
-      console.error('[init] Database merge failed:', mergeErr.message);
+      console.warn('[init] Database merge skipped/warning:', mergeErr.message);
       // Continue anyway – the app might still work with just stats.db
     }
 
@@ -189,6 +235,14 @@ async function startServer() {
     console.log('[init] Registering routes...');
     registerRoutes(app);
     console.log('[Routes] All routes registered');
+
+    // ✅ Serve static files from the 'dist/client' directory
+    app.use(express.static(distPath));
+
+    // ✅ SPA Fallback: For any request that doesn't match an API route, send the index.html.
+    app.get('/*', (req, res) => {
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
 
     // Create HTTP server
     const server = http.createServer(app);
@@ -242,6 +296,9 @@ if (process.env.RUN_MAIN !== 'false') {
   });
 }
 
+// ============================================================
+// HELPER FUNCTIONS
+// ============================================================
 function normalizeStoredClientTag(value, fallback, allowedTags) {
   const candidate = String(value || '').trim().toUpperCase();
   if (allowedTags.has(candidate)) return candidate;
@@ -334,3 +391,8 @@ async function cleanupStoredClientTags() {
     }
   }
 }
+
+// ============================================================
+// EXPORT FOR TESTING
+// ============================================================
+export { app, dbInstance, startServer };

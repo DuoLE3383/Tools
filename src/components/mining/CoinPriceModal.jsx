@@ -1,4 +1,5 @@
 // CoinPriceModal.jsx
+import Modal from "../Modal";
 import { useState, useEffect, useCallback } from "react";
 
 function formatPrice(value) {
@@ -63,13 +64,13 @@ export default function CoinPriceModal({
     
     // --- Try CoinGecko first (most reliable for 24h high/low) ---
     try {
-      const endpoint = "/api/v2/prices/coingecko";
+      const endpoint = "/api/v2/coingecko/coins/markets"; // ✅ Use the full market data endpoint
       const query = { 
         ids: coinId, // Use 'ids' to match the backend endpoint
         vs_currency: "usd" 
       };
       const result = await onCall(endpoint, { query, silent: true });
-      const data = result?.data || result || {};
+      const data = Array.isArray(result) ? result[0] : (result?.data?.[0] || result?.[0] || {});
       
       // CoinGecko response structure
       const price = data.price || data.usd || data.current_price || 0;
@@ -187,92 +188,82 @@ export default function CoinPriceModal({
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose} style={{ zIndex: 10000 }}>
-      <div className="modal-content" style={{ maxWidth: "600px" }} onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
-        <div className="modal-header">
-          <div>
-            <h2>{coin?.symbol?.toUpperCase() || "Coin"} Price</h2>
-            <div className="coin-price-header-meta">
-              Source: <span style={{ color: sourceColors[source] || "var(--text-muted)" }}>{source.toUpperCase()}</span>
-            </div>
+    <Modal isOpen={isOpen} onClose={onClose} title={`${coin?.symbol?.toUpperCase() || "Coin"} Price`} maxWidth="600px">
+      <div className="modal-body">
+        {/* Header Meta */}
+        <div className="coin-price-header-meta" style={{ marginBottom: '1rem', fontSize: '0.8rem', opacity: 0.7 }}>
+          Source:{" "}
+          <span style={{ color: sourceColors[source] || "var(--text-muted)", fontWeight: 'bold' }}>
+            {source.toUpperCase()}
+          </span>
+        </div>
+
+        {/* Content */}
+        {loading && <div style={{ textAlign: "center", padding: "40px", color: "var(--text-muted)" }}>Loading price data...</div>}
+        
+        {error && !loading && (
+          <div className="panel" style={{ background: "rgba(248,113,113,0.1)", borderColor: 'var(--danger-color)', color: "var(--danger-color)", textAlign: "center" }}>
+            {error}
+            <button onClick={fetchPrice} className="btn-pro secondary" style={{ marginTop: "1rem", borderColor: "var(--danger-color)", color: "var(--danger-color)" }}>Retry</button>
           </div>
-          <button onClick={onClose} className="modal-close-btn">×</button>
-        </div>
+        )}
 
-        <div className="modal-body">
-          {/* Content */}
-          {loading && <div style={{ textAlign: "center", padding: "40px", color: "var(--text-muted)" }}>Loading price data...</div>}
-          
-          {error && !loading && (
-            <div className="panel" style={{ background: "rgba(248,113,113,0.1)", borderColor: 'var(--danger-color)', color: "var(--danger-color)", textAlign: "center" }}>
-              {error}
-              <button onClick={fetchPrice} className="btn-pro secondary" style={{ marginTop: "1rem", borderColor: "var(--danger-color)", color: "var(--danger-color)" }}>Retry</button>
+        {!loading && !error && priceData && (
+          <div>
+            {/* Main Price */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1.5rem" }}>
+              <div className="panel" style={{ padding: "1rem", textAlign: "center", background: 'rgba(0,0,0,0.1)' }}>
+                <div className="label">Price</div>
+                <div style={{ fontSize: "2rem", fontWeight: 700, color: "var(--success-color)" }}>{formatPrice(priceData.price)}</div>
+              </div>
+              <div className="panel" style={{ padding: "1rem", textAlign: "center", background: 'rgba(0,0,0,0.1)' }}>
+                <div className="label">24h Change</div>
+                <div style={{ fontSize: "2rem", fontWeight: 700, color: priceData.change24h > 0 ? "var(--success-color)" : "var(--danger-color)" }}>{formatPercent(priceData.change24h)}</div>
+              </div>
             </div>
-          )}
 
-          {!loading && !error && priceData && (
-            <div>
-              {/* Main Price */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1.5rem" }}>
-                <div className="panel" style={{ padding: "1rem", textAlign: "center", background: 'rgba(0,0,0,0.1)' }}>
-                  <div className="label">Price</div>
-                  <div style={{ fontSize: "2rem", fontWeight: 700, color: "var(--success-color)" }}>{formatPrice(priceData.price)}</div>
+            {/* Profitability Calculator */}
+            <div className="panel" style={{ marginBottom: "1.5rem", border: "1px solid rgba(56, 189, 248, 0.2)" }}>
+              {/* Results */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: "0.75rem" }}>
+                <div style={{ background: "rgba(0,0,0,0.1)", padding: "0.5rem", borderRadius: "6px" }}>
+                  <div className="label" style={{ fontSize: "0.65rem" }}>Est. Coins/Day</div>
+                  <div style={{ color: "var(--text-light)", fontSize: "0.9rem", fontWeight: 600 }}>{(priceData.price > 0 ? (1 / priceData.price) * 2.5 : 0).toFixed(4)} {coin?.symbol?.toUpperCase()}</div>
                 </div>
-                <div className="panel" style={{ padding: "1rem", textAlign: "center", background: 'rgba(0,0,0,0.1)' }}>
-                  <div className="label">24h Change</div>
-                  <div style={{ fontSize: "2rem", fontWeight: 700, color: priceData.change24h > 0 ? "var(--success-color)" : "var(--danger-color)" }}>{formatPercent(priceData.change24h)}</div>
+                <div style={{ background: "rgba(0,0,0,0.1)", padding: "0.5rem", borderRadius: "6px" }}>
+                  <div className="label" style={{ fontSize: "0.65rem" }}>Est. Profit/Day</div>
+                  <div style={{ color: "var(--success-color)", fontSize: "0.9rem", fontWeight: 600 }}>${(2.5 - (power / 1000 * 24 * 0.1)).toFixed(2)}</div>
+                </div>
+                <div style={{ background: "rgba(0,0,0,0.1)", padding: "0.5rem", borderRadius: "6px" }}>
+                  <div className="label" style={{ fontSize: "0.65rem" }}>Last 24h Avg</div>
+                  <div style={{ color: "var(--warning-color)", fontSize: "0.9rem", fontWeight: 600 }}>${(2.5 - (power / 1000 * 24 * 0.1) * (1 + priceData.change24h / 100)).toFixed(2)}</div>
+                </div>
+                <div style={{ background: "rgba(0,0,0,0.1)", padding: "0.5rem", borderRadius: "6px" }}>
+                  <div className="label" style={{ fontSize: "0.65rem" }}>Next 24h Est.</div>
+                  <div style={{ color: "var(--secondary-accent)", fontSize: "0.9rem", fontWeight: 600 }}>${(2.5 - (power / 1000 * 24 * 0.1)).toFixed(2)}</div>
                 </div>
               </div>
-
-              {/* Profitability Calculator */}
-              <div className="panel" style={{ marginBottom: "1.5rem", border: "1px solid rgba(56, 189, 248, 0.2)" }}>
-                {/* Results */}
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: "0.75rem" }}>
-                  <div style={{ background: "rgba(0,0,0,0.1)", padding: "0.5rem", borderRadius: "6px" }}>
-                    <div className="label" style={{ fontSize: "0.65rem" }}>Est. Coins/Day</div>
-                    <div style={{ color: "var(--text-light)", fontSize: "0.9rem", fontWeight: 600 }}>{(priceData.price > 0 ? (1 / priceData.price) * 2.5 : 0).toFixed(4)} {coin?.symbol?.toUpperCase()}</div>
-                  </div>
-                  <div style={{ background: "rgba(0,0,0,0.1)", padding: "0.5rem", borderRadius: "6px" }}>
-                    <div className="label" style={{ fontSize: "0.65rem" }}>Est. Profit/Day</div>
-                    <div style={{ color: "var(--success-color)", fontSize: "0.9rem", fontWeight: 600 }}>${(2.5 - (power / 1000 * 24 * 0.1)).toFixed(2)}</div>
-                  </div>
-                  <div style={{ background: "rgba(0,0,0,0.1)", padding: "0.5rem", borderRadius: "6px" }}>
-                    <div className="label" style={{ fontSize: "0.65rem" }}>Last 24h Avg</div>
-                    <div style={{ color: "var(--warning-color)", fontSize: "0.9rem", fontWeight: 600 }}>${(2.5 - (power / 1000 * 24 * 0.1) * (1 + priceData.change24h / 100)).toFixed(2)}</div>
-                  </div>
-                  <div style={{ background: "rgba(0,0,0,0.1)", padding: "0.5rem", borderRadius: "6px" }}>
-                    <div className="label" style={{ fontSize: "0.65rem" }}>Next 24h Est.</div>
-                    <div style={{ color: "var(--secondary-accent)", fontSize: "0.9rem", fontWeight: 600 }}>${(2.5 - (power / 1000 * 24 * 0.1)).toFixed(2)}</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Details */}
-              <table className="pro-table">
-                <tbody>
-                  {[
-                    ["Market Cap", formatNumber(priceData.marketCap), "var(--text-light)"],
-                    ["24h Volume", formatNumber(priceData.volume24h), "var(--text-light)"],
-                    ["Circulating Supply", formatNumber(priceData.supply), "var(--text-light)"],
-                    ["Updated At", formatTimestamp(lastUpdated), "var(--text-muted)"],
-                  ].map(([label, value, color]) => (
-                    <tr key={label}>
-                      <td>{label}</td>
-                      <td style={{ textAlign: "right", color, fontWeight: label === "Updated At" ? 400 : 600, fontSize: label === "Updated At" ? "0.75rem" : "0.8rem" }}>{value}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
             </div>
-          )}
-        </div>
-        <div className="modal-footer" style={{ display: 'flex', justifyContent: 'flex-end', padding: '1rem 1.5rem', borderTop: '1px solid var(--border-color)'}}>
-            <button onClick={fetchPrice} disabled={loading} className="btn-pro secondary" style={{ opacity: loading ? 0.6 : 1 }}>
-              {loading ? "Refreshing..." : "Refresh"}
-            </button>
-        </div>
+
+            {/* Details */}
+            <table className="pro-table">
+              <tbody>
+                {[
+                  ["Market Cap", formatNumber(priceData.marketCap), "var(--text-light)"],
+                  ["24h Volume", formatNumber(priceData.volume24h), "var(--text-light)"],
+                  ["Circulating Supply", formatNumber(priceData.supply), "var(--text-light)"],
+                  ["Updated At", formatTimestamp(lastUpdated), "var(--text-muted)"],
+                ].map(([label, value, color]) => (
+                  <tr key={label}>
+                    <td>{label}</td>
+                    <td style={{ textAlign: "right", color, fontWeight: label === "Updated At" ? 400 : 600, fontSize: label === "Updated At" ? "0.75rem" : "0.8rem" }}>{value}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
-    </div>
+    </Modal>
   );
 }

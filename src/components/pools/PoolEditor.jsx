@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
-import Modal from "./Modal";
-import { poolHelpers as ph, apiFetch, poolApi } from "../core/poolUtils"; // Assuming nhClient is passed as a prop
+import Modal from "../Modal";
+import { poolHelpers as ph, apiFetch, poolApi } from "../../core/poolUtils"; // Assuming nhClient is passed as a prop
 
 export default function PoolEditor({
   pool,

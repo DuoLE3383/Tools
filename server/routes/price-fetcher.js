@@ -1,8 +1,8 @@
 // server/price-fetcher.js
-import { db } from './db.js';
-import { dbAllAsync, dbRunAsync } from './mrr/db-utils.js';
-import { createApiClient } from './api-client.js';
-import { getPriceSources } from './price-sources.js';
+import { db } from '../db.js';
+import { dbAllAsync, dbRunAsync } from '../mrr/db-utils.js';
+import { createApiClient } from '../api-client.js';
+import { getPriceSources } from '../price-sources.js';
 
 /**
  * Custom error class for handling API rate limit responses (HTTP 429).
@@ -124,10 +124,10 @@ async function initializeFetcher() {
  * Prioritizes a fresh list from CoinGecko, but falls back to the DB cache.
  */
 async function getTargetCoinList() {
-  const apiClient = createApiClient(PRICE_FETCH_CONFIG);
-  const priceSources = getPriceSources(apiClient, idToSymbolMap);
-
   try {
+    const apiClient = createApiClient(PRICE_FETCH_CONFIG);
+    const priceSources = getPriceSources(apiClient, idToSymbolMap);
+
     console.log('[PriceFetcher] 🌐 Attempting to get latest coin list from CoinGecko...');
     const allCoins = await priceSources.coingecko.fetch();
     if (allCoins.length > 0) {
@@ -145,11 +145,11 @@ async function getTargetCoinList() {
 
       // Re-initialize the map with the latest data
       await initializeFetcher();
-      return allCoins; // Return the full coin objects
+      return allCoins.map(c => ({ id: c.id, symbol: c.symbol, name: c.name }));
     }
     console.warn('[PriceFetcher] ⚠️ CoinGecko returned 0 coins. Falling back to DB cache.');
   } catch (error) {
-    console.warn(`[PriceFetcher] ⚠️ CoinGecko failed: ${error.message}. Falling back to DB cache.`);
+    console.warn(`[PriceFetcher] ⚠️ CoinGecko list fetch failed: ${error.message}. Falling back to DB cache.`);
   }
 
   // Fallback to database cache
@@ -161,82 +161,84 @@ async function getTargetCoinList() {
 /**
  * Merges new coin data into the existing results, filling gaps.
  */
-function mergeCoinData(existingCoins, newCoins) {
-  const existingMap = new Map(existingCoins.map(c => [c.id, c]));
-  let newCoinsAdded = 0;
-  newCoins.forEach(coin => {
-    const existingCoin = existingMap.get(coin.id);
-    // Add if it's a new coin, or if the existing coin has a price of 0
-    if (!existingCoin || (existingCoin.price_usd === 0 && coin.price_usd > 0)) {
-      existingMap.set(coin.id, coin);
-      if (!existingCoin) newCoinsAdded++;
+function mergeResults(masterList, newResults, sourceName) {
+  let updatedCount = 0;
+  newResults.forEach(newCoin => {
+    const existing = masterList.get(newCoin.id);
+    if (existing && existing.price_usd === 0 && newCoin.price_usd > 0) {
+      masterList.set(newCoin.id, { ...newCoin, source: sourceName });
+      updatedCount++;
     }
   });
-  return { merged: Array.from(existingMap.values()), newCount: newCoinsAdded };
+  return updatedCount;
 }
 
 /**
  * Fetches prices from a prioritized list of sources and stores them.
  */
 async function fetchAndSyncPrices() {
-  const initialCoinList = await getTargetCoinList();
-  if (initialCoinList.length === 0) {
+  const targetCoinList = await getTargetCoinList();
+  if (targetCoinList.length === 0) {
     throw new Error('Could not retrieve any coins to process, neither from API nor cache.');
   }
 
   const apiClient = createApiClient(PRICE_FETCH_CONFIG);
   const priceSources = getPriceSources(apiClient, idToSymbolMap);
-
-  let allFetchedCoins = initialCoinList.filter(c => c.source !== 'cached');
-  const allCoinIds = initialCoinList.map(c => c.id);
   const failedSources = [];
   const sourceStats = {};
 
-  if (allFetchedCoins.length > 0) {
-      sourceStats.coingecko = { count: allFetchedCoins.length };
-  }
+  // Master list to hold the results. Initialize with all target coins having a price of 0.
+  const masterResults = new Map(targetCoinList.map(c => [c.id, { ...c, price_usd: 0 }]));
 
-  // Define the fallback chain
-  const fallbackSources = [
-    { name: 'coindesk', enabled: true },
-    { name: 'cmc', enabled: !!process.env.CMC_API },
-    { name: 'blockchain', enabled: true },
-    { name: 'cryptocom', enabled: true },
-    { name: 'binance', enabled: true },
-    { name: 'kraken', enabled: true },
+  // Define the provider chain
+  const providerChain = [
+    // CoinGecko is now handled by getTargetCoinList, so we start with CMC as the first fallback.
+    { name: 'cmc', fetcher: priceSources.cmc.fetch, enabled: !!process.env.CMC_API },
+    { name: 'coindesk', fetcher: priceSources.coindesk.fetch, enabled: true },
+    { name: 'blockchain', fetcher: priceSources.blockchain.fetch, enabled: true },
   ];
+  
+  // Directly use the results from getTargetCoinList for CoinGecko prices.
+  const coingeckoUpdatedCount = mergeResults(masterResults, targetCoinList, 'coingecko');
+  sourceStats.coingecko = { fetched: targetCoinList.length, updated: coingeckoUpdatedCount, duration: 'N/A (initial list)' };
+  console.log(`[PriceFetcher] ✅ COINGECKO: Initial list provided ${targetCoinList.length} coins, updated ${coingeckoUpdatedCount} prices.`);
 
-  for (const source of fallbackSources) {
-    if (!source.enabled) continue;
+  for (const provider of providerChain) {
+    if (!provider.enabled) continue;
 
-    // Stop if we have good data for most coins
-    const coinsWithPrice = allFetchedCoins.filter(c => c.price_usd > 0).length;
-    if (coinsWithPrice / allCoinIds.length > 0.95 && allFetchedCoins.length > 100) {
-        console.log(`[PriceFetcher] ℹ️ Sufficient price coverage (${coinsWithPrice}/${allCoinIds.length}). Halting fallback chain.`);
-        break;
+    // Find which coins still need a price
+    const missingCoinIds = Array.from(masterResults.values())
+      .filter(c => c.price_usd === 0)
+      .map(c => c.id);
+
+    if (missingCoinIds.length === 0) {
+      console.log(`[PriceFetcher] ✅ All coin prices found. Halting provider chain.`);
+      break;
     }
 
     try {
-      console.log(`[PriceFetcher] 🌐 Attempting ${source.name}...`);
+      console.log(`[PriceFetcher] 🌐 Querying ${provider.name.toUpperCase()} for ${missingCoinIds.length} missing coins...`);
       const startTime = Date.now();
-      const newCoins = await priceSources[source.name].fetch(allCoinIds);
+      const newCoins = await provider.fetcher(missingCoinIds);
+        
       const duration = Date.now() - startTime;
 
       if (newCoins.length > 0) {
-        const { merged, newCount } = mergeCoinData(allFetchedCoins, newCoins);
-        allFetchedCoins = merged;
-        sourceStats[source.name] = { count: newCoins.length, duration: `${duration}ms` };
-        console.log(`[PriceFetcher] ✅ ${source.name}: Added/updated ${newCoins.length} coins in ${duration}ms.`);
+        const updatedCount = mergeResults(masterResults, newCoins, provider.name);
+        sourceStats[provider.name] = { fetched: newCoins.length, updated: updatedCount, duration: `${duration}ms` };
+        console.log(`[PriceFetcher] ✅ ${provider.name.toUpperCase()}: Fetched ${newCoins.length}, updated ${updatedCount} prices in ${duration}ms.`);
       }
     } catch (error) {
       if (error.name === 'RateLimitError') {
-        console.warn(`[PriceFetcher] ⚠️ ${source.name} is rate-limited. Switching to next source.`);
+        console.warn(`[PriceFetcher] ⚠️ ${provider.name} is rate-limited. Switching to next source.`);
       } else {
-        console.warn(`[PriceFetcher] ⚠️ ${source.name} failed: ${error.message}`);
+        console.warn(`[PriceFetcher] ⚠️ ${provider.name} failed: ${error.message}`);
       }
+      failedSources.push(provider.name);
     }
   }
-  return { allFetchedCoins, failedSources, sourceStats };
+
+  return { allFetchedCoins: Array.from(masterResults.values()), failedSources, sourceStats };
 }
 
 /**

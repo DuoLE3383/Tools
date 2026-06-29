@@ -31,13 +31,6 @@ export function createApp({ distPath }) {
   app.server = server;
 
   if (distPath) {
-    const originalListen = app.listen;
-    app.listen = function(...args) {
-      return server.listen(...args);
-    };
-  }
-
-  if (distPath) {
     app.use(express.static(distPath));
   }
 

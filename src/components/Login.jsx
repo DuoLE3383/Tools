@@ -15,7 +15,7 @@ export default function Login({ onLoginSuccess, onCall }) {
       // Note: We use the provided onCall (callApi) which won't have a token yet.
       // The /api/auth/login route should be unprotected on the backend.
       const result = await onCall("/api/auth/login", {
-        method: "POST",
+        method: "POST", // This was missing in the original App.jsx refactor
         body: { username, password },
       });
 
@@ -51,7 +51,7 @@ export default function Login({ onLoginSuccess, onCall }) {
           width: "100%",
         }}
       >
-        <h2 style={{ marginBottom: "8px", color: "#f8fafc" }}>Mining Tool</h2>
+        <h2 style={{ marginBottom: "8px", color: "#f8fafc" }}>Login</h2>
         <p style={{ color: "#94a3b8", marginBottom: "24px", fontSize: "14px" }}>
           Sign in to manage your rigs
         </p>

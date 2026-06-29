@@ -1,444 +1,290 @@
-// CryptoRatePage.jsx
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+// CryptoRatePage.jsx - FIXED
+
+import React, { useState, useEffect, useCallback } from "react";
 
 const COINS = [
   { id: "bitcoin", symbol: "BTC", name: "Bitcoin" },
   { id: "ethereum", symbol: "ETH", name: "Ethereum" },
   { id: "litecoin", symbol: "LTC", name: "Litecoin" },
   { id: "dogecoin", symbol: "DOGE", name: "Dogecoin" },
+  { id: "monero", symbol: "XMR", name: "Monero" },
+  { id: "ravencoin", symbol: "RVN", name: "Ravencoin" },
+  { id: "kaspa", symbol: "KAS", name: "Kaspa" },
   { id: "bitcoin-cash", symbol: "BCH", name: "Bitcoin Cash" },
+  { id: "ethereum-classic", symbol: "ETC", name: "Ethereum Classic" },
+  { id: "zcash", symbol: "ZEC", name: "Zcash" },
 ];
 
-function Sparkline({ data, width = 180, height = 80, color = "#60a5fa" }) {
-  if (!data || !Array.isArray(data) || data.length < 2) {
-    return (
-      <div
-        style={{
-          width,
-          height,
-          background: "rgba(255,255,255,0.02)",
-          borderRadius: "8px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      />
-    );
-  }
+// ✅ Alternative IDs for fallback
+const COIN_IDS = [
+  "bitcoin",
+  "ethereum", 
+  "litecoin",
+  "dogecoin",
+  "bitcoin-cash",
+  "monero",
+  "ravencoin",
+  "kaspa",
+  "ethereum-classic",
+  "zcash"
+];
 
-  const min = Math.min(...data);
-  const max = Math.max(...data);
-  const range = max - min || 1;
-
-  const points = data
-    .map((val, i) => {
-      const x = (i / (data.length - 1)) * width;
-      const y = height - ((val - min) / range) * height;
-      return `${x},${y}`;
-    })
-    .join(" ");
-
-  return (
-    <svg
-      width={width}
-      height={height}
-      viewBox={`0 0 ${width} ${height}`}
-      preserveAspectRatio="none"
-      style={{ overflow: "visible", filter: `drop-shadow(0 0 4px ${color}44)` }}
-    >
-      <polyline
-        fill="none"
-        stroke={color}
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        points={points}
-      />
-    </svg>
-  );
-}
-
-export default function CryptoRatePage({ onCall, onPriceUpdate, onNavigateHome }) {
-  const [prices, setPrices] = useState(null);
+export default function CryptoRatePage({ onCall, onNavigateHome }) {
+  const [prices, setPrices] = useState({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [wsStatus, setWsStatus] = useState("disconnected");
-  const [wsEnabled, setWsEnabled] = useState(true);
-  const [amounts, setAmounts] = useState({ usd: "1000" });
-  const [baseCoin, setBaseCoin] = useState("usd");
-
-  const onValueChange = (id, val) => {
-    setBaseCoin(id);
-    setAmounts({ [id]: val });
-  };
-
-  // ✅ Function to format prices for MrrRigCard
-  const formatPricesForRigCard = useCallback((data) => {
-    const formatted = {};
-    Object.keys(data).forEach(key => {
-      const coinData = data[key];
-      // Find the matching COIN entry
-      const coin = COINS.find(c => c.id === key);
-      const symbol = coin?.symbol || key.toUpperCase();
-      
-      formatted[symbol] = {
-        usd: coinData?.usd || 0,
-        btc: coinData?.btc || 0,
-        change24h: coinData?.usd_24h_change || 0,
-        marketCap: coinData?.usd_market_cap || 0,
-        volume24h: coinData?.usd_24h_vol || 0,
-      };
-    });
-    return formatted;
-  }, []);
+  const [lastUpdated, setLastUpdated] = useState(null);
 
   const fetchPrices = useCallback(async () => {
     setLoading(true);
     setError(null);
+
     try {
-      const ids = COINS.map((c) => c.id).join(",");
-      const res = await onCall("/api/v2/prices/coingecko", {
-        query: { ids, vs_currencies: "usd,btc", sparkline: true },
+      // ✅ Use the correct endpoint with proper IDs
+      const ids = COIN_IDS.join(',');
+      const result = await onCall("/api/v2/prices/coingecko", {
+        query: {
+          ids: ids,
+          vs_currency: 'usd',
+          include_24hr_change: 'true'
+        },
         silent: true,
       });
 
-      const data = res?.data || (res && typeof res === "object" && !res.error ? res : null);
-
-      if (data && (data.bitcoin || data.BTC || data.btc)) {
-        setPrices(data);
-        // ✅ Send formatted prices to parent
-        if (onPriceUpdate) {
-          const formatted = formatPricesForRigCard(data);
-          onPriceUpdate(formatted);
+      // ✅ Handle different response formats
+      let priceData = {};
+      
+      if (result && result.data) {
+        priceData = result.data;
+      } else if (result && typeof result === 'object') {
+        // Check if it's already in the right format
+        if (result.bitcoin || result.ethereum) {
+          priceData = result;
+        } else {
+          // Try to find data in nested structure
+          const nestedData = result?.data?.data || result?.data || result;
+          if (nestedData && typeof nestedData === 'object') {
+            priceData = nestedData;
+          }
         }
-      } else {
-        const isSystemConfig = data && data.environments && data.default_client;
-        const detail = isSystemConfig
-          ? "Backend Routing Error: Market API obscured by System Config."
-          : typeof res === "string"
-            ? res.includes("<!DOCTYPE html>")
-              ? "Cloudflare Intercept"
-              : `API Error: ${res.slice(0, 100)}`
-            : res?.error ||
-              res?.message ||
-              `Format Mismatch (Keys: ${res ? Object.keys(res).join(",") : "null"})`;
-
-        if (isSystemConfig) setWsEnabled(false);
-        if (!prices) setError(`Market data unavailable. ${detail}`);
-        throw new Error(detail);
       }
+
+      // ✅ Ensure bitcoin-cash is properly mapped
+      if (priceData['bitcoin-cash'] && !priceData['bitcoincash']) {
+        priceData['bitcoincash'] = priceData['bitcoin-cash'];
+      }
+      if (priceData['bitcoincash'] && !priceData['bitcoin-cash']) {
+        priceData['bitcoin-cash'] = priceData['bitcoincash'];
+      }
+
+      // ✅ Check if we got data
+      if (Object.keys(priceData).length === 0) {
+        throw new Error('No price data received');
+      }
+
+      setPrices(priceData);
+      setLastUpdated(new Date().toISOString());
+      
+      // ✅ Debug log to verify BCH
+      if (priceData['bitcoin-cash']) {
+        console.log('✅ BCH Price:', priceData['bitcoin-cash'].usd);
+      } else {
+        console.warn('⚠️ BCH not found in response:', Object.keys(priceData));
+      }
+
     } catch (err) {
-      console.error(`[CryptoRate] REST fetch failed: ${err.message}`);
+      console.error("Failed to fetch prices:", err);
+      setError(err.message);
+      
+      // ✅ Fallback: Try individual requests for missing coins
+      await fetchIndividualPrices();
     } finally {
       setLoading(false);
     }
-  }, [onCall, onPriceUpdate, formatPricesForRigCard]);
+  }, [onCall]);
+
+  // ✅ Fallback: Fetch individual coin prices
+  const fetchIndividualPrices = useCallback(async () => {
+    console.log('[CryptoRate] Trying individual price fetch...');
+    
+    try {
+      const results = await Promise.all(
+        COIN_IDS.map(async (id) => {
+          try {
+            const result = await onCall("/api/v2/prices/coingecko", {
+              query: { ids: id, vs_currency: 'usd' },
+              silent: true,
+            });
+            
+            let priceData = result?.data || result || {};
+            return { id, data: priceData[id] || priceData };
+          } catch (err) {
+            console.warn(`[CryptoRate] Failed to fetch ${id}:`, err.message);
+            return { id, data: null };
+          }
+        })
+      );
+
+      const newPrices = {};
+      results.forEach(({ id, data }) => {
+        if (data && typeof data === 'object') {
+          newPrices[id] = data;
+        }
+      });
+
+      if (Object.keys(newPrices).length > 0) {
+        console.log('[CryptoRate] Individual fetch succeeded:', Object.keys(newPrices));
+        setPrices(newPrices);
+        setLastUpdated(new Date().toISOString());
+        setError(null);
+      }
+    } catch (err) {
+      console.error('[CryptoRate] Individual fetch failed:', err.message);
+    }
+  }, [onCall]);
 
   useEffect(() => {
     fetchPrices();
+    const interval = setInterval(fetchPrices, 60000); // Refresh every minute
+    return () => clearInterval(interval);
+  }, [fetchPrices]);
 
-    let socket = null;
-    let reconnectTimeout = null;
-    let isComponentMounted = true;
-    let retryCount = 0;
-
-    const connectWs = () => {
-      if (!isComponentMounted || !wsEnabled) return;
-
-      if (socket) {
-        socket.onclose = null;
-        socket.close();
-      }
-
-      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const wsUrl = `${protocol}//${window.location.host}/api/v2/prices/ws`;
-
-      socket = new WebSocket(wsUrl);
-      if (isComponentMounted) setWsStatus("connecting");
-
-      socket.onopen = () => {
-        if (isComponentMounted) setWsStatus("connected");
-      };
-
-      socket.onmessage = (event) => {
-        if (!isComponentMounted) return;
-        try {
-          const message = JSON.parse(event.data);
-          if (message.type === "price_update" && message.data) {
-            setPrices((prev) => ({ ...prev, ...message.data }));
-            // ✅ Send updated prices to parent
-            if (onPriceUpdate) {
-              const formatted = formatPricesForRigCard(message.data);
-              onPriceUpdate(formatted);
-            }
-          }
-        } catch (err) {
-          console.warn("[WS] Failed to parse price update", err);
-        }
-      };
-
-      socket.onclose = () => {
-        if (!isComponentMounted) return;
-        setWsStatus("disconnected");
-
-        if (retryCount < 2 && wsEnabled) {
-          const delay = Math.min(30000, 5000 * Math.pow(2, retryCount));
-          reconnectTimeout = setTimeout(connectWs, delay);
-          retryCount++;
-        } else {
-          setWsEnabled(false);
-          console.warn("[WS] Maximum reconnection attempts reached.");
-        }
-      };
-
-      socket.onerror = () => {
-        if (isComponentMounted) setWsStatus("error");
-      };
-    };
-
-    if (wsEnabled) connectWs();
-
-    return () => {
-      isComponentMounted = false;
-      if (socket) socket.close();
-      if (reconnectTimeout) clearTimeout(reconnectTimeout);
-    };
-  }, [fetchPrices, wsEnabled, onPriceUpdate, formatPricesForRigCard]);
-
-  // Polling fallback
-  useEffect(() => {
-    const pollTimer = setInterval(() => {
-      if (wsStatus !== "connected" && !loading) {
-        console.log("[CryptoRate] WS inactive, polling for updates...");
-        fetchPrices();
-      }
-    }, 60000);
-    return () => clearInterval(pollTimer);
-  }, [fetchPrices, wsStatus, loading]);
-
-  const getCoinData = (id) => {
-    const coin = COINS.find((c) => c.id === id);
-    return prices?.[id] || prices?.[coin?.symbol] || prices?.[coin?.symbol?.toLowerCase()];
+  // Format price display
+  const formatPrice = (price) => {
+    if (!price || price === 0) return "N/A";
+    if (price >= 1) return `$${price.toFixed(2)}`;
+    if (price >= 0.01) return `$${price.toFixed(4)}`;
+    if (price >= 0.0001) return `$${price.toFixed(6)}`;
+    return `$${price.toFixed(8)}`;
   };
 
-  const getPrice = (data) => data?.usd || (typeof data === "number" ? data : 0);
+  // Get coin display info
+  const getCoinInfo = (coinId) => {
+    const coin = COINS.find(c => c.id === coinId);
+    return coin || { symbol: coinId.toUpperCase(), name: coinId };
+  };
 
-  const results = useMemo(() => {
-    const currentInput = parseFloat(amounts[baseCoin]) || 0;
-    const baseData = baseCoin === "usd" ? null : getCoinData(baseCoin);
-    const usdValue = baseCoin === "usd" ? currentInput : currentInput * getPrice(baseData);
-
-    return COINS.map((coin) => {
-      const data = getCoinData(coin.id);
-      const price = getPrice(data);
-      return {
-        ...coin,
-        price,
-        change: data?.usd_24h_change || 0,
-        history: data?.sparkline_in_7d?.price || data?.sparkline || null,
-        calculated: price > 0 ? usdValue / price : 0,
-        usdValue: usdValue,
-      };
-    });
-  }, [prices, amounts, baseCoin]);
+  // Get price change
+  const getPriceChange = (data) => {
+    return data?.usd_24h_change ?? data?.change ?? data?.price_change_24h ?? null;
+  };
 
   return (
-    <div
-      className="crypto-rate-page"
-      style={{
-        padding: "10px 14px",
-        color: "#f8fafc",
-        background: "transparent",
-        fontFamily: "sans-serif",
-        maxWidth: "100%",
-        overflow: "hidden",
-        boxSizing: "border-box",
-        width: "600px",
-        height: "500px"
-      }}
-    >
-      <button
-        className="btn-pro secondary"
-        onClick={onNavigateHome}
-        style={{
-          position: "absolute",
-          top: "12px",
-          left: "12px",
-          zIndex: 10,
-        }}
-      >
-        ← Back
-      </button>
-
-      {/* Header */}
-      <div
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: "8px",
-          marginBottom: "12px",
-          borderBottom: "1px solid rgba(255,255,255,0.05)",
-          paddingBottom: "8px",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          <span style={{ fontSize: "1.3rem", fontWeight: "900" }}>
-            LIVE <span style={{ color: "#60a5fa" }}>CONVERTER</span>
-          </span>
-          <div
-            style={{
-              width: "8px",
-              height: "8px",
-              borderRadius: "50%",
-              background: wsStatus === "connected" ? "#10b981" : "#f59e0b",
-            }}
-          />
-          <span
-            style={{
-              opacity: 0.4,
-              fontSize: "0.6rem",
-              fontWeight: "600",
-              textTransform: "uppercase",
-            }}
-          >
-            {wsStatus === "connected" ? "LIVE" : "LIVE"}
-          </span>
+    <div className="crypto-rate-page" style={{ padding: "20px" }}>
+      <div style={{ 
+        display: "flex", 
+        justifyContent: "space-between", 
+        alignItems: "center", 
+        marginBottom: "20px",
+        flexWrap: "wrap",
+        gap: "12px"
+      }}>
+        <div>
+          <h2 style={{ margin: 0 }}>Live Crypto Rates</h2>
+          {lastUpdated && (
+            <span style={{ fontSize: "11px", color: "#94a3b8", marginTop: "4px", display: "block" }}>
+              Last updated: {new Date(lastUpdated).toLocaleTimeString()}
+            </span>
+          )}
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <span style={{ fontSize: "1rem", color: "#60a5fa", fontWeight: "700" }}>
-            $
-          </span>
-          <input
-            type="number"
-            value={
-              baseCoin === "usd"
-                ? amounts.usd
-                : (results[0]?.usdValue || 0).toFixed(2)
-            }
-            onChange={(e) => onValueChange("usd", e.target.value)}
-            style={{
-              width: "120px",
-              background: "rgba(30,41,59,0.3)",
-              border: "1px solid rgba(255,255,255,0.06)",
-              borderRadius: "8px",
-              padding: "4px 8px",
-              fontSize: "1.3rem",
-              color: "#fff",
-              fontFamily: "monospace",
-              outline: "none",
-              textAlign: "right",
-            }}
-            placeholder="0"
-          />
-          <button
-            onClick={fetchPrices}
-            style={{
-              background: "rgba(96,165,250,0.08)",
-              border: "1px solid rgba(96,165,250,0.1)",
-              borderRadius: "4px",
-              padding: "4px 10px",
-              color: "#60a5fa",
-              fontSize: "0.8rem",
-              fontWeight: "600",
-              cursor: "pointer",
-              fontFamily: "sans-serif",
-              whiteSpace: "nowrap",
-            }}
+        <div style={{ display: "flex", gap: "8px" }}>
+          <button 
+            className="btn-pro secondary" 
+            onClick={fetchPrices} 
+            disabled={loading}
+            style={{ fontSize: "11px" }}
           >
-            ⟳
+            {loading ? "⏳" : "🔄 Refresh"}
+          </button>
+          <button className="btn-pro secondary" onClick={onNavigateHome} style={{ fontSize: "11px" }}>
+            ← Back
           </button>
         </div>
       </div>
 
-      {/* Square Grid */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
-          gap: "8px",
-        }}
-      >
-        {results.map((coin) => (
-          <div
-            key={coin.id}
-            style={{
-              aspectRatio: "2 / 1",
-              background: baseCoin === coin.id ? "rgba(96,165,250,0.06)" : "rgba(30,41,59,0.12)",
-              border: baseCoin === coin.id ? "1px solid rgba(96,165,250,0.15)" : "1px solid rgba(255,255,255,0.03)",
-              borderRadius: "10px",
-              padding: "14px 12px 12px",
-              display: "flex",
-              flexDirection: "column",
-              justifyContent: "space-between",
-              transition: "all 0.2s ease",
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontWeight: "800", color: "#d660fa", fontSize: "0.85rem" }}>
-                {coin.symbol}
-              </span>
-              <span
-                style={{
-                  color: coin.change >= 0 ? "#10b981" : "#f87171",
-                  fontWeight: "600",
-                  fontSize: "0.85rem",
-                }}
-              >
-                {coin.change >= 0 ? "▲" : "▼"} {Math.abs(coin.change).toFixed(1)}%
-              </span>
-            </div>
-
-            <div style={{ margin: "8px 0" }}>
-              <input
-                type="number"
-                value={
-                  baseCoin === coin.id
-                    ? amounts[coin.id]
-                    : coin.calculated > 0 ? coin.calculated.toFixed(6) : "0.000000"
-                }
-                onChange={(e) => onValueChange(coin.id, e.target.value)}
-                style={{
-                  width: "100%",
-                  background: "rgba(0,0,0,0.25)",
-                  border: "1px solid rgba(255,255,255,0.05)",
-                  borderRadius: "6px",
-                  padding: "6px 8px",
-                  fontSize: "1.2rem",
-                  color: "#fff",
-                  fontFamily: "monospace",
-                  outline: "none",
-                  textAlign: "center",
-                  boxSizing: "border-box",
-                }}
-              />
-            </div>
-
-            <div
-              style={{
-                fontSize: "0.75rem",
-                fontFamily: "monospace",
-                color: "rgba(255,255,255,0.35)",
-                textAlign: "center",
-              }}
-            >
-              $ {coin.price.toFixed(2)}
-            </div>
-          </div>
-        ))}
-      </div>
+      {loading && (
+        <div style={{ textAlign: "center", padding: "40px", color: "#94a3b8" }}>
+          Loading prices...
+        </div>
+      )}
 
       {error && (
-        <div
-          style={{
-            fontSize: "0.75rem",
-            color: "#f87171",
-            textAlign: "center",
-            marginTop: "10px",
-          }}
-        >
-          {error}
+        <div style={{ 
+          color: "#f87171", 
+          padding: "12px", 
+          background: "rgba(248,113,113,0.1)",
+          borderRadius: "8px",
+          border: "1px solid rgba(248,113,113,0.2)",
+          marginBottom: "16px"
+        }}>
+          ⚠️ Error: {error}
+          <button 
+            onClick={fetchPrices} 
+            style={{ marginLeft: "12px", background: "transparent", border: "1px solid #f87171", color: "#f87171", padding: "2px 12px", borderRadius: "4px", cursor: "pointer" }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
+      {!loading && !error && (
+        <div style={{ 
+          display: "grid", 
+          gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", 
+          gap: "16px" 
+        }}>
+          {COINS.map((coin) => {
+            const data = prices[coin.id] || prices[coin.symbol.toLowerCase()] || {};
+            const price = data?.usd || data?.price || 0;
+            const change = getPriceChange(data);
+            const hasData = price > 0;
+
+            return (
+              <div key={coin.id} style={{
+                background: hasData ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.02)",
+                padding: "16px",
+                borderRadius: "12px",
+                border: `1px solid ${hasData ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.03)'}`,
+                opacity: hasData ? 1 : 0.6,
+              }}>
+                <div style={{ 
+                  display: "flex", 
+                  justifyContent: "space-between", 
+                  alignItems: "center",
+                  marginBottom: "4px"
+                }}>
+                  <div style={{ fontSize: "14px", fontWeight: "bold", color: "#e2e8f0" }}>
+                    {coin.symbol}
+                  </div>
+                  <div style={{ fontSize: "11px", color: "#94a3b8" }}>
+                    {coin.name}
+                  </div>
+                </div>
+                <div style={{ 
+                  fontSize: "22px", 
+                  fontWeight: "bold", 
+                  color: hasData ? "#fbbf24" : "#64748b",
+                  marginTop: "8px" 
+                }}>
+                  {hasData ? formatPrice(price) : "N/A"}
+                </div>
+                {change !== null && change !== undefined && hasData && (
+                  <div style={{ 
+                    fontSize: "12px", 
+                    color: change > 0 ? "#34d399" : change < 0 ? "#f87171" : "#94a3b8",
+                    marginTop: "4px" 
+                  }}>
+                    {change > 0 ? "↑" : change < 0 ? "↓" : "—"} {Math.abs(change).toFixed(2)}% (24h)
+                  </div>
+                )}
+                {!hasData && (
+                  <div style={{ fontSize: "10px", color: "#64748b", marginTop: "4px" }}>
+                    No data available
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

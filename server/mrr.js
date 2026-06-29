@@ -644,4 +644,19 @@ router.get('/rentals', async (req, res) => {
   }
 });
 
+router.get('/info/algos', async (req, res) => {
+  try {
+    // This is a public endpoint, but we'll use a default client for consistency.
+    const { statusCode, data, clientName } = await mrrApiCall({
+      endpoint: '/info/algos',
+      method: 'GET',
+      clientNameRaw: defaultMrrClient, // Use default client for public calls
+    });
+    res.set('X-MRR-Client', clientName);
+    res.status(statusCode).json(data);
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 export default router;

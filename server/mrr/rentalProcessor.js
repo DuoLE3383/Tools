@@ -339,6 +339,7 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
     const perfEmoji = efficiency >= 100 ? "✅" : efficiency >= 90 ? "🟢" : efficiency >= 70 ? "🔵" : efficiency >= 50 ? "🟡" : "🔴"; // eslint-disable-line no-nested-ternary
 
     const nhOrderPrice = await getNiceHashOrderPriceForRental(rental, acct);
+    info.nicehashPrice = nhOrderPrice;
     // ============================================================
     // BUILD ACTIVE RENTAL LINE
     // ============================================================
