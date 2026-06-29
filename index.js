@@ -10,13 +10,13 @@ import { registerRoutes } from './server/routes.js';
 import { startMiningOpportunityScanner } from './server/miningOpportunityNotifier.js';
 import { createApp, initializeApp } from './server/app.js';
 import { verifyToken } from './server/auth.js';
-import { resolveNhClient, getNiceHashApp } from './server/nh.js';
-import { mrrApiCall, initMrrConfigs } from './server/mrr.js';
+import { resolveNhClient, getNiceHashApp, nhConfigs } from './server/nh.js';
+import { mrrApiCall, initMrrConfigs, mrrConfigs, defaultMrrClient } from './server/mrr.js';
 import sqlite3 from 'sqlite3';
 import { migrateOldCsvToDb } from './server/migrate.js';
 import { initMiningTrainingDb } from './server/miningTrainingDb.js';
 import { setDb } from './server/db.js';
-import { startPriceFetcherJob } from './server/price-fetcher.js';
+import { fetchAndSaveCoinPrices } from './server/coinGecko/coinGeckoClient.js';
 // ✅ CORRECT IMPORT – use the scripts folder
 import { mergeDatabases } from './data/merge.js';
 
@@ -26,6 +26,8 @@ const distPath = path.join(__dirname, 'dist', 'client');
 
 const DATA_DIR = path.join(__dirname, 'data');
 const STATS_DB_PATH = path.join(DATA_DIR, 'stats.db');
+const VALID_NH_CLIENT_TAGS = new Set(['BT', 'PH', 'LN', 'NHATLINH', 'VN', 'ALL']);
+const VALID_MRR_CLIENT_TAGS = new Set(['BT', 'SL', 'LN', 'LUCKY', 'VN', 'ALL']);
 
 // ============================================================
 // CREATE APP
@@ -78,9 +80,6 @@ function initDatabase() {
       dbInstance.run(`CREATE TABLE IF NOT EXISTS mrr_nonces (
         client TEXT PRIMARY KEY, last_nonce TEXT
       )`, (err) => { if (err) reject(err); });
-      dbInstance.run(`CREATE TABLE IF NOT EXISTS mrr_rentals (
-        id TEXT PRIMARY KEY, client TEXT, name TEXT, algo TEXT, status TEXT, start_time INTEGER, end_time INTEGER, last_notified INTEGER, last_updated INTEGER
-      )`, (err) => { if (err) console.error(`[db] Failed to create mrr_rentals table: ${err.message}`); });
       dbInstance.run(`CREATE TABLE IF NOT EXISTS settings (
         key TEXT PRIMARY KEY, value TEXT
       )`, (err) => { if (err) console.error(`[db] Failed to create settings table: ${err.message}`); });
@@ -165,25 +164,15 @@ async function startServer() {
     console.log('[init] Initializing MRR configs...');
     await initMrrConfigs(process.env);
 
+    console.log('[init] Repairing stored client tags...');
+    await cleanupStoredClientTags();
+
     console.log('[init] Initializing app...');
     await initializeApp(process.env);
 
     console.log('[init] Registering routes...');
     registerRoutes(app);
     console.log('[Routes] All routes registered');
-
-    // SPA catch-all – must be after API routes so /api/* takes priority
-    // This should be registered BEFORE createApp's built-in static catch-all
-    app.get(/.*/, (req, res) => {
-      if (req.path.startsWith('/api')) {
-        return res.status(404).json({ error: 'Not Found' });
-      }
-      res.sendFile(path.join(distPath, 'index.html'), (err) => {
-        if (err) {
-          res.status(404).json({ error: 'Not Found', path: req.path });
-        }
-      });
-    });
 
     // Create HTTP server
     const server = http.createServer(app);
@@ -208,14 +197,6 @@ async function startServer() {
         }
       }, 5000);
     });
-    
-    // Start the price fetcher job
-    try {
-      console.log('[init] Starting coin price fetcher job...');
-      startPriceFetcherJob(15); // Run every 15 minutes
-    } catch (err) {
-      console.error('[init] Failed to start price fetcher job:', err.message);
-    }
 
     // Graceful shutdown
     function shutdown(signal) {
@@ -243,4 +224,97 @@ if (process.env.RUN_MAIN !== 'false') {
     console.error('❌ Failed to start server:', err);
     process.exit(1);
   });
+}
+
+function normalizeStoredClientTag(value, fallback, allowedTags) {
+  const candidate = String(value || '').trim().toUpperCase();
+  if (allowedTags.has(candidate)) return candidate;
+  const safeFallback = String(fallback || '').trim().toUpperCase();
+  if (allowedTags.has(safeFallback)) return safeFallback;
+  return allowedTags.has('BT') ? 'BT' : (allowedTags.values().next().value || 'BT');
+}
+
+function dbRun(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    dbInstance.run(sql, params, function (err) {
+      if (err) return reject(err);
+      resolve(this);
+    });
+  });
+}
+
+function dbAll(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    dbInstance.all(sql, params, (err, rows) => {
+      if (err) return reject(err);
+      resolve(rows);
+    });
+  });
+}
+
+async function cleanupStoredClientTags() {
+  if (!dbInstance) return;
+
+  const tables = new Set(
+    (await dbAll(`SELECT name FROM sqlite_master WHERE type='table'`))
+      .map((row) => row.name),
+  );
+
+  const configuredNhClients = new Set([
+    ...VALID_NH_CLIENT_TAGS,
+    ...Object.keys(nhConfigs || {}).map((key) => String(key).toUpperCase()),
+  ]);
+  const configuredMrrClients = new Set([
+    ...VALID_MRR_CLIENT_TAGS,
+    ...Object.keys(mrrConfigs || {}).map((key) => String(key).toUpperCase()),
+  ]);
+  const fallbackMrrClient = normalizeStoredClientTag(
+    defaultMrrClient,
+    'BT',
+    configuredMrrClients,
+  );
+
+  const tablePlans = [
+    {
+      table: 'nh_pools',
+      column: 'nhClient',
+      fallback: 'BT',
+      allowed: configuredNhClients,
+    },
+    {
+      table: 'mrr_pools',
+      column: 'mrrClient',
+      fallback: fallbackMrrClient,
+      allowed: configuredMrrClients,
+    },
+    {
+      table: 'mrr_rigs',
+      column: 'mrrClient',
+      fallback: fallbackMrrClient,
+      allowed: configuredMrrClients,
+    },
+  ];
+
+  for (const plan of tablePlans) {
+    if (!tables.has(plan.table)) continue;
+
+    const columns = await dbAll(`PRAGMA table_info(${plan.table})`);
+    if (!columns.some((column) => column.name === plan.column)) continue;
+
+    const allowedList = Array.from(plan.allowed);
+    const placeholders = allowedList.map(() => '?').join(', ');
+    const result = await dbRun(
+      `UPDATE ${plan.table}
+       SET ${plan.column} = ?
+       WHERE ${plan.column} IS NOT NULL
+         AND TRIM(UPPER(${plan.column})) NOT IN (${placeholders})`,
+      [plan.fallback, ...allowedList],
+    );
+
+    if (result?.changes) {
+      console.info(
+        `[init] Normalized ${result.changes} stale ${plan.table}.${plan.column} value(s).`,
+      );
+    }
+  }
 }

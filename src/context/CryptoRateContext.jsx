@@ -1,6 +1,5 @@
 // src/context/CryptoRateContext.jsx
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { useWebSocket } from './WebSocketContext'; // Import the new hook
 
 const CryptoRateContext = createContext();
 
@@ -23,8 +22,7 @@ export function CryptoRateProvider({ children, onCall }) {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  // Get status from the central provider
-  const { status: wsStatus, subscribe, unsubscribe } = useWebSocket();
+  const [wsStatus, setWsStatus] = useState('disconnected');
 
   // Fetch rates from CoinGecko via your API
   const fetchRates = useCallback(async () => {
@@ -62,28 +60,76 @@ export function CryptoRateProvider({ children, onCall }) {
     }
   }, [onCall]);
 
-  // Subscribe to WebSocket updates
+  // WebSocket connection for real-time updates
   useEffect(() => {
-    const handleMessage = (message) => {
-      if (message.type === 'price_update' && message.data) {
-        setRates((prev) => {
-          const newRates = { ...prev };
-          Object.keys(message.data).forEach((key) => {
-            const upperKey = key.toUpperCase();
-            if (newRates[upperKey]) {
-              newRates[upperKey] = {
-                ...newRates[upperKey],
-                usd: message.data[key].usd || message.data[key] || 0,
-              };
-            }
-          });
-          return newRates;
-        });
+    let socket = null;
+    let reconnectTimeout = null;
+    let isMounted = true;
+    let retryCount = 0;
+
+    const connectWs = () => {
+      if (!isMounted) return;
+
+      if (socket) {
+        socket.onclose = null;
+        socket.close();
       }
+
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/api/v2/prices/ws`;
+
+      socket = new WebSocket(wsUrl);
+      setWsStatus('connecting');
+
+      socket.onopen = () => {
+        if (isMounted) setWsStatus('connected');
+      };
+
+      socket.onmessage = (event) => {
+        if (!isMounted) return;
+        try {
+          const message = JSON.parse(event.data);
+          if (message.type === 'price_update' && message.data) {
+            setRates((prev) => {
+              const newRates = { ...prev };
+              Object.keys(message.data).forEach((key) => {
+                const upperKey = key.toUpperCase();
+                if (newRates[upperKey]) {
+                  newRates[upperKey] = {
+                    ...newRates[upperKey],
+                    usd: message.data[key].usd || message.data[key] || 0,
+                  };
+                }
+              });
+              return newRates;
+            });
+          }
+        } catch (err) {
+          console.warn('[WS] Failed to parse price update', err);
+        }
+      };
+
+      socket.onclose = () => {
+        if (!isMounted) return;
+        setWsStatus('disconnected');
+
+        if (retryCount < 3) {
+          const delay = Math.min(30000, 5000 * Math.pow(2, retryCount));
+          reconnectTimeout = setTimeout(connectWs, delay);
+          retryCount++;
+        }
+      };
+
+      socket.onerror = () => {
+        if (isMounted) setWsStatus('error');
+      };
     };
 
+    // Initial fetch
     fetchRates();
-    subscribe('crypto-rate-context', handleMessage);
+
+    // Connect WebSocket
+    connectWs();
 
     // Polling fallback
     const pollInterval = setInterval(() => {
@@ -93,10 +139,12 @@ export function CryptoRateProvider({ children, onCall }) {
     }, 60000);
 
     return () => {
-      unsubscribe('crypto-rate-context');
+      isMounted = false;
+      if (socket) socket.close();
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
       clearInterval(pollInterval);
     };
-  }, [fetchRates, subscribe, unsubscribe, wsStatus]);
+  }, [fetchRates, wsStatus]);
 
   // Get a specific rate
   const getRate = useCallback((symbol) => {

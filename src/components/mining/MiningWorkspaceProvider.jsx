@@ -1,5 +1,13 @@
 // MiningWorkspaceProvider.jsx - COMPLETE FIX WITH ALL ENDPOINTS
-import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { fetchMiningStats } from "./miningStatsFetcher";
 import {
   buildOpportunityRows,
@@ -7,70 +15,71 @@ import {
   normalizeHeroRows,
   normalizeMrrMarketRows,
   normalizeMiningDutchRows,
-} from "./miningWorkspaceData.js";
-import { getNiceHashPriceValue } from "../../core/mrrUtils.js";
-import { NICEHASH_ALGO_MAP, MRR_ALGO_MAP } from "../../core/mapping.js";
+} from "./miningWorkspaceData";
+import { getNiceHashPriceValue } from "../../core/mrrUtils";
 
 const MiningWorkspaceContext = createContext(null);
 
-const initialState = {
-  heroStats: null,
-  dutchStats: null,
-  mrrMarketStats: null,
-  niceHashPrices: {},
-  staticNhAlgos: [],
-  loading: false,
-  error: "",
-  lastUpdated: "",
-  priceFetchStatus: {},
+// Map algorithms for proper matching
+const ALGO_MAPPING = {
+  "randomx": "RANDOMXMONERO",
+  "cryptonight": "CRYPTONIGHT",
+  "kawpow": "KAWPOW",
+  "equihash": "EQUIHASH",
+  "sha256": "SHA256",
+  "scrypt": "SCRYPT",
+  "x11": "X11",
+  "ethash": "ETHASH",
+  "etchash": "ETCHASH",
 };
 
-function workspaceReducer(state, action) {
-  switch (action.type) {
-    case 'REFRESH_START':
-      return { ...state, loading: true, error: "" };
-    case 'REFRESH_SUCCESS':
-      return { ...state, loading: false, lastUpdated: new Date().toISOString(), ...action.payload };
-    case 'REFRESH_ERROR':
-      return { ...state, loading: false, error: action.payload };
-    case 'SET_PRICES':
-      return { ...state, niceHashPrices: action.payload.prices, priceFetchStatus: action.payload.status };
-    default:
-      return state;
-  }
-}
-
 export function MiningWorkspaceProvider({ children, onCall, nhClient = "VN" }) {
-  const [state, dispatch] = useReducer(workspaceReducer, initialState);
+  const [heroStats, setHeroStats] = useState(null);
+  const [dutchStats, setDutchStats] = useState(null);
+  const [mrrMarketStats, setMrrMarketStats] = useState(null);
+  const [niceHashPrices, setNiceHashPrices] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [lastUpdated, setLastUpdated] = useState("");
+  const [priceFetchStatus, setPriceFetchStatus] = useState({});
   const heroStatsRef = useRef(null);
   const dutchStatsRef = useRef(null);
   const mrrMarketStatsRef = useRef(null);
 
   useEffect(() => {
-    heroStatsRef.current = state.heroStats;
-    dutchStatsRef.current = state.dutchStats;
-    mrrMarketStatsRef.current = state.mrrMarketStats;
-  }, [state.heroStats, state.dutchStats, state.mrrMarketStats]);
+    heroStatsRef.current = heroStats;
+  }, [heroStats]);
+
+  useEffect(() => {
+    dutchStatsRef.current = dutchStats;
+  }, [dutchStats]);
+
+  useEffect(() => {
+    mrrMarketStatsRef.current = mrrMarketStats;
+  }, [mrrMarketStats]);
 
   const refresh = useCallback(
     async (force = false) => {
-      dispatch({ type: 'REFRESH_START' });
+      setLoading(true);
+      setError("");
+      setPriceFetchStatus({});
 
-      const fetchAndProcess = async () => {
-        // 1. FETCH ALL DATA SOURCES IN PARALLEL
-        const [heroResult, dutchResult, mrrResult, staticAlgosRes] = await Promise.all([
-          fetchMiningStats(
-            "herominers",
-            "VN",
-            null,
-            null,
-            20000,
-            force,
-          ).catch(err => {
-            console.warn("HeroMiners fetch failed:", err);
-            return heroStatsRef.current || null; // Use previous state on failure
-          }),
-          fetchMiningStats(
+      try {
+        // 1. FETCH HERO MINERS DATA
+        const heroResult = await fetchMiningStats(
+          "herominers",
+          "VN",
+          null,
+          null,
+          20000,
+          force,
+        ).catch(err => {
+          console.warn("HeroMiners fetch failed:", err);
+          return null;
+        });
+
+        // 2. FETCH MINING-DUTCH DATA
+        const dutchResult = await fetchMiningStats(
           "miningdutch",
           "VN",
           null,
@@ -79,45 +88,51 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "VN" }) {
           force,
         ).catch(err => {
           console.warn("Mining-Dutch fetch failed:", err);
-          return dutchStatsRef.current || null; // Use previous state on failure
-        }),
-          typeof onCall === 'function' ? onCall("/api/v2/mrr/rentals/cached", {
-              query: { limit: 100 },
-              silent: true,
-            }).catch(err => {
-              console.warn("MRR fetch failed:", err);
-              return mrrMarketStatsRef.current || null;
-            }) : Promise.resolve(null),
-          typeof onCall === 'function' ? onCall("/api/v2/nicehash-algos", { silent: true }).catch(err => {
-            console.warn("Could not fetch static NH algos", err);
-            return { miningAlgorithms: [] };
-          }) : Promise.resolve(null)
-        ]);
-
-        const hero = heroResult;
-        const dutch = dutchResult;
-        const mrrMarket = mrrResult;
-
-        dispatch({
-          type: 'REFRESH_SUCCESS',
-          payload: { heroStats: hero, dutchStats: dutch, mrrMarketStats: mrrMarket, staticNhAlgos: staticAlgosRes?.miningAlgorithms || state.staticNhAlgos || [] }
+          return null;
         });
 
+        // 3. FETCH MRR MARKET DATA
+        let mrrResult = null;
+        if (typeof onCall === "function") {
+          try {
+            mrrResult = await onCall("/api/v2/mrr/rentals", {
+              query: { client: nhClient, type: "sold", limit: 100 },
+              silent: true,
+            });
+            console.log("✅ MRR API Response:", mrrResult);
+          } catch (err) {
+            console.warn("MRR fetch failed:", err);
+          }
+        }
+
+        // 4. FETCH NICEHASH PRICES
+        const hero = heroResult || heroStatsRef.current;
+        const dutch = dutchResult || dutchStatsRef.current;
+        const mrrMarket = mrrResult || mrrMarketStatsRef.current;
+
+        // Set states
+        if (hero) setHeroStats(hero);
+        if (dutch) setDutchStats(dutch);
+        if (mrrResult) setMrrMarketStats(mrrResult);
+
         if (!hero && !dutch) {
-          throw new Error("Failed to load primary mining data from HeroMiners and Mining-Dutch.");
+          throw new Error("Failed to load mining workspace data");
         }
 
         // Normalize data
         const nextHeroRows = normalizeHeroRows(hero);
-        const nextDutchRows = normalizeMiningDutchRows(dutch || { coinStats: [] });
+        const nextDutchRows = normalizeMiningDutchRows(dutch);
         const nextMrrMarketRows = normalizeMrrMarketRows(mrrMarket);
+
+        console.log(`📊 Data counts: Hero=${nextHeroRows.length}, Dutch=${nextDutchRows.length}, MRR=${nextMrrMarketRows.length}`);
+        console.log("🔍 MRR Market Rows:", nextMrrMarketRows);
 
         // Get all unique algos
         const algos = Array.from(
           new Set([
             ...nextHeroRows.map((row) => row.nicehashAlgo),
             ...nextDutchRows.map((row) => row.nicehashAlgo),
-          ]),
+          ])
         ).filter((algo) => algo && algo !== "UNKNOWN");
 
         console.log(`🔍 Algorithms to fetch: ${algos.length}`, algos);
@@ -134,12 +149,15 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "VN" }) {
                 let success = false;
 
                 // Try 1: Direct algorithm name
-                const staticAlgo = (staticAlgosRes?.miningAlgorithms || state.staticNhAlgos || []).find(a => a.algorithm.toUpperCase() === algo.toUpperCase());
-                const algoToUse = staticAlgo ? staticAlgo.algorithm : algo;
-
                 try {
-                  // Use the public 24h stats endpoint which is more reliable for market-wide prices
-                  const data = await onCall("/api/v2/public/stats/24h", { silent: true });
+                  const data = await onCall("/api/v2/hashpower/order/price", {
+                    query: { 
+                      algorithm: algo, 
+                      market: "USA", 
+                      client: nhClient 
+                    },
+                    silent: true,
+                  });
                   price = getNiceHashPriceValue(data);
                   if (price > 0) {
                     success = true;
@@ -150,10 +168,17 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "VN" }) {
                 }
 
                 // Try 2: Mapped algorithm name
-                if (!success && NICEHASH_ALGO_MAP[algo.toUpperCase()]) {
+                if (!success && ALGO_MAPPING[algo.toLowerCase()]) {
                   try {
-                    // Use the public 24h stats endpoint here as well
-                    const data = await onCall("/api/v2/public/stats/24h", { silent: true });
+                    const mappedAlgo = ALGO_MAPPING[algo.toLowerCase()];
+                    const data = await onCall("/api/v2/hashpower/order/price", {
+                      query: { 
+                        algorithm: mappedAlgo, 
+                        market: "USA", 
+                        client: nhClient 
+                      },
+                      silent: true,
+                    });
                     price = getNiceHashPriceValue(data);
                     if (price > 0) {
                       success = true;
@@ -189,7 +214,8 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "VN" }) {
           );
 
           nextNiceHashPrices = Object.fromEntries(pricePairs);
-          dispatch({ type: 'SET_PRICES', payload: { prices: nextNiceHashPrices, status: priceStatus } });
+          setNiceHashPrices(nextNiceHashPrices);
+          setPriceFetchStatus(priceStatus);
         }
 
         // Merge and build opportunities
@@ -226,13 +252,13 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "VN" }) {
             // Silent fail
           }
         }
-      };
 
-      try {
-        await fetchAndProcess();
+        setLastUpdated(new Date().toISOString());
       } catch (err) {
-        dispatch({ type: 'REFRESH_ERROR', payload: err.message || "Failed to load mining workspace data" });
-        console.log("Finished refresh cycle.");
+        console.error("❌ Refresh error:", err);
+        setError(err.message || "Failed to load mining workspace data");
+      } finally {
+        setLoading(false);
       }
     },
     [nhClient, onCall],
@@ -245,52 +271,52 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "VN" }) {
   }, [refresh]);
 
   // Memoized values
-  const heroRows = useMemo(() => normalizeHeroRows(state.heroStats), [state.heroStats]);
+  const heroRows = useMemo(() => normalizeHeroRows(heroStats), [heroStats]);
   const miningDutchRows = useMemo(
-    () => normalizeMiningDutchRows(state.dutchStats),
-    [state.dutchStats],
+    () => normalizeMiningDutchRows(dutchStats),
+    [dutchStats],
   );
   const mrrMarketRows = useMemo(
-    () => normalizeMrrMarketRows(state.mrrMarketStats),
-    [state.mrrMarketStats],
+    () => normalizeMrrMarketRows(mrrMarketStats),
+    [mrrMarketStats],
   );
   const routes = useMemo(
-    () => mergeMiningRoutes(miningDutchRows, heroRows, state.niceHashPrices),
-    [heroRows, miningDutchRows, state.niceHashPrices],
+    () => mergeMiningRoutes(miningDutchRows, heroRows, niceHashPrices),
+    [heroRows, miningDutchRows, niceHashPrices],
   );
   const opportunities = useMemo(
-    () => buildOpportunityRows(routes, state.niceHashPrices, mrrMarketRows),
-    [mrrMarketRows, state.niceHashPrices, routes],
+    () => buildOpportunityRows(routes, niceHashPrices, mrrMarketRows),
+    [mrrMarketRows, niceHashPrices, routes],
   );
 
   const value = useMemo(
     () => ({
-      heroStats: state.heroStats,
-      dutchStats: state.dutchStats,
-      mrrMarketStats: state.mrrMarketStats,
+      heroStats,
+      dutchStats,
+      mrrMarketStats,
       heroRows,
       miningDutchRows,
       routes,
       opportunities,
-      niceHashPrices: state.niceHashPrices,
-      loading: state.loading,
-      error: state.error,
-      lastUpdated: state.lastUpdated,
-      priceFetchStatus: state.priceFetchStatus,
+      niceHashPrices,
+      loading,
+      error,
+      lastUpdated,
+      priceFetchStatus,
       refresh,
     }),
     [
-      state.heroStats,
-      state.dutchStats,
-      state.mrrMarketStats,
-      state.niceHashPrices,
-      state.loading,
-      state.error,
-      state.lastUpdated,
-      state.priceFetchStatus,
+      dutchStats,
+      error,
       heroRows,
+      heroStats,
+      lastUpdated,
+      loading,
       miningDutchRows,
+      mrrMarketStats,
+      niceHashPrices,
       opportunities,
+      priceFetchStatus,
       refresh,
       routes,
     ],

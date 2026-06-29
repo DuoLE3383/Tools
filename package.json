@@ -1,7 +1,7 @@
 {
-  "name": "nh-tool",
+  "name": "tools",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.5.5",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -21,9 +21,7 @@
     "preview": "npm run build && vite preview",
     "deploy": "npm run build && npm run generate-wrangler && wrangler deploy --config wrangler.generated.toml",
     "test:notify": "node test-notifier.js",
-    "migrate": "node server/migrate-db.js",
-    "db:deduplicate": "node server/deduplicate-db.js",
-    "cache:clean": "node scripts/clean-cache.js"
+    "migrate": "node server/migrate-db.js"
   },
   "main": "index.js",
   "bin": "index.js",
@@ -47,6 +45,7 @@
     "jsonwebtoken": "^9.0.3",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
+    "react-router-dom": "^7.18.0",
     "selenium-webdriver": "^4.44.0",
     "sqlite3": "^6.0.1",
     "uuid": "^14.0.0",

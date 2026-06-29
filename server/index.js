@@ -1,12 +1,42 @@
-// server/index.js
+// index.js
 import express from 'express';
 import http from 'http';
-import { registerRoutes } from './routes.js';
-import { setupWebSocket } from './ws.js';
+import dotenv from 'dotenv';
+import { registerRoutes } from './server/routes.js';
+import { setupWebSocket } from './server/ws.js';
+import { startMiningOpportunityScanner } from './server/miningOpportunityNotifier.js';
 
-console.warn(`[DEPRECATION] The 'server/index.js' file is deprecated and should not be used as an entry point. Please run the application from the root 'index.js' file.`);
+// Load environment variables
+dotenv.config();
 
-// This file is now a placeholder to prevent accidental execution.
-// The main application entry point is the `index.js` file in the project root.
-export const app = express();
-export const server = http.createServer(app);
+const app = express();
+const server = http.createServer(app);
+
+// Middleware
+app.use(express.json());
+
+// Register all routes
+registerRoutes(app);
+
+// Setup WebSocket (using the ws.js module)
+setupWebSocket(server);
+
+// Start the server
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Server running on http://localhost:${PORT}`);
+  console.log(`📡 WebSocket server at ws://localhost:${PORT}/api/v2/mrr/fetch/ws`);
+  
+  // Start the mining scanner after server is ready
+  console.log('[Mining Scanner] Initializing...');
+  startMiningOpportunityScanner();
+});
+
+// Graceful shutdown
+process.on('SIGINT', () => {
+  console.log('\n[Server] Shutting down...');
+  server.close(() => {
+    console.log('[Server] Goodbye!');
+    process.exit(0);
+  });
+});

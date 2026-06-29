@@ -1,8 +1,9 @@
 // MiningCoin.jsx - Add import and price modal
-import { useMemo, useState, useEffect, useCallback } from "react";
+import { useMemo, useState } from "react";
 import { btcValue, compactNumber, percentValue } from "./miningWorkspaceData";
 import { useMiningWorkspace } from "./MiningWorkspaceProvider";
 import CoinPriceModal from "./CoinPriceModal"; 
+import { resolveCoinPriceTarget } from "../../core/coinGrecko.js";
 export default function MiningCoin({ onCall, nhClient = "VN" }) {
   const {
     routes: combinedRows,
@@ -15,8 +16,6 @@ export default function MiningCoin({ onCall, nhClient = "VN" }) {
   const [onlyProfitable, setOnlyProfitable] = useState(true);
   const [selectedCoin, setSelectedCoin] = useState(null);
   const [priceModalOpen, setPriceModalOpen] = useState(false);
-  const [availableCoins, setAvailableCoins] = useState(new Set());
-  const [coinDetailsMap, setCoinDetailsMap] = useState(new Map());
 
   const visibleRows = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -49,29 +48,9 @@ export default function MiningCoin({ onCall, nhClient = "VN" }) {
   const bestRow = visibleRows[0] || null;
   const profitableCount = combinedRows.filter((row) => row.spread > 0).length;
 
-  // Check which coins are available in the local DB
-  const checkAvailableCoins = useCallback(async () => {
-    if (typeof onCall !== 'function') return;
-    try {
-      const result = await onCall('/api/v2/db/available-coins', { silent: true });
-      if (result?.success && Array.isArray(result.data)) {
-        const coinMap = new Map();
-        const coinSet = new Set();
-        result.data.forEach(coin => { coinMap.set(coin.symbol.toUpperCase(), coin); coinSet.add(coin.symbol.toUpperCase()); });
-        setAvailableCoins(coinSet);
-        setCoinDetailsMap(coinMap);
-      }
-    } catch (err) {
-      console.warn("Could not fetch available coins list:", err.message);
-    }
-  }, [onCall]);
-
-  useEffect(() => { checkAvailableCoins(); }, [checkAvailableCoins]);
-
   // Handle coin click - open price modal
   const handleCoinClick = (coin) => {
-    const coinDetails = coinDetailsMap.get(coin.toUpperCase());
-    setSelectedCoin(coinDetails || { symbol: coin, name: coin, coinId: coin.toLowerCase() });
+    setSelectedCoin(resolveCoinPriceTarget(coin));
     setPriceModalOpen(true);
   };
 
@@ -312,36 +291,32 @@ export default function MiningCoin({ onCall, nhClient = "VN" }) {
                       {row.heroCoins && row.heroCoins.length > 0 ? (
                         row.heroCoins.map((coin) => (
                           <button
-                            disabled={!availableCoins.has(coin.toUpperCase())}
                             key={coin}
                             onClick={() => handleCoinClick(coin)}
                             style={{
                               border: "1px solid rgba(96,165,250,0.22)",
                               color: "#bfdbfe",
                               background: "rgba(37,99,235,0.12)",
-                              borderRadius: "99px",
+                              borderRadius: "999px",
                               padding: "2px 8px",
                               fontSize: "10px",
                               cursor: "pointer",
                               transition: "all 0.2s",
-                              opacity: availableCoins.has(coin.toUpperCase()) ? 1 : 0.4,
                             }}
                             onMouseEnter={(e) => {
-                              if (!availableCoins.has(coin.toUpperCase())) return;
                               e.target.style.background =
                                 "rgba(37,99,235,0.25)";
                               e.target.style.borderColor =
                                 "rgba(96,165,250,0.5)";
                             }}
                             onMouseLeave={(e) => {
-                              if (!availableCoins.has(coin.toUpperCase())) return;
                               e.target.style.background =
                                 "rgba(37,99,235,0.12)";
                               e.target.style.borderColor =
                                 "rgba(96,165,250,0.22)";
                             }}
                           >
-                            {coin}
+                            {coin} 💰
                           </button>
                         ))
                       ) : (

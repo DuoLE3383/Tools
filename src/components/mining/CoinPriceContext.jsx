@@ -1,7 +1,7 @@
 // CoinPriceContext.jsx
 import { createContext, useContext, useState } from "react";
-import { WebSocketProvider } from "../../context/WebSocketContext.jsx";
 import CoinPriceModal from "./CoinPriceModal"; // adjust path if needed
+import { resolveCoinPriceTarget } from "../../core/coinGrecko.js";
 
 const CoinPriceContext = createContext();
 
@@ -9,11 +9,11 @@ export function CoinPriceProvider({ children, onCall }) {
   const [selectedCoin, setSelectedCoin] = useState(null);
   const [isOpen, setIsOpen] = useState(false);
 
-  const openCoinModal = (coinSymbol) => {
+  const openCoinModal = (coinOrSymbol) => {
+    const resolved = resolveCoinPriceTarget(coinOrSymbol);
     setSelectedCoin({
-      symbol: coinSymbol,
-      name: coinSymbol,
-      coinId: coinSymbol.toLowerCase(),
+      ...resolved,
+      raw: coinOrSymbol,
     });
     setIsOpen(true);
   };
@@ -22,19 +22,18 @@ export function CoinPriceProvider({ children, onCall }) {
 
   return (
     <CoinPriceContext.Provider value={{ openCoinModal }}>
-      <WebSocketProvider>
-        {children}
-        <CoinPriceModal
-          isOpen={isOpen}
-          onClose={closeCoinModal}
-          coin={selectedCoin}
-          onCall={onCall}
-        />
-      </WebSocketProvider>
+      {children}
+      <CoinPriceModal
+        isOpen={isOpen}
+        onClose={closeCoinModal}
+        coin={selectedCoin}
+        onCall={onCall}
+      />
     </CoinPriceContext.Provider>
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useCoinPrice() {
   const context = useContext(CoinPriceContext);
   if (!context) {

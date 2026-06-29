@@ -483,11 +483,9 @@ const MrrRigCard = ({
         ? Number.parseFloat(nhOrder.add_fee ?? nhOrder.priceWithFee)
         : buyNhPrice
       : 0;
-  const myNhUnit =
-    nhOrder?.unit ||
-    getAlgorithmUnit(
-      normalizeAlgoForNiceHash(nhOrder?.algorithm || algoName || rawAlgo),
-    );
+  const myNhUnit = getAlgorithmUnit(
+    normalizeAlgoForNiceHash(algoName || rawAlgo),
+  );
 
   const marketPriceData = algoMarketPrices?.[algoName];
   const marketPriceValue = marketPriceData

@@ -1,3 +1,5 @@
+import { nhConfigs, isAggregate } from "./nh.js";
+
 export const asyncHandler = fn => (req, res, next) => {
   Promise.resolve(fn(req, res, next)).catch(err => {
     console.error(`[api:error] ${req.method} ${req.originalUrl}`, err);
@@ -38,7 +40,16 @@ export function corsMiddleware(req, res, next) {
 
 export function logRequestMiddleware(req, res, next) {
   const start = Date.now();
-  const clientTag = String(req.query.client || req.body?.client || 'system').toUpperCase();
+  const rawClient = String(req.query.client || req.body?.client || "system").trim().toUpperCase();
+  const knownClients = new Set([
+    "SYSTEM",
+    "ALL",
+    "VN",
+    ...Object.keys(nhConfigs || {}).map((key) => String(key).toUpperCase()),
+  ]);
+  const clientTag = knownClients.has(rawClient) || isAggregate(rawClient)
+    ? rawClient
+    : "SYSTEM";
   const time = new Date().toLocaleTimeString();
   const body = req.method === 'GET' ? '' : ` body=${JSON.stringify(maskSensitive(req.body || {}))}`;
 

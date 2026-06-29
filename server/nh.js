@@ -42,9 +42,9 @@ export function initNhConfigs(env) {
 
     },
     LN: {
-      apiKey: normalizeCredential(env.NICEHASH_API_KEY_KIMLOAN),
-      apiSecret: normalizeCredential(env.NICEHASH_API_SECRET_KIMLOAN),
-      orgId: normalizeCredential(env.NICEHASH_ORG_ID_KIMLOAN),
+      apiKey: normalizeCredential(env.NICEHASH_API_KEY_LN),
+      apiSecret: normalizeCredential(env.NICEHASH_API_SECRET_LN),
+      orgId: normalizeCredential(env.NICEHASH_ORG_ID_LN),
       environment: normalizeCredential(env.NICEHASH_ENVIRONMENT || 'production'),
 
     },
@@ -78,7 +78,7 @@ export const isAggregate = (c) => {
 };
 
 export function resolveNhClient(clientNameRaw) {
-  const clientName = isAggregate(clientNameRaw) ? AGGREGATE_CLIENT : String(clientNameRaw || 'VN').trim().toUpperCase();
+  const clientName = isAggregate(clientNameRaw) ? AGGREGATE_CLIENT : String(clientNameRaw || 'BT').trim().toUpperCase();
 
   // 1. Handle Aggregate (VN) resolution
   if (isAggregate(clientName)) {

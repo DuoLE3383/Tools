@@ -1,6 +1,5 @@
 import fs from 'fs/promises';
 import path from 'path';
-import express from 'express';
 import { createHash, createHmac } from 'crypto';
 import { db } from './db.js';
 import { normalizeCredential, sanitizeMrrEndpoint } from './utils.js';
@@ -386,21 +385,19 @@ export async function mrrApiCall({ endpoint, method = 'GET', query, body, client
       'x-api-sign': signatureV2,
     });
 
-    let text, data;
+    let text;
     try {
       text = await response.text();
-      // Attempt to parse JSON, but fall back to a structured error if it fails
-      try {
-        data = text ? JSON.parse(text) : { success: false, message: 'Empty response from MRR' };
-      } catch (parseError) {
-        // Handle cases where MRR returns non-JSON error pages (e.g., Cloudflare blocks)
-        data = { success: false, message: `MRR returned non-JSON response: ${text.slice(0, 150)}...` };
-      }
     } catch (e) {
-      // This block handles network errors (like connection refused) or if the response isn't valid JSON.
-      const errorMessage = e.message.includes('fetch failed') ? 'Connection to MRR API failed. The service may be down.' : `Network or parsing error: ${e.message}`;
-      console.error(`[mrr:${clientName}] Critical fetch/parse error:`, errorMessage);
-      return { statusCode: 503, data: { success: false, message: errorMessage, error: 'ServiceUnavailable' }, clientName };
+      text = '{"success":false,"message":"Network Error"}';
+    }
+
+    let data;
+    try {
+      data = text ? JSON.parse(text) : { success: false, message: 'Empty response' };
+    } catch {
+      // Handle cases where MRR returns non-JSON error pages (Cloudflare, etc)
+      data = { success: false, message: text };
     }
 
     let authMessage = String(data?.data?.message || data?.message || '');
@@ -628,19 +625,3 @@ export async function fetchAggregatedRentals(query = {}, clientParam = 'BT') {
     clientName: isAll ? 'ALL' : clientParam,
   };
 }
-
-// ---------- Default Router (mountable) ----------
-const router = express.Router();
-
-router.get('/rentals', async (req, res) => {
-  try {
-    const { client: clientParam, ...query } = req.query;
-    const { statusCode, data, clientName } = await fetchAggregatedRentals(query, clientParam);
-    res.set('X-MRR-Client', clientName);
-    res.status(statusCode).json(data);
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-export default router;

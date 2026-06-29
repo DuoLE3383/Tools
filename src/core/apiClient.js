@@ -1,4 +1,4 @@
-export function createApiClient({ onState } = {}) {
+export function createApiClient({ onState, onAuthError } = {}) {
   return async function callApi(path, options = {}) {
     const startedAt = performance.now();
     const method = options.method || "GET";
@@ -29,6 +29,11 @@ export function createApiClient({ onState } = {}) {
     const apiBase = "";
 
     const headers = { ...fetchOptions.headers };
+    const storedToken = typeof localStorage !== "undefined" ? localStorage.getItem("token") : "";
+    const isLoginRoute = String(path || "").startsWith("/api/auth/login");
+    if (storedToken && !headers.Authorization && !headers.authorization && !isLoginRoute) {
+      headers.Authorization = `Bearer ${storedToken}`;
+    }
     let body = fetchOptions.body;
     if (body && typeof body === "object" && !(body instanceof FormData)) {
       body = JSON.stringify(body);
@@ -65,6 +70,10 @@ export function createApiClient({ onState } = {}) {
             durationMs: Math.round(performance.now() - startedAt),
           },
         });
+      }
+
+      if (res.status === 401 || res.status === 403) {
+        onAuthError?.({ status: res.status, path: finalPath, data });
       }
 
       const isAppError =

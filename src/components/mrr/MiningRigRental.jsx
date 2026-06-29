@@ -497,13 +497,10 @@ export default function MiningRigRental({
   algorithm,
   onOpenMrrPools,
   onOpenCompletionCalculator,
-  handleForceHeartbeat,
 }) {
   const [activeModal, setActiveModal] = useState(null); // 'list', 'pool', 'rental'
   const [modalData, setModalData] = useState(null);
   const [modalLoading, setModalLoading] = useState(false);
-  const [isHeartbeatRunning, setIsHeartbeatRunning] = useState(false);
-  const [heartbeatStatus, setHeartbeatStatus] = useState("");
 
   const tg = useTelegram(onCall, mrrClient);
 
@@ -843,30 +840,6 @@ export default function MiningRigRental({
           }
         >
           Balance
-        </button>
-        <button
-          className="btn-pro secondary"
-          onClick={async () => {
-            if (isHeartbeatRunning) return;
-            setIsHeartbeatRunning(true);
-            setHeartbeatStatus("Running...");
-            try {
-              const result = await handleForceHeartbeat(mrrClient);
-              setHeartbeatStatus(result?.success ? "Success" : "Failed");
-            } catch (e) {
-              setHeartbeatStatus("Error");
-            }
-            setTimeout(() => setIsHeartbeatRunning(false), 2000);
-          }}
-          disabled={isHeartbeatRunning}
-          style={{
-            minWidth: "120px",
-            color: isHeartbeatRunning ? "#94a3b8" : "#38bdf8",
-            borderColor: isHeartbeatRunning ? "rgba(148, 163, 184, 0.35)" : "rgba(56, 189, 248, 0.55)",
-            background: isHeartbeatRunning ? "rgba(100, 116, 139, 0.16)" : "rgba(14, 165, 233, 0.1)"
-          }}
-        >
-          {isHeartbeatRunning ? (heartbeatStatus || "Running...") : "Heartbeat"}
         </button>
         <TelegramManager onCall={onCall} mrrClient={mrrClient} />
       </div>

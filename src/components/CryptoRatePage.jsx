@@ -1,7 +1,5 @@
 // CryptoRatePage.jsx - Add callback to share prices
 import React, { useState, useEffect, useCallback, useMemo } from "react";
-import "./CryptoRatePage.css"; // Import the new CSS file
-import { useWebSocket } from "../context/WebSocketContext.jsx";
 
 const COINS = [
   { id: "bitcoin", symbol: "BTC", name: "Bitcoin" },
@@ -11,10 +9,20 @@ const COINS = [
   { id: "bitcoin-cash", symbol: "BCH", name: "Bitcoin Cash" },
 ];
 
-function Sparkline({ data, color = "#60a5fa" }) {
+function Sparkline({ data, width = 180, height = 80, color = "#60a5fa" }) {
   if (!data || !Array.isArray(data) || data.length < 2) {
     return (
-      <div className="sparkline-placeholder" />
+      <div
+        style={{
+          width,
+          height,
+          background: "rgba(255,255,255,0.02)",
+          borderRadius: "8px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      />
     );
   }
 
@@ -24,19 +32,19 @@ function Sparkline({ data, color = "#60a5fa" }) {
 
   const points = data
     .map((val, i) => {
-      // Assuming a viewbox of 100x30 for relative calculations
-      const x = (i / (data.length - 1)) * 100;
-      const y = 30 - ((val - min) / range) * 30;
+      const x = (i / (data.length - 1)) * width;
+      const y = height - ((val - min) / range) * height;
       return `${x},${y}`;
     })
     .join(" ");
 
   return (
     <svg
-      className="sparkline-svg"
-      viewBox="0 0 100 30"
+      width={width}
+      height={height}
+      viewBox={`0 0 ${width} ${height}`}
       preserveAspectRatio="none"
-      style={{ filter: `drop-shadow(0 0 4px ${color}44)` }}
+      style={{ overflow: "visible", filter: `drop-shadow(0 0 4px ${color}44)` }}
     >
       <polyline
         fill="none"
@@ -50,15 +58,14 @@ function Sparkline({ data, color = "#60a5fa" }) {
   );
 }
 
-export default function CryptoRatePage({ onCall, onPriceUpdate, onNavigateHome }) {
+export default function CryptoRatePage({ onCall, onPriceUpdate }) {
   const [prices, setPrices] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [wsStatus, setWsStatus] = useState("disconnected");
+  const [wsEnabled, setWsEnabled] = useState(true);
   const [amounts, setAmounts] = useState({ usd: "1000" });
   const [baseCoin, setBaseCoin] = useState("usd");
-
-  const ws = useWebSocket();
 
   const onValueChange = (id, val) => {
     setBaseCoin(id);
@@ -116,6 +123,7 @@ export default function CryptoRatePage({ onCall, onPriceUpdate, onNavigateHome }
             res?.message ||
             `Format Mismatch (Keys: ${res ? Object.keys(res).join(",") : "null"})`;
 
+        if (isSystemConfig) setWsEnabled(false);
         if (!prices) setError(`Market data unavailable. ${detail}`);
         throw new Error(detail);
       }
@@ -127,29 +135,75 @@ export default function CryptoRatePage({ onCall, onPriceUpdate, onNavigateHome }
   }, [onCall, onPriceUpdate, formatPricesForRigCard]);
 
   useEffect(() => {
-    // Initial fetch
     fetchPrices();
 
-    // Subscribe to WebSocket updates
-    const handleWsMessage = (message) => {
-      if (message.type === "price_update" && message.data) {
-        setPrices((prev) => ({ ...prev, ...message.data }));
-        if (onPriceUpdate) {
-          const formatted = formatPricesForRigCard(message.data);
-          onPriceUpdate(formatted);
-        }
+    let socket = null;
+    let reconnectTimeout = null;
+    let isComponentMounted = true;
+    let retryCount = 0;
+
+    const connectWs = () => {
+      if (!isComponentMounted || !wsEnabled) return;
+
+      if (socket) {
+        socket.onclose = null;
+        socket.close();
       }
+
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const wsUrl = `${protocol}//${window.location.host}/api/v2/prices/ws`;
+
+      socket = new WebSocket(wsUrl);
+      if (isComponentMounted) setWsStatus("connecting");
+
+      socket.onopen = () => {
+        if (isComponentMounted) setWsStatus("connected");
+      };
+
+      socket.onmessage = (event) => {
+        if (!isComponentMounted) return;
+        try {
+          const message = JSON.parse(event.data);
+          if (message.type === "price_update" && message.data) {
+            setPrices((prev) => ({ ...prev, ...message.data }));
+            // ✅ Send updated prices to parent
+            if (onPriceUpdate) {
+              const formatted = formatPricesForRigCard(message.data);
+              onPriceUpdate(formatted);
+            }
+          }
+        } catch (err) {
+          console.warn("[WS] Failed to parse price update", err);
+        }
+      };
+
+      socket.onclose = () => {
+        if (!isComponentMounted) return;
+        setWsStatus("disconnected");
+
+        if (retryCount < 2 && wsEnabled) {
+          const delay = Math.min(30000, 5000 * Math.pow(2, retryCount));
+          reconnectTimeout = setTimeout(connectWs, delay);
+          retryCount++;
+        } else {
+          setWsEnabled(false);
+          console.warn("[WS] Maximum reconnection attempts reached.");
+        }
+      };
+
+      socket.onerror = () => {
+        if (isComponentMounted) setWsStatus("error");
+      };
     };
 
-    if (ws) {
-      ws.subscribe("CryptoRatePage", handleWsMessage);
-      setWsStatus(ws.status);
-    }
+    if (wsEnabled) connectWs();
 
-    // The provider handles connection state, so we just need to update our local status
-    if (ws) setWsStatus(ws.status);
-
-  }, [fetchPrices, onPriceUpdate, formatPricesForRigCard, ws]);
+    return () => {
+      isComponentMounted = false;
+      if (socket) socket.close();
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+    };
+  }, [fetchPrices, wsEnabled, onPriceUpdate, formatPricesForRigCard]);
 
   // Polling fallback
   useEffect(() => {
@@ -189,78 +243,173 @@ export default function CryptoRatePage({ onCall, onPriceUpdate, onNavigateHome }
   }, [prices, amounts, baseCoin]);
 
   return (
-    <div className="crypto-rate-page">
-      {onNavigateHome && (
-        <button className="btn-pro secondary btn-back" onClick={onNavigateHome}>
-          ← Back
-        </button>
-      )}
-
+    <div
+      className="crypto-rate-page"
+      style={{
+        padding: "10px 14px",
+        color: "#f8fafc",
+        background: "transparent",
+        fontFamily: "sans-serif",
+        maxWidth: "100%",
+        overflow: "hidden",
+        boxSizing: "border-box",
+        width: "600px",
+        height: "500px"
+      }}
+    >
       {/* Header */}
-      <div className="crypto-rate-header">
-        <div className="crypto-rate-header-title">
-          <span className="title-text">
-            LIVE <span className="title-text-highlight">CONVERTER</span>
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: "8px",
+          marginBottom: "12px",
+          borderBottom: "1px solid rgba(255,255,255,0.05)",
+          paddingBottom: "8px",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <span style={{ fontSize: "1.3rem", fontWeight: "900" }}>
+            LIVE <span style={{ color: "#60a5fa" }}>CONVERTER</span>
           </span>
           <div
-            className={`status-indicator ${wsStatus === "connected" ? "connected" : "disconnected"}`}
+            style={{
+              width: "8px",
+              height: "8px",
+              borderRadius: "50%",
+              background: wsStatus === "connected" ? "#10b981" : "#f59e0b",
+            }}
           />
-          <span className="status-label">LIVE</span>
+          <span
+            style={{
+              opacity: 0.4,
+              fontSize: "0.6rem",
+              fontWeight: "600",
+              textTransform: "uppercase",
+            }}
+          >
+            {wsStatus === "connected" ? "LIVE" : "LIVE"}
+          </span>
         </div>
-        <div className="crypto-rate-header-input-group">
-          <span className="usd-symbol">$</span>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <span style={{ fontSize: "1rem", color: "#60a5fa", fontWeight: "700" }}>
+            $
+          </span>
           <input
             type="number"
-            className="usd-input"
             value={
               baseCoin === "usd"
                 ? amounts.usd
                 : (results[0]?.usdValue || 0).toFixed(2)
             }
             onChange={(e) => onValueChange("usd", e.target.value)}
+            style={{
+              width: "120px",
+              background: "rgba(30,41,59,0.3)",
+              border: "1px solid rgba(255,255,255,0.06)",
+              borderRadius: "8px",
+              padding: "4px 8px",
+              fontSize: "1.3rem",
+              color: "#fff",
+              fontFamily: "monospace",
+              outline: "none",
+              textAlign: "right",
+            }}
             placeholder="0"
           />
-          <button onClick={fetchPrices} className="refresh-btn">
+          <button
+            onClick={fetchPrices}
+            style={{
+              background: "rgba(96,165,250,0.08)",
+              border: "1px solid rgba(96,165,250,0.1)",
+              borderRadius: "4px",
+              padding: "4px 10px",
+              color: "#60a5fa",
+              fontSize: "0.8rem",
+              fontWeight: "600",
+              cursor: "pointer",
+              fontFamily: "sans-serif",
+              whiteSpace: "nowrap",
+            }}
+          >
             ⟳
           </button>
         </div>
       </div>
 
       {/* Square Grid */}
-      <div className="crypto-grid">
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
+          gap: "8px",
+        }}
+      >
         {results.map((coin) => (
           <div
             key={coin.id}
-            className={`crypto-card ${baseCoin === coin.id ? "active" : ""}`}
+            style={{
+              aspectRatio: "2 / 1",
+              background: baseCoin === coin.id ? "rgba(96,165,250,0.06)" : "rgba(30,41,59,0.12)",
+              border: baseCoin === coin.id ? "1px solid rgba(96,165,250,0.15)" : "1px solid rgba(255,255,255,0.03)",
+              borderRadius: "10px",
+              padding: "14px 12px 12px",
+              display: "flex",
+              flexDirection: "column",
+              justifyContent: "space-between",
+              transition: "all 0.2s ease",
+            }}
           >
-            <div className="crypto-card-header">
-              <span className="crypto-card-symbol">{coin.symbol}</span>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontWeight: "800", color: "#d660fa", fontSize: "0.85rem" }}>
+                {coin.symbol}
+              </span>
               <span
-                className={`crypto-card-change ${coin.change >= 0 ? "positive" : "negative"}`}
+                style={{
+                  color: coin.change >= 0 ? "#10b981" : "#f87171",
+                  fontWeight: "600",
+                  fontSize: "0.85rem",
+                }}
               >
                 {coin.change >= 0 ? "▲" : "▼"} {Math.abs(coin.change).toFixed(1)}%
               </span>
             </div>
 
-            {/* Re-integrate the Sparkline for visual trend */}
-            <div style={{ margin: "auto 0" }}>
-              <Sparkline data={coin.history} />
-            </div>
-
-            <div className="crypto-card-input-wrapper">
+            <div style={{ margin: "8px 0" }}>
               <input
                 type="number"
-                className="crypto-card-input"
                 value={
                   baseCoin === coin.id
                     ? amounts[coin.id]
                     : coin.calculated > 0 ? coin.calculated.toFixed(6) : "0.000000"
                 }
                 onChange={(e) => onValueChange(coin.id, e.target.value)}
+                style={{
+                  width: "100%",
+                  background: "rgba(0,0,0,0.25)",
+                  border: "1px solid rgba(255,255,255,0.05)",
+                  borderRadius: "6px",
+                  padding: "6px 8px",
+                  fontSize: "1.2rem",
+                  color: "#fff",
+                  fontFamily: "monospace",
+                  outline: "none",
+                  textAlign: "center",
+                  boxSizing: "border-box",
+                }}
               />
             </div>
 
-            <div className="crypto-card-price">
+            <div
+              style={{
+                fontSize: "0.75rem",
+                fontFamily: "monospace",
+                color: "rgba(255,255,255,0.35)",
+                textAlign: "center",
+              }}
+            >
               $ {coin.price.toFixed(2)}
             </div>
           </div>
@@ -268,7 +417,16 @@ export default function CryptoRatePage({ onCall, onPriceUpdate, onNavigateHome }
       </div>
 
       {error && (
-        <div className="crypto-rate-error">{error}</div>
+        <div
+          style={{
+            fontSize: "0.75rem",
+            color: "#f87171",
+            textAlign: "center",
+            marginTop: "10px",
+          }}
+        >
+          {error}
+        </div>
       )}
     </div>
   );

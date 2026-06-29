@@ -37,3 +37,4 @@ worker/index.js
 # Vite cache
 .vite/
 node_modules/.vite/
+wrangler.json

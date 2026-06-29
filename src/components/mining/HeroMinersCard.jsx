@@ -1,651 +1,490 @@
-// ==========================
-//  COMPONENT: HEROMINERS CARD
-//  FORCE price from coinStats
-// ==========================
+// HeroMinersCard.jsx - UPGRADED with coin price modal integration
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { fetchMiningStats } from "./miningStatsFetcher.js";
+import { useRentedRigs } from "../mrr/RentedRigContext.jsx";
+import MiningDutch from "./MiningDutch.jsx";
+import { useCoinPrice } from "./CoinPriceContext.jsx"; 
 
-import { useState, useCallback, useEffect } from "react";
-import "./HeroMinersCard.css";
+// Algorithm normalization - match HeroMiners format
+function normalizeAlgorithm(algo) {
+  if (!algo) return "";
+  let cleaned = String(algo).toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+  
+  const mappings = {
+    "cryptonight": ["cryptonight", "cryptonightv7", "cryptonightv8", "cryptonightheavy", "cryptonightr"],
+    "randomx": ["randomx", "randomxmonero"],
+    "kawpow": ["kawpow", "kawpowrvn"],
+    "equihash": ["equihash", "equihash1445", "equihash1927", "equihash2109", "equihash1254"],
+    "sha256": ["sha256", "sha256d"],
+    "scrypt": ["scrypt"],
+    "x11": ["x11"],
+    "daggerhashimoto": ["daggerhashimoto"],
+    "etchash": ["etchash", "etcfash"],
+  };
+  
+  for (const [key, variants] of Object.entries(mappings)) {
+    if (variants.includes(cleaned) || variants.some(v => cleaned.includes(v) || v.includes(cleaned))) {
+      return key;
+    }
+  }
+  return cleaned;
+}
 
-export default function HeroMinersCard({
-  onCall,
-  initialCoin = "QRL",
-  onPaste,
+function getAlgoDisplayName(algo) {
+  const displayNames = {
+    "cryptonight": "CryptoNight",
+    "randomx": "RandomX",
+    "kawpow": "KawPow",
+    "equihash": "Equihash",
+    "sha256": "SHA256",
+    "scrypt": "Scrypt",
+    "x11": "X11",
+    "ethash": "Ethash",
+    "etchash": "Etchash",
+  };
+  return displayNames[algo] || algo.charAt(0).toUpperCase() + algo.slice(1);
+}
+
+function formatNumber(value, digits = 0) {
+  const num = Number(value);
+  return Number.isFinite(num)
+    ? num.toLocaleString(undefined, { maximumFractionDigits: digits })
+    : "0";
+}
+
+function HeroMinersTable({
+  stats,
+  filterMiningOnly,
+  activeAlgos,
+  sortConfig,
+  onSort,
 }) {
-  const [address, setAddress] = useState("");
-  const [coin, setCoin] = useState(initialCoin);
-  const [stats, setStats] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [lastUpdate, setLastUpdate] = useState(null);
-  const [viewMode, setViewMode] = useState("dashboard"); // 'dashboard' | 'raw'
+  const { openCoinModal } = useCoinPrice(); // <-- hook
 
-  // Coin price state
-  const [coinPrice, setCoinPrice] = useState(0);
-  const [priceLoading, setPriceLoading] = useState(false);
-  const [priceSource, setPriceSource] = useState("");
-
-  // Load last address from localStorage
-  useEffect(() => {
-    const saved = localStorage.getItem("herominers_last_address");
-    if (saved) {
-      try {
-        const { address: savedAddress, coin: savedCoin } = JSON.parse(saved);
-        setAddress(savedAddress);
-        if (savedCoin) setCoin(savedCoin);
-      } catch (e) {}
-    }
-  }, []);
-
-  const handleLookup = useCallback(async () => {
-    if (!address || !coin) {
-      setError("Address and Coin are required.");
-      return;
-    }
-
-    setLoading(true);
-    setError("");
-    setStats(null);
-
-    try {
-      const result = await onCall("/api/v2/mining-stats/herominers/address", {
-        query: { address: address.trim(), coin: coin.trim().toUpperCase() },
-        silent: true,
-      });
-
-      if (result?.success) {
-        setStats(result.data);
-        setLastUpdate(new Date());
-
-        localStorage.setItem(
-          "herominers_last_address",
-          JSON.stringify({
-            address: address.trim(),
-            coin: coin.trim().toUpperCase(),
-          }),
-        );
-
-        // FORCE price from coinStats - this is the most reliable source
-        if (result.data?.coinStats && result.data.coinStats.length > 0) {
-          const upperCoin = coin.trim().toUpperCase();
-          const mainCoin = result.data.coinStats.find(cs => cs.coin === upperCoin) || result.data.coinStats[0];
-          
-          // Log the raw coinStats for debugging
-          console.log('📊 coinStats from API:', result.data.coinStats);
-          console.log('📊 Main coin:', mainCoin);
-          
-          if (mainCoin?.priceUsd !== undefined && mainCoin.priceUsd > 0) {
-            // Force the price to be exactly what's in coinStats
-            const price = parseFloat(mainCoin.priceUsd);
-            setCoinPrice(price);
-            setPriceSource("coinStats");
-            console.log(`💰 ${coin} price from coinStats: $${price}`);
+  const rows = useMemo(() => {
+    const list = Array.isArray(stats) ? [...stats] : [];
+    const groupedByAlgo = new Map();
+    
+    list.forEach((coin) => {
+      const rawAlgo = coin.algorithm || coin.algo || "Unknown";
+      const normalized = normalizeAlgorithm(rawAlgo);
+      const displayName = getAlgoDisplayName(normalized);
+      const coinName = coin.coin || coin.symbol || "";
+      
+      const existing = groupedByAlgo.get(normalized);
+      if (existing) {
+        existing.miners += Number(coin.miners) || 0;
+        existing.btcPerDay += parseFloat(coin.btcPerDay || 0);
+        existing.usdPerDay += parseFloat(coin.usdPerDay || 0);
+        if (coinName) existing.coinsSet.add(coinName);
+        if (coin.raw?.coin) existing.coinsSet.add(coin.raw.coin);
+        if (coin.raw?.symbol) existing.coinsSet.add(coin.raw.symbol);
+        existing.rawAlgos.push(rawAlgo);
+      } else {
+        const coinsSet = new Set();
+        if (coinName) coinsSet.add(coinName);
+        if (coin.raw?.coin) coinsSet.add(coin.raw.coin);
+        if (coin.raw?.symbol) coinsSet.add(coin.raw.symbol);
+        
+        groupedByAlgo.set(normalized, {
+          algorithm: displayName,
+          rawAlgorithm: rawAlgo,
+          normalized: normalized,
+          miners: Number(coin.miners) || 0,
+          btcPerDay: parseFloat(coin.btcPerDay || 0),
+          usdPerDay: parseFloat(coin.usdPerDay || 0),
+          coinsSet: coinsSet,
+          rawAlgos: [rawAlgo],
+        });
+      }
+    });
+    
+    let groupedList = Array.from(groupedByAlgo.values()).map(item => ({
+      ...item,
+      coins: Array.from(item.coinsSet).filter(Boolean).sort(),
+    }));
+    
+    if (filterMiningOnly && activeAlgos.size > 0) {
+      groupedList = groupedList.filter((item) => {
+        const normalizedItem = item.normalized;
+        for (const activeAlgo of activeAlgos) {
+          const normalizedActive = normalizeAlgorithm(activeAlgo);
+          if (normalizedItem === normalizedActive || 
+              normalizedItem.includes(normalizedActive) ||
+              normalizedActive.includes(normalizedItem)) {
+            return true;
           }
         }
-        
-        // Only fetch from API if we didn't get a valid price from coinStats
-        if (coinPrice === 0) {
-          await fetchCoinPrice(coin.trim().toUpperCase());
-        }
+        return false;
+      });
+    }
+
+    return groupedList.sort((a, b) => {
+      let aVal, bVal;
+      if (sortConfig.key === "usdPerDay") {
+        aVal = a.usdPerDay || 0;
+        bVal = b.usdPerDay || 0;
+      } else if (sortConfig.key === "miners") {
+        aVal = a.miners || 0;
+        bVal = b.miners || 0;
+      } else if (sortConfig.key === "btcPerDay") {
+        aVal = a.btcPerDay || 0;
+        bVal = b.btcPerDay || 0;
+      } else if (sortConfig.key === "algorithm") {
+        aVal = String(a.algorithm || "").toLowerCase();
+        bVal = String(b.algorithm || "").toLowerCase();
       } else {
-        throw new Error(result?.error || "Failed to fetch address stats.");
+        aVal = String(a[sortConfig.key] || "").toLowerCase();
+        bVal = String(b[sortConfig.key] || "").toLowerCase();
+      }
+      if (aVal < bVal) return sortConfig.direction === "asc" ? -1 : 1;
+      if (aVal > bVal) return sortConfig.direction === "asc" ? 1 : -1;
+      return 0;
+    });
+  }, [stats, filterMiningOnly, activeAlgos, sortConfig]);
+
+  if (!rows.length) {
+    return (
+      <div style={{ opacity: 0.6, padding: "10px", textAlign: "center" }}>
+        {filterMiningOnly && activeAlgos.size === 0 
+          ? "No active mining algorithms found. Please rent a rig first." 
+          : filterMiningOnly 
+            ? "No matching algorithms for your rented rigs." 
+            : "No data available from HeroMiners."}
+      </div>
+    );
+  }
+
+  return (
+    <table
+      style={{ width: "100%", borderCollapse: "collapse", fontSize: "11px" }}
+    >
+      <thead>
+        <tr style={{ color: "#64748b", borderBottom: "1px solid #334155" }}>
+          <th
+            style={{ padding: "6px 4px", textAlign: "left", cursor: "pointer" }}
+            onClick={() => onSort("algorithm")}
+          >
+            Algorithm
+          </th>
+          <th
+            style={{
+              padding: "6px 4px",
+              textAlign: "right",
+              cursor: "pointer",
+            }}
+            onClick={() => onSort("miners")}
+          >
+            Miners
+          </th>
+          <th
+            style={{
+              padding: "6px 4px",
+              textAlign: "right",
+              cursor: "pointer",
+            }}
+            onClick={() => onSort("usdPerDay")}
+          >
+            USD/Day
+          </th>
+          <th
+            style={{
+              padding: "6px 4px",
+              textAlign: "right",
+              cursor: "pointer",
+            }}
+            onClick={() => onSort("btcPerDay")}
+          >
+            BTC/Day
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((item, idx) => (
+          <tr
+            key={`${item.normalized}-${idx}`}
+            style={{ borderBottom: "1px solid #1e293b" }}
+          >
+            <td style={{ padding: "6px 4px", color: "#e2e8f0" }}>
+              <div>
+                <strong>{item.algorithm}</strong>
+                {item.coins && item.coins.length > 0 && (
+                  <div style={{ 
+                    fontSize: "9px", 
+                    color: "#94a3b8", 
+                    marginTop: "2px",
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: "4px"
+                  }}>
+                    {item.coins.slice(0, 8).map((coin) => (
+                      <button
+                        key={coin}
+                        onClick={() => openCoinModal(coin)}
+                        style={{
+                          border: "1px solid rgba(96,165,250,0.22)",
+                          color: "#bfdbfe",
+                          background: "rgba(37,99,235,0.12)",
+                          borderRadius: "999px",
+                          padding: "1px 6px",
+                          fontSize: "9px",
+                          cursor: "pointer",
+                          transition: "all 0.2s",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.target.style.background = "rgba(37,99,235,0.25)";
+                          e.target.style.borderColor = "rgba(96,165,250,0.5)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.target.style.background = "rgba(37,99,235,0.12)";
+                          e.target.style.borderColor = "rgba(96,165,250,0.22)";
+                        }}
+                      >
+                        {coin}
+                      </button>
+                    ))}
+                    {item.coins.length > 8 && (
+                      <span style={{ color: "#64748b", fontSize: "9px" }}>
+                        +{item.coins.length - 8} more
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            </td>
+            <td style={{ padding: "6px 4px", textAlign: "right" }}>
+              {formatNumber(item.miners, 0)}
+            </td>
+            <td style={{ padding: "6px 4px", textAlign: "right" }}>
+              ${item.usdPerDay.toFixed(2)}
+            </td>
+            <td style={{ padding: "6px 4px", textAlign: "right" }}>
+              {item.btcPerDay.toFixed(8)}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+export default function HeroMinersCard({ onCall, pollInterval = 30000 }) {
+  const [heroGlobalStats, setHeroGlobalStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [sortConfig, setSortConfig] = useState({
+    key: "btcPerDay",
+    direction: "desc",
+  });
+  const [filterMiningOnly, setFilterMiningOnly] = useState(false);
+  const pollTimerRef = useRef(null);
+  const { rentedRigs } = useRentedRigs();
+
+  const activeAlgos = useMemo(() => {
+    const algos = new Set();
+    if (!rentedRigs || rentedRigs.length === 0) return algos;
+    rentedRigs.forEach((rig) => {
+      const algoFields = [
+        rig.algo, rig.algorithm, rig.type,
+        rig.rig?.algo, rig.rig?.algorithm, rig.rig?.type,
+        rig.hashrate?.algo, rig.hashrate?.algorithm,
+        rig.name, rig.rig?.name,
+      ];
+      for (const field of algoFields) {
+        if (field) {
+          const algoStr = String(field);
+          const parts = algoStr.split(/[,;\s|/]+/);
+          parts.forEach(part => {
+            const cleaned = part.trim();
+            if (cleaned && cleaned.length > 1) algos.add(cleaned);
+          });
+        }
+      }
+    });
+    return algos;
+  }, [rentedRigs]);
+
+  const requestSort = useCallback((key) => {
+    setSortConfig((current) => ({
+      key,
+      direction: current.key === key && current.direction === "desc" ? "asc" : "desc",
+    }));
+  }, []);
+
+  const fetchHeroMiners = useCallback(async (force = false) => {
+    setLoading(true);
+    try {
+      const stats = await fetchMiningStats(
+        "herominers",
+        "VN",
+        null,
+        null,
+        20000,
+        force,
+      );
+      if (stats?.success) {
+        setHeroGlobalStats(stats);
+        setError(null);
+      } else {
+        setHeroGlobalStats(null);
+        setError(stats?.error || "Failed to fetch HeroMiners stats.");
       }
     } catch (err) {
-      setError(err.message);
+      setHeroGlobalStats(null);
+      setError(err.message || "Failed to fetch HeroMiners stats.");
     } finally {
       setLoading(false);
     }
-  }, [address, coin, onCall]);
+  }, []);
 
-  // Fetch coin price from CoinGecko (fallback)
-  const fetchCoinPrice = useCallback(
-    async (coinSymbol) => {
-      if (!coinSymbol) return;
-      setPriceLoading(true);
-      
-      try {
-        const upperSymbol = coinSymbol.toUpperCase();
-        const coinId = upperSymbol.toLowerCase();
-
-        const result = await onCall("/api/v2/prices/coingecko", {
-          query: {
-            ids: coinId,
-            vs_currency: "usd",
-          },
-          silent: true,
-        });
-
-        const data = result?.data || result || {};
-        let price = 0;
-
-        if (data[coinId] && data[coinId].usd !== undefined) {
-          price = parseFloat(data[coinId].usd);
-        } else if (data.data && data.data[coinId] && data.data[coinId].usd !== undefined) {
-          price = parseFloat(data.data[coinId].usd);
-        } else if (data.price !== undefined) {
-          price = parseFloat(data.price);
-        } else if (data.usd !== undefined) {
-          price = parseFloat(data.usd);
-        }
-
-        if (price > 0 && price < 100000) {
-          setCoinPrice(price);
-          setPriceSource("coingecko");
-          console.log(`💰 ${coinSymbol} price from CoinGecko: $${price}`);
-        }
-      } catch (err) {
-        console.error("Failed to fetch coin price:", err);
-      } finally {
-        setPriceLoading(false);
-      }
-    },
-    [onCall],
-  );
-
-  const handleKeyPress = (e) => {
-    if (e.key === "Enter") {
-      handleLookup();
+  useEffect(() => {
+    queueMicrotask(() => void fetchHeroMiners());
+    if (pollInterval > 0) {
+      pollTimerRef.current = setInterval(() => void fetchHeroMiners(), pollInterval);
     }
-  };
+    return () => {
+      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+    };
+  }, [fetchHeroMiners, pollInterval]);
 
-  // Format USD helper
-  const formatUsd = (value) => {
-    if (!value || value === 0) return "";
-    if (value >= 1) return `$${value.toFixed(2)}`;
-    if (value >= 0.0001) return `$${value.toFixed(4)}`;
-    if (value >= 0.000001) return `$${value.toFixed(8)}`;
-    return `$${value.toFixed(12)}`;
-  };
-
-  // Format number with commas
-  const formatNumberWithCommas = (value) => {
-    if (!value || value === 0) return "0";
-    if (value < 0.01 && value > 0) return value.toFixed(6);
-    if (value < 1) return value.toFixed(4);
-    return value.toLocaleString('en-US', {
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 2
-    });
-  };
-
-  // Parse amount from formatted string
-  const parseAmount = (formatted) => {
-    if (!formatted) return 0;
-    const cleaned = formatted.replace(/[^0-9.]/g, "");
-    const num = parseFloat(cleaned);
-    return isNaN(num) ? 0 : num;
-  };
-
-  // Parse hashrate to H/s
-  const parseHashrate = (hashrateStr) => {
-    if (!hashrateStr) return 0;
-    const match = hashrateStr.match(/([\d.]+)\s*([KMGT]?H)\/s/);
-    if (!match) {
-      const num = parseFloat(hashrateStr);
-      return isNaN(num) ? 0 : num;
+  const refreshData = useCallback(() => {
+    if (pollTimerRef.current) {
+      clearInterval(pollTimerRef.current);
+      pollTimerRef.current = setInterval(() => void fetchHeroMiners(), pollInterval);
     }
-    const value = parseFloat(match[1]);
-    const unit = match[2];
-    switch (unit) {
-      case 'KH/s': return value * 1000;
-      case 'MH/s': return value * 1000000;
-      case 'GH/s': return value * 1000000000;
-      case 'TH/s': return value * 1000000000000;
-      default: return value;
-    }
-  };
+    void fetchHeroMiners(true);
+  }, [fetchHeroMiners, pollInterval]);
 
-  // Calculate 1h profit based on 1h hashrate
-  const calculate1hProfit = (hashrate1hStr, price) => {
-    if (!hashrate1hStr || !price || price === 0) return 0;
-    const hashrateInH = parseHashrate(hashrate1hStr);
-    if (hashrateInH === 0) return 0;
-    
-    // For QRL: ~0.01 coins per day per MH/s
-    const coinsPerDayPerMH = 0.01;
-    const coinsPerDay = (hashrateInH / 1000000) * coinsPerDayPerMH;
-    const coinsPerHour = coinsPerDay / 24;
-    return coinsPerHour * price;
-  };
-
-  // Render dashboard
-  const renderDashboard = () => {
-    if (!stats) return null;
-
-    const {
-      liveStats = {},
-      paymentStats = {},
-      shareStats = { total: {}, pool: {}, solo: {} },
-      blockStats = {},
-      charts = { hashrate: [], payments: [] },
-      coinStats = [],
-      workerStats = {},
-      miningDetails = {},
-    } = stats;
-
-    const totalShares = shareStats.total || {};
-
-    const validShares = miningDetails.validShares ?? totalShares.valid ?? 0;
-    const staleShares = miningDetails.staleShares ?? totalShares.stale ?? 0;
-    const invalidShares = miningDetails.invalidShares ?? totalShares.invalid ?? 0;
-    const efficiency = miningDetails.efficiency ?? (totalShares.efficiency ? totalShares.efficiency + "%" : "0.00%");
-    const blocksFound = miningDetails.blocksFound ?? blockStats.totalBlocks ?? 0;
-    const roundContribution = miningDetails.roundContribution ?? blockStats.roundContribution ?? "0.00%";
-    const payoutEstimate = miningDetails.payoutEstimate ?? blockStats.payoutEstimate ?? "0.0000 QRL";
-
-    const hashrate15m = liveStats.avg15m || liveStats.hashrate15m || "0 H/s";
-    const hashrate1h = liveStats.avg1h || liveStats.hashrate1h || "0 H/s";
-
-    // Parse payment amounts
-    const pendingBalanceRaw = paymentStats.pendingBalance || "0.0000 QRL";
-    const totalPaidRaw = paymentStats.totalPaid || "0.0000 QRL";
-    const paid24hRaw = paymentStats.paid24h || "0.0000 QRL";
-    const paidWeekRaw = paymentStats.paidWeek || "0.0000 QRL";
-
-    const pendingNum = parseAmount(pendingBalanceRaw);
-    const totalPaidNum = parseAmount(totalPaidRaw);
-    const paid24hNum = parseAmount(paid24hRaw);
-    const paidWeekNum = parseAmount(paidWeekRaw);
-
-    // FORCE the price from coinStats - this is the most reliable source
-    let effectivePrice = 0;
-    let priceSourceText = "unknown";
-
-    // ALWAYS use coinStats price first - it has the correct price
-    if (coinStats && coinStats.length > 0) {
-      const upperCoin = coin.trim().toUpperCase();
-      const mainCoin = coinStats.find(cs => cs.coin === upperCoin) || coinStats[0];
-      
-      console.log('🔍 Looking for price in coinStats:', {
-        coin: upperCoin,
-        coinStats,
-        mainCoin,
-        priceUsd: mainCoin?.priceUsd
-      });
-      
-      if (mainCoin?.priceUsd !== undefined) {
-        const price = parseFloat(mainCoin.priceUsd);
-        if (price > 0 && price < 100000) {
-          effectivePrice = price;
-          priceSourceText = "coinStats";
-          console.log(`✅ Using price from coinStats: $${effectivePrice}`);
-        }
-      }
-    }
-
-    // If no price from coinStats, use coinPrice state
-    if (effectivePrice === 0 && coinPrice > 0 && coinPrice < 100000) {
-      effectivePrice = coinPrice;
-      priceSourceText = "state";
-      console.log(`✅ Using price from state: $${effectivePrice}`);
-    }
-
-    // If price is still 0 or invalid, use a hardcoded fallback for QRL
-    if ((effectivePrice === 0 || effectivePrice > 100000) && coin === "QRL") {
-      effectivePrice = 0.96;
-      priceSourceText = "hardcoded";
-      console.log(`⚠️ Using hardcoded price for QRL: $${effectivePrice}`);
-    }
-
-    // If price is still invalid, skip USD calculations
-    const isValidPrice = effectivePrice > 0 && effectivePrice < 100000;
-
-    // Calculate 1h profit
-    const oneHourProfit = calculate1hProfit(hashrate1h, effectivePrice);
-
-    const coinSymbol = coin || "QRL";
-
-    console.log("💰 FINAL Price Debug:", {
-      effectivePrice,
-      priceSourceText,
-      isValidPrice,
-      pendingNum,
-      totalPaidNum,
-      paid24hNum,
-      paidWeekNum,
-      pendingUsd: pendingNum * effectivePrice,
-      totalPaidUsd: totalPaidNum * effectivePrice,
-      oneHourProfit,
-    });
-
-    return (
-      <div className="herominers-dashboard">
-        {/* Live Stats Section */}
-        <div className="stats-section">
-          <h4>📊 Live Stats</h4>
-          <div className="stats-grid">
-            <div className="stat-item">
-              <span className="stat-label">Current Hashrate</span>
-              <span className="stat-value highlight">
-                {liveStats.currentHashrate || "0 H/s"}
-              </span>
-            </div>
-            <div className="stat-item">
-              <span className="stat-label">Avg 15m</span>
-              <span className="stat-value">{hashrate15m}</span>
-            </div>
-            <div className="stat-item">
-              <span className="stat-label">Avg 1h</span>
-              <span className="stat-value">{hashrate1h}</span>
-            </div>
-            <div className="stat-item">
-              <span className="stat-label">Avg 6h</span>
-              <span className="stat-value">{liveStats.avg6h || "0 H/s"}</span>
-            </div>
-            <div className="stat-item">
-              <span className="stat-label">Avg 24h</span>
-              <span className="stat-value">{liveStats.avg24h || "0 H/s"}</span>
-            </div>
-            <div className="stat-item">
-              <span className="stat-label">Last Share</span>
-              <span className="stat-value">{liveStats.lastShare || "N/A"}</span>
-            </div>
-            <div className="stat-item">
-              <span className="stat-label">Total Hashes</span>
-              <span className="stat-value">{liveStats.totalHashes || "0"}</span>
-            </div>
-            <div className="stat-item">
-              <span className="stat-label">Workers Online</span>
-              <span className="stat-value">
-                {liveStats.workersOnline || 0} / {liveStats.workersTotal || 0}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Payment Stats Section */}
-        <div className="stats-section">
-          <h4>💰 Payments</h4>
-          <div className="stats-grid">
-            <div className="stat-item">
-              <span className="stat-label">Pending Balance</span>
-              <span className="stat-value highlight">
-                {pendingBalanceRaw}
-                {isValidPrice && pendingNum > 0 && (
-                  <span className="stat-value-usd" style={{ display: 'block', fontSize: '12px', fontWeight: 'normal' }}>
-                    (${formatNumberWithCommas(pendingNum * effectivePrice)} USD)
-                  </span>
-                )}
-              </span>
-            </div>
-
-            <div className="stat-item">
-              <span className="stat-label">Total Paid</span>
-              <span className="stat-value">
-                {totalPaidRaw}
-                {isValidPrice && totalPaidNum > 0 && (
-                  <span className="stat-value-usd" style={{ display: 'block', fontSize: '12px', fontWeight: 'normal' }}>
-                    (${formatNumberWithCommas(totalPaidNum * effectivePrice)} USD)
-                  </span>
-                )}
-              </span>
-            </div>
-
-            <div className="stat-item">
-              <span className="stat-label">Last 24h Paid</span>
-              <span className="stat-value">
-                {paid24hRaw}
-                {isValidPrice && paid24hNum > 0 && (
-                  <span className="stat-value-usd" style={{ display: 'block', fontSize: '12px', fontWeight: 'normal' }}>
-                    (${formatNumberWithCommas(paid24hNum * effectivePrice)} USD)
-                  </span>
-                )}
-              </span>
-            </div>
-
-            <div className="stat-item">
-              <span className="stat-label">Last Week Paid</span>
-              <span className="stat-value">
-                {paidWeekRaw}
-                {isValidPrice && paidWeekNum > 0 && (
-                  <span className="stat-value-usd" style={{ display: 'block', fontSize: '12px', fontWeight: 'normal' }}>
-                    (${formatNumberWithCommas(paidWeekNum * effectivePrice)} USD)
-                  </span>
-                )}
-              </span>
-            </div>
-
-            {/* 1h Profit Estimate */}
-            <div className="stat-item" style={{ gridColumn: 'span 2' }}>
-              <span className="stat-label">1h Profit Estimate</span>
-              <span className="stat-value highlight" style={{ color: '#fbbf24' }}>
-                {oneHourProfit > 0 ? formatUsd(oneHourProfit) : 'N/A'}
-                {isValidPrice && oneHourProfit > 0 && (
-                  <span className="stat-value-usd" style={{ display: 'block', fontSize: '12px', fontWeight: 'normal', color: '#94a3b8' }}>
-                    Based on 1h avg hashrate ({hashrate1h})
-                  </span>
-                )}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Coin Stats Section */}
-        {coinStats && coinStats.length > 0 && (
-          <div className="stats-section">
-            <h4>🪙 Coin Breakdown</h4>
-            <div className="stats-grid">
-              {(coinStats || []).map((cs) => (
-                <div className="stat-item" key={cs.coin}>
-                  <span className="stat-label">{cs.coin} Hashrate</span>
-                  <span className="stat-value">{cs.hashrate}</span>
-                </div>
-              ))}
-              {(coinStats || []).map((cs) => (
-                <div className="stat-item" key={`${cs.coin}-unpaid`}>
-                  <span className="stat-label">{cs.coin} Unpaid</span>
-                  <span className="stat-value">
-                    {cs.unpaid?.toLocaleString()}
-                    {cs.priceUsd > 0 && cs.priceUsd < 100000 && (
-                      <span className="stat-value-usd" style={{ display: 'block', fontSize: '12px', fontWeight: 'normal' }}>
-                        (${formatNumberWithCommas(cs.unpaid * cs.priceUsd)} USD)
-                      </span>
-                    )}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Mining Details Section */}
-        <div className="stats-section">
-          <h4>⛏️ Mining Details</h4>
-          <div className="stats-grid">
-            <div className="stat-item">
-              <span className="stat-label">Valid Shares</span>
-              <span className="stat-value success">
-                {validShares.toLocaleString()}
-              </span>
-            </div>
-            <div className="stat-item">
-              <span className="stat-label">Stale Shares</span>
-              <span className="stat-value warning">
-                {staleShares.toLocaleString()}
-              </span>
-            </div>
-            <div className="stat-item">
-              <span className="stat-label">Invalid Shares</span>
-              <span className="stat-value error">
-                {invalidShares.toLocaleString()}
-              </span>
-            </div>
-            <div className="stat-item">
-              <span className="stat-label">Efficiency</span>
-              <span className="stat-value">{efficiency}</span>
-            </div>
-            <div className="stat-item">
-              <span className="stat-label">Blocks Found</span>
-              <span className="stat-value highlight">{blocksFound}</span>
-            </div>
-            <div className="stat-item">
-              <span className="stat-label">Round Contribution</span>
-              <span className="stat-value">{roundContribution}</span>
-            </div>
-            <div className="stat-item">
-              <span className="stat-label">Payout Estimate</span>
-              <span className="stat-value">{payoutEstimate}</span>
-            </div>
-            <div className="stat-item">
-              <span className="stat-label">Hashrate 15m</span>
-              <span className="stat-value">{hashrate15m}</span>
-            </div>
-            <div className="stat-item">
-              <span className="stat-label">Hashrate 1h</span>
-              <span className="stat-value">{hashrate1h}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Worker Stats Section */}
-        {workerStats && workerStats.total > 0 && (
-          <div className="stats-section">
-            <h4>👷 Worker Summary</h4>
-            <div className="stats-grid">
-              <div className="stat-item">
-                <span className="stat-label">Total Workers</span>
-                <span className="stat-value">{workerStats.total}</span>
-              </div>
-              <div className="stat-item">
-                <span className="stat-label">Pool Workers</span>
-                <span className="stat-value">{workerStats.pool || 0}</span>
-              </div>
-              <div className="stat-item">
-                <span className="stat-label">Solo Workers</span>
-                <span className="stat-value">{workerStats.solo || 0}</span>
-              </div>
-              <div className="stat-item">
-                <span className="stat-label">Total Hashrate</span>
-                <span className="stat-value">
-                  {workerStats.totalHashrate || "0 H/s"}
-                </span>
-              </div>
-              <div className="stat-item">
-                <span className="stat-label">Total Shares</span>
-                <span className="stat-value">
-                  {workerStats.totalShares || "0"}
-                </span>
-              </div>
-              <div className="stat-item">
-                <span className="stat-label">Total Blocks</span>
-                <span className="stat-value">
-                  {workerStats.totalBlocksFound || 0}
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Charts */}
-        {charts.hashrate && charts.hashrate.length > 0 && (
-          <div className="chart-section">
-            <h4>📈 Hashrate Chart</h4>
-            <div className="chart-placeholder">
-              <div className="chart-bars">
-                {charts.hashrate.slice(-24).map((point, i) => {
-                  const max = Math.max(
-                    ...charts.hashrate.map((p) => p.hashrate || 0),
-                  );
-                  const height = max > 0 ? (point.hashrate / max) * 100 : 0;
-                  return (
-                    <div key={i} className="chart-bar-wrapper">
-                      <div
-                        className="chart-bar"
-                        style={{ height: `${Math.max(5, height)}%` }}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
-              <div className="chart-labels">
-                <span>1d</span>
-                <span>12h</span>
-                <span>Now</span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Last Update */}
-        {lastUpdate && (
-          <div className="update-info">
-            Last updated: {lastUpdate.toLocaleString()}
-            {isValidPrice && (
-              <span style={{ marginLeft: "12px", color: "#34d399" }}>
-                {coin} Price: ${effectivePrice.toFixed(4)} ({priceSourceText})
-              </span>
-            )}
-          </div>
-        )}
-      </div>
-    );
-  };
+  const heroStats = heroGlobalStats?.coinStats || [];
 
   return (
-    <div className="herominers-card">
-      <div className="card-header">
-        <h3>🔍 HeroMiners Address Lookup</h3>
-        <div className="card-actions">
-          {stats && (
-            <button
-              className="btn-sm"
-              onClick={() =>
-                setViewMode(viewMode === "dashboard" ? "raw" : "dashboard")
-              }
-            >
-              {viewMode === "dashboard" ? "View Raw" : "View Dashboard"}
-            </button>
-          )}
+    <div
+      className="hero-miners-live-card"
+      style={{
+        padding: "15px",
+        background: "rgba(255,255,255,0.02)",
+        borderRadius: "12px",
+        border: "1px solid rgba(255,255,255,0.05)",
+        display: "grid",
+        gap: "16px",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: "12px",
+          flexWrap: "wrap",
+        }}
+      >
+        <div>
+          <h3 style={{ margin: 0, color: "#e2e8f0" }}>HeroMiners</h3>
+          <div style={{ fontSize: "11px", opacity: 0.6 }}>
+            {heroGlobalStats?.miners
+              ? `${formatNumber(heroGlobalStats.miners)} miners`
+              : "Global pool snapshot"}
+          </div>
         </div>
-      </div>
-      <div className="search-section">
-        <div className="search-row">
-          <div className="coin-input-wrapper">
-            <input
-              type="text"
-              value={coin}
-              onChange={(e) => setCoin(e.target.value.toUpperCase())}
-              onKeyPress={handleKeyPress}
-              placeholder="Coin (e.g., QRL)"
-              className="address-input"
-            />
-          </div>
-          <div className="address-input-wrapper">
-            <input
-              type="text"
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              onKeyPress={handleKeyPress}
-              placeholder="Enter your wallet address"
-              className="address-input"
-            />
-          </div>
-          {onPaste && stats?.coinStats && (
-            <button
-              className="btn-primary"
-              onClick={() => onPaste(stats.coinStats)}
-            >
-              📋 Paste
-            </button>
-          )}
-          <button
-            className="btn-primary"
-            onClick={handleLookup}
-            disabled={loading}
+
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "12px",
+            flexWrap: "wrap",
+          }}
+        >
+          <label
+            style={{
+              fontSize: "11px",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              cursor: "pointer",
+              color: "#94a3b8",
+            }}
           >
-            {loading ? "⏳" : "🔍 Lookup"}
+            <input
+              type="checkbox"
+              checked={filterMiningOnly}
+              onChange={(e) => setFilterMiningOnly(e.target.checked)}
+            />
+            Mining Only
+            {filterMiningOnly && (
+              <span style={{ fontSize: "10px", color: "#38bdf8" }}>
+                ({activeAlgos.size} active)
+              </span>
+            )}
+          </label>
+
+          <button
+            className="btn-pro secondary"
+            onClick={refreshData}
+            disabled={loading}
+            style={{
+              fontSize: "11px",
+              background: "transparent",
+              border: "none",
+              color: "#94a3b8",
+              cursor: "pointer",
+              textDecoration: "underline",
+            }}
+          >
+            {loading ? "…" : "Refresh"}
           </button>
         </div>
       </div>
-      {error && <div className="error-message">❌ {error}</div>}
-      {stats && (
-        <div className="stats-content">
-          {viewMode === "dashboard" ? (
-            renderDashboard()
-          ) : (
-            <pre className="raw-data">{JSON.stringify(stats, null, 2)}</pre>
-          )}
-        </div>
-      )}
+
+      <div
+        className="code-block-content"
+        style={{
+          maxHeight: "380px",
+          overflowY: "auto",
+          fontSize: "11px",
+          color: "#94a3b8",
+          background: "rgba(0,0,0,0.2)",
+          padding: "12px",
+          borderRadius: "8px",
+        }}
+      >
+        {loading && !error && (
+          <div style={{ textAlign: "center", padding: "20px", opacity: 0.7 }}>
+            Loading…
+          </div>
+        )}
+        {error && (
+          <div style={{ color: "#f87171", padding: "10px" }}>
+            <div>{error}</div>
+            <button
+              onClick={refreshData}
+              style={{
+                marginTop: "8px",
+                background: "rgba(255,255,255,0.1)",
+                border: "1px solid #475569",
+                color: "#e2e8f0",
+                padding: "4px 12px",
+                borderRadius: "4px",
+                cursor: "pointer",
+              }}
+            >
+              Retry
+            </button>
+          </div>
+        )}
+        {!error && !loading && (
+          <HeroMinersTable
+            stats={heroStats}
+            filterMiningOnly={filterMiningOnly}
+            activeAlgos={activeAlgos}
+            sortConfig={sortConfig}
+            onSort={requestSort}
+          />
+        )}
+      </div>
+
+      <MiningDutch onCall={onCall} />
     </div>
   );
 }
