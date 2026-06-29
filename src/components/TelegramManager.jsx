@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState, useEffect } from "react";
 import MonitorDbEditor from "./MonitorDbEditor";
 import { TelegramTemplates } from "../core/telegram.js";
+import { toUtcTimestamp } from "../core/time";
 
 function decodeHtmlEntities(text) {
   if (typeof text !== "string") return text;
@@ -12,6 +13,7 @@ function decodeHtmlEntities(text) {
 function getTelegramAccount(r, mrrClient) {
   const account = r?.mrrClient || r?.client || r?.account || mrrClient;
   if (!account) return "N/A";
+  // Handle VN as ALL (special case for combined client view)
   if (String(account).toUpperCase() === "VN") return "ALL";
   return String(account).toUpperCase();
 }
@@ -45,19 +47,19 @@ export function useTelegram(onCall, mrrClient) {
     (r) => {
       const account = getTelegramAccount(r, mrrClient);
       const paid = getPaidAmount(r);
-      const algo = r?.rig?.type || r?.algorithm || r?.algo || r?.type || "N/A";
-      const ads =
-        r?.hashrate?.advertised?.nice ||
-        r?.hashrate?.advertised ||
-        r?.hashrate?.suffix ||
-        "N/A";
       const startStr = String(r.start || "")
         .replace(/:\d{2} UTC/i, "")
         .replace(/^\d{4}-/, "");
       const endStr = String(r.end || "")
         .replace(/:\d{2} UTC/i, "")
         .replace(/^\d{4}-/, "");
-      const msg = TelegramTemplates.newRental(account, r, paid, startStr, endStr, algo, ads);
+      const msg = TelegramTemplates.newRental(
+        account,
+        r,
+        paid,
+        startStr,
+        endStr,
+      );
       return sendTelegram(msg, { silent: true });
     },
     [sendTelegram, mrrClient],
@@ -104,11 +106,9 @@ export function useTelegram(onCall, mrrClient) {
         ? parseFloat(rawEfficiency)
         : 0;
       const paid = getPaidAmount(r);
-      const remainingMs = r.end
-        ? new Date(
-            r.end + (String(r.end).endsWith("UTC") ? "" : " UTC"),
-          ).getTime() - Date.now()
-        : 0;
+      // Use toUtcTimestamp for consistent parsing
+      const endTime = toUtcTimestamp(r.end);
+      const remainingMs = endTime ? Math.max(0, endTime - Date.now()) : 0;
       const msg = TelegramTemplates.perfectEfficiency(
         account,
         r,
@@ -214,16 +214,24 @@ export function useTelegram(onCall, mrrClient) {
 
   const sendManualNotice = useCallback(
     (r) => {
-      const startT = new Date(
-        r.start + (String(r.start).endsWith("UTC") ? "" : " UTC"),
-      ).getTime();
-      const endT = new Date(
-        r.end + (String(r.end).endsWith("UTC") ? "" : " UTC"),
-      ).getTime();
+      if (!r) {
+        console.error("No rental data provided for manual notice");
+        return Promise.reject(new Error("No rental data provided"));
+      }
+
+      // Use toUtcTimestamp for consistent date parsing
+      const startTime = toUtcTimestamp(r.start);
+      const endTime = toUtcTimestamp(r.end);
+      
+      if (!startTime || !endTime) {
+        console.error("Invalid start or end time for rental:", r.id);
+        return Promise.reject(new Error("Invalid rental time data"));
+      }
+
       const now = Date.now();
-      const totalMs = endT - startT;
-      const elapsedMs = Math.max(0, Math.min(now - startT, totalMs));
-      const remainingMs = Math.max(0, endT - now);
+      const totalMs = endTime - startTime;
+      const elapsedMs = Math.max(0, Math.min(now - startTime, totalMs));
+      const remainingMs = Math.max(0, endTime - now);
 
       const remD = Math.floor(remainingMs / 86400000);
       const remH = Math.floor((remainingMs % 86400000) / 3600000);
@@ -295,7 +303,11 @@ export function useTelegram(onCall, mrrClient) {
   );
 }
 
-export default function TelegramManager({ onCall, mrrClient }) {
+export default function TelegramManager({ 
+  onCall, 
+  mrrClient,
+  onSummaryUpdate // Add the missing prop
+}) {
   const [isMonitorDbOpen, setIsMonitorDbOpen] = useState(false);
   const [isTelegramOn, setIsTelegramOn] = useState(true);
   const [isToggling, setIsToggling] = useState(false);
@@ -303,14 +315,18 @@ export default function TelegramManager({ onCall, mrrClient }) {
   const [heartbeatStatus, setHeartbeatStatus] = useState("");
   const [health, setHealth] = useState(null);
 
-  const isConfigured = health?.configured !== false;
+  // Determine if Telegram is properly configured
+  const isConfigured = health?.configured === true;
   const statusLabel =
-    health?.configured === false
+    !isConfigured
       ? "Missing Telegram credentials"
       : isTelegramOn
         ? "Notifications enabled"
         : "Notifications disabled";
+  
+  // Handle scope label - VN means ALL (combined view)
   const scopeLabel = String(mrrClient || "ALL").toUpperCase();
+  const actualScope = scopeLabel === "VN" ? "ALL" : scopeLabel;
 
   // Fetch current notification status from server on mount.
   useEffect(() => {
@@ -363,9 +379,10 @@ export default function TelegramManager({ onCall, mrrClient }) {
     try {
       const res = await onCall("/api/v2/mrr/monitor/run", {
         method: "POST",
-        body: { client: scopeLabel },
+        body: { client: actualScope },
         silent: true,
       });
+      
       const accounts = Array.isArray(res?.summary?.accounts)
         ? res.summary.accounts.length
         : null;
@@ -376,6 +393,11 @@ export default function TelegramManager({ onCall, mrrClient }) {
       setHeartbeatStatus(
         res?.success ? `Heartbeat sent${suffix}` : "Heartbeat request finished",
       );
+
+      // Update parent component with the summary data
+      if (res?.summary && onSummaryUpdate) {
+        onSummaryUpdate(res.summary);
+      }
     } catch (err) {
       console.error("Force heartbeat failed:", err);
       setHeartbeatStatus(`Heartbeat failed: ${err.message || "unknown error"}`);
@@ -424,7 +446,7 @@ export default function TelegramManager({ onCall, mrrClient }) {
           className={`btn-pro ${isTelegramOn ? "primary" : "secondary"}`}
           onClick={handleToggle}
           title={
-            health?.configured === false
+            !isConfigured
               ? "Telegram not configured in .env"
               : isTelegramOn
                 ? "Notifications are ON"
@@ -475,23 +497,23 @@ export default function TelegramManager({ onCall, mrrClient }) {
             Force heartbeat
           </div>
           <div style={{ fontSize: "11px", opacity: 0.68 }}>
-            Runs monitor now for <b>{scopeLabel}</b> and sends the Telegram
+            Runs monitor now for <b>{actualScope}</b> and sends the Telegram
             summary.
           </div>
         </div>
         <button
           className="btn-pro primary"
           onClick={handleForceHeartbeat}
-          disabled={isHeartbeatRunning}
+          disabled={isHeartbeatRunning || !isConfigured}
           style={{
             minWidth: "118px",
-            background: isHeartbeatRunning
+            background: isHeartbeatRunning || !isConfigured
               ? "rgba(100, 116, 139, 0.16)"
               : "linear-gradient(135deg, rgba(14, 165, 233, 0.28), rgba(16, 185, 129, 0.22))",
-            borderColor: isHeartbeatRunning
+            borderColor: isHeartbeatRunning || !isConfigured
               ? "rgba(148, 163, 184, 0.35)"
               : "rgba(56, 189, 248, 0.55)",
-            color: isHeartbeatRunning ? "#94a3b8" : "#e0f2fe",
+            color: isHeartbeatRunning || !isConfigured ? "#94a3b8" : "#e0f2fe",
           }}
         >
           {isHeartbeatRunning ? "Running..." : "Send Now"}
@@ -534,6 +556,7 @@ export default function TelegramManager({ onCall, mrrClient }) {
         className="btn-pro secondary"
         onClick={() => setIsMonitorDbOpen(true)}
         style={{ justifySelf: "start", fontSize: "11px", padding: "7px 10px" }}
+        disabled={!isConfigured}
       >
         Open Monitor DB
       </button>

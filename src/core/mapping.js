@@ -4,7 +4,6 @@
 export const ALGO_DISPLAY_NAMES = {
   SHA256: "SHA256",
   SHA256ASICBOOST: "SHA256AB",
-  SHA256AB: "SHA256AB",
   SCRYPT: "Scrypt",
   DAGGERHASHIMOTO: "DaggerHashimoto",
   ETCHASH: "Etchash",

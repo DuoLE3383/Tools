@@ -501,6 +501,7 @@ export default function MiningRigRental({
   const [activeModal, setActiveModal] = useState(null); // 'list', 'pool', 'rental'
   const [modalData, setModalData] = useState(null);
   const [modalLoading, setModalLoading] = useState(false);
+  const [currentModalType, setCurrentModalType] = useState(null); // Track which modal is open
 
   const tg = useTelegram(onCall, mrrClient);
 
@@ -526,8 +527,10 @@ export default function MiningRigRental({
     fetchInFlightRef.current = true;
     setLoadingRentals(true);
     try {
+      // Handle "ALL" client case - might need a different endpoint or empty result
+      const clientParam = mrrClient === "ALL" ? null : mrrClient;
       const result = await onCall("/api/v2/mrr/rentals", {
-        query: { client: mrrClient },
+        query: clientParam ? { client: clientParam } : {},
         silent: true,
       });
       if (result?.success) {
@@ -733,6 +736,8 @@ export default function MiningRigRental({
 
   const openManagementModal = async (type) => {
     setActiveModal(type);
+    setCurrentModalType(type); // Track which modal is open
+    
     if (type === "list") return; // MrrRigs fetches its own data
 
     if (!mrrClient) {
@@ -816,20 +821,12 @@ export default function MiningRigRental({
 
       {/* Dashboard Actions */}
       <div className="button-group" style={{ marginTop: "10px" }}>
-        {/* <button className="btn-pro primary" onClick={() => openManagementModal('list_all_rigs')}>
-          Browse Marketplace
-        </button> */}
         <button
           className="btn-pro secondary"
           onClick={() => openManagementModal("list")}
         >
           Rigs Manager
         </button>
-        {/* <button className="btn-pro secondary" onClick={() => openManagementModal('rentals')}>
-          Rentals {rentals.length > 0 && `(${rentals.length})`}
-        </button>
-        <button className="btn-pro secondary" onClick={() => openManagementModal('rental_history')}>Rental History</button>
-        <button className="btn-pro secondary" onClick={() => openManagementModal('mrr_nh_compare')}>MRR vs NiceHash</button> */}
         <button
           className="btn-pro secondary"
           onClick={() =>
@@ -961,14 +958,16 @@ export default function MiningRigRental({
       {/* Dedicated Management Modals */}
       <Modal
         isOpen={!!activeModal}
-        onClose={() => setActiveModal(null)}
+        onClose={() => {
+          setActiveModal(null);
+          setCurrentModalType(null);
+        }}
         title={
           activeModal === "list"
             ? "Rigs Manager"
             : activeModal === "mrr_nh_compare"
               ? "MRR Rigs vs NiceHash Market Price"
-              : // activeModal === 'list_all_rigs' ? 'All Available Rigs' :
-                activeModal === "rental_history"
+              : activeModal === "rental_history"
                 ? "Rental History"
                 : "Active Rentals"
         }
@@ -976,8 +975,6 @@ export default function MiningRigRental({
         maxHeight="400px"
       >
         <div style={{ padding: "2px" }}>
-          {" "}
-          {/* Removed maxHeight and overflowY: 'auto' from here */}
           {activeModal === "list" && (
             <ErrorBoundary name="MrrRigs (Modal)">
               <MrrRigs
@@ -995,19 +992,21 @@ export default function MiningRigRental({
             </ErrorBoundary>
           )}
           {activeModal === "list_all_rigs" && (
-            <MrrRigs
-              onCall={onCall}
-              mrrClient={mrrClient}
-              endpoint="/rig"
-              algo={algorithm}
-              onOpenPool={onOpenMrrPools}
-              onOpenCompletionCalculator={onOpenCompletionCalculator}
-              onInfo={(id) =>
-                onCall(`/api/v2/mrr/rig/${encodeURIComponent(id)}/info`, {
-                  query: { client: mrrClient },
-                })
-              }
-            />
+            <ErrorBoundary name="MrrRigs (List All)">
+              <MrrRigs
+                onCall={onCall}
+                mrrClient={mrrClient}
+                endpoint="/rig"
+                algo={algorithm}
+                onOpenPool={onOpenMrrPools}
+                onOpenCompletionCalculator={onOpenCompletionCalculator}
+                onInfo={(id) =>
+                  onCall(`/api/v2/mrr/rig/${encodeURIComponent(id)}/info`, {
+                    query: { client: mrrClient },
+                  })
+                }
+              />
+            </ErrorBoundary>
           )}
           {activeModal === "mrr_nh_compare" && (
             <>
@@ -1112,7 +1111,10 @@ export default function MiningRigRental({
         >
           <button
             className="btn-pro secondary"
-            onClick={() => setActiveModal(null)}
+            onClick={() => {
+              setActiveModal(null);
+              setCurrentModalType(null);
+            }}
           >
             Close
           </button>

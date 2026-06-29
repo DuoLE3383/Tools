@@ -3,10 +3,10 @@ import { dbRunAsync, dbGetAsync } from "./dbHelpers.js";
 import { logger } from "../logger.js";
 import { TELEGRAM_CONFIG, TelegramTemplates } from "../../src/core/telegram.js";
 import {
-  normalizeAlgoForNiceHash,
   getMrrAlgorithmUnit,
   calculatePriceComparison,
-  getAlgoDisplayName,
+  normalizeAlgoForNiceHash,
+  getAlgoMapping,
 } from "../../src/core/mapping.js";
 import { getBtcPriceData } from "../../src/core/priceUtils.js";
 import { getMonitorNhActiveOrders, sendTelegramInternal } from "../monitor/helpers.js";
@@ -37,75 +37,195 @@ function formatHashrate(value, suffix) {
   return `${scaled.toFixed(2)}${unit.toUpperCase()}`;
 }
 
-function hasActiveRentalSignal(rental, info) {
-    const statusRaw = rental?.status || rental?.state || rental?.rig?.status?.status || rental?.rig?.status;
-    const status = String(typeof statusRaw === "object" ? statusRaw?.status || "" : statusRaw || "").toLowerCase();
-    const hasRentalId = Boolean(rental?.id || rental?.rentalid || rental?.rental_id);
-    const hasTiming = Boolean(info?.startTime || info?.endTime || rental?.start_time || rental?.startTime || rental?.end_time || rental?.created_at);
-    const hasPrice = parseFloat(info?.price?.paid || rental?.price || 0) > 0;
-    return hasRentalId && (hasTiming || hasPrice || status.includes("rented") || status.includes("active") || status.includes("running"));
+// ============================================================
+// HELPER: Resolve algorithm for display
+// ============================================================
+function resolveRentalAlgo(rental, info) {
+  const algo = info?.algo || 
+               rental?.algo || 
+               rental?.algorithm || 
+               rental?.rig?.type || 
+               rental?.miningAlgorithm || 
+               "N/A";
+  
+  try {
+    const mapping = getAlgoMapping(algo);
+    return mapping.displayName || algo;
+  } catch (err) {
+    return algo;
+  }
+}
+
+// ============================================================
+// HELPER: Parse UTC time consistently
+// ============================================================
+function parseUtcTime(dateString) {
+    if (!dateString) return 0;
+    const s = String(dateString).trim();
+    if (!s) return 0;
+    
+    // Try direct Date parsing first (handles ISO, UTC, etc.)
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) return d.getTime();
+    
+    // Try adding UTC suffix if missing
+    if (!s.endsWith("UTC") && !s.endsWith("Z") && !s.includes("+") && !s.includes("-")) {
+        const d2 = new Date(s + " UTC");
+        if (!isNaN(d2.getTime())) return d2.getTime();
+    }
+    
+    // Try parsing with timezone offset
+    try {
+        const d3 = new Date(s.replace(/UTC/g, 'GMT'));
+        if (!isNaN(d3.getTime())) return d3.getTime();
+    } catch (err) {
+        // Ignore
+    }
+    
+    return 0;
+}
+
+// ============================================================
+// HELPER: Format remaining time
+// ============================================================
+function formatRemainingTime(remainingMs) {
+    if (remainingMs <= 0) return "Finished";
+    if (!Number.isFinite(remainingMs)) return "N/A";
+    
+    const seconds = Math.floor(remainingMs / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+    const remainingHours = hours % 24;
+    const remainingMinutes = minutes % 60;
+    
+    if (days > 0) {
+        return `${days}d ${remainingHours}h ${remainingMinutes}m`;
+    } else if (hours > 0) {
+        return `${hours}h ${remainingMinutes}m`;
+    } else if (minutes > 0) {
+        return `${minutes}m`;
+    } else {
+        return `${seconds}s`;
+    }
 }
 
 /**
  * Checks if a rental is actively mining and has data, or is new enough to be considered valid.
  * This filters out "ghost" rentals that are stuck in a rented state without ever starting.
  */
+// rentalProcessor.js - Simplified isRealRental function
+
+/**
+ * Checks if a rental is real based on two simple criteria:
+ * 1. Started less than 7 days ago
+ * 2. OR has remaining time (not finished)
+ */
 export function isRealRental(rental, info, now = Date.now()) {
-    if (!rental || !info) {
-        logger.debug(`[monitor:isRealRental] Skipped due to missing rental or info object.`);
-        return false;
-    }
-
-    const rentalId = rental.id || rental.rentalid || rental.rental_id;
-    if (!rentalId) {
-        logger.debug(`[monitor:isRealRental] Skipped due to missing rental ID.`);
-        return false;
-    }
-
-    // Check for any sign of activity
-    // BUGFIX: Use separate variables per source. Do NOT let || chain hide zero values.
-    const currentHashRaw = info.hashrate?.current;
-    const averageHashRaw = info.hashrate?.average;
-    const currentHash = (currentHashRaw !== undefined && currentHashRaw !== null) ? parseFloat(currentHashRaw) : 0;
-    const averageHash = (averageHashRaw !== undefined && averageHashRaw !== null) ? parseFloat(averageHashRaw) : 0;
-    const paidAmount = parseFloat(info.price?.paid || null);
+    if (!rental || !info) return false;
     
-    // If there's any activity or payment, it's real
-    if (paidAmount > 0 || averageHash > 0 || currentHash > 0) {
-        logger.debug(`[monitor:isRealRental] Rental ${rentalId} is real (has paid amount or hashrate).`);
-        return true;
-    }
+    const rentalId = rental.id || rental.rentalid || rental.rental_id;
+    if (!rentalId) return false;
 
-    // For new rentals, check their age
-    const rawStart = info.startTime || rental.start_time || rental.startTime || rental.created_at || 0;
-    if (!rawStart) {
-        if (parseFloat(rental.price) > 0) {
-            logger.debug(`[monitor:isRealRental] Rental ${rentalId} is real (has price).`);
-            return true;
-        }
-        logger.debug(`[monitor:isRealRental] Rental ${rentalId} is NOT real (no activity and no start time).`);
+    // ============================================================
+    // ✅ CRITICAL: Check if this is actually a rental or just a rig with a rental ID
+    // ============================================================
+    // Rentals have these fields, rigs don't
+    const hasRentalFields = Boolean(
+        rental.start_time || 
+        rental.startTime || 
+        rental.end_time || 
+        rental.endTime || 
+        rental.price || 
+        rental.paid
+    );
+    
+    // If it doesn't have rental fields, it's just a rig, not a rental
+    if (!hasRentalFields) {
+        logger.debug(`[monitor:isRealRental] ${rentalId} is a rig with rental ID, not a real rental (no rental fields).`);
         return false;
     }
 
-    const startT = new Date(String(rawStart).endsWith("UTC") ? rawStart : `${rawStart} UTC`).getTime();
-    const ageMs = now - startT;
+    // Parse times
+    const rawStart = info.startTime || rental.start_time || rental.startTime || 0;
+    const rawEnd = info.endTime || rental.end_time || rental.endTime || 0;
+    const startT = parseUtcTime(rawStart);
+    const endT = parseUtcTime(rawEnd);
 
-    // Grace period: if it started in the last hour, consider it real.
-    if (ageMs > 0 && ageMs < 60 * 60 * 1000) {
-        logger.debug(`[monitor:isRealRental] Rental ${rentalId} is considered real (in 1-hour grace period).`);
-        return true;
+    // ============================================================
+    // ✅ Must have valid start AND end times
+    // ============================================================
+    if (startT <= 0 || endT <= 0) {
+        logger.debug(`[monitor:isRealRental] ${rentalId} has invalid times (start: ${startT}, end: ${endT}), skipping.`);
+        return false;
     }
 
-    // If it has a price or advertised hashrate, consider it real
-    const advertisedHash = parseFloat(info.hashrate?.advertised || 0);
-    const price = parseFloat(info.price?.paid || info.price?.price || rental.price || 0);
-    if (advertisedHash > 0 || price > 0) {
-        logger.debug(`[monitor:isRealRental] Rental ${rentalId} is real (has advertised hashrate or price).`);
-        return true;
+    // ============================================================
+    // ✅ Must have remaining time (not finished)
+    // ============================================================
+    const remainingMs = Math.max(0, endT - now);
+    if (remainingMs <= 0) {
+        logger.debug(`[monitor:isRealRental] ${rentalId} is finished, skipping.`);
+        return false;
     }
 
-    logger.debug(`[monitor:isRealRental] Rental ${rentalId} is a ghost (age: ${Math.round(ageMs / 1000)}s, no activity).`);
-    return false;
+    // ============================================================
+    // ✅ Must have either hashrate OR payment
+    // ============================================================
+    const currentHash = parseFloat(info.hashrate?.current || 0);
+    const averageHash = parseFloat(info.hashrate?.average || 0);
+    const paidAmount = parseFloat(info.price?.paid || rental.price || 0);
+    const hasActivity = currentHash > 0 || averageHash > 0 || paidAmount > 0;
+
+    if (!hasActivity) {
+        logger.debug(`[monitor:isRealRental] ${rentalId} has no activity (hashrate or payment), skipping.`);
+        return false;
+    }
+
+    logger.debug(`[monitor:isRealRental] ${rentalId} is a real rental (remaining: ${formatRemainingTime(remainingMs)}, hashrate: ${currentHash > 0 || averageHash > 0}, paid: ${paidAmount > 0})`);
+    return true;
+}
+
+function hasActiveRentalSignal(rental, info, now = Date.now()) {
+    const rentalId = rental.id || rental.rentalid || rental.rental_id;
+    if (!rentalId) return false;
+
+    // ============================================================
+    // ✅ CRITICAL: Must have rental fields
+    // ============================================================
+    const hasRentalFields = Boolean(
+        rental.start_time || 
+        rental.startTime || 
+        rental.end_time || 
+        rental.endTime || 
+        rental.price || 
+        rental.paid ||
+        info.startTime ||
+        info.endTime
+    );
+    
+    if (!hasRentalFields) {
+        return false;
+    }
+
+    // Parse times
+    const endT = parseUtcTime(info.endTime || rental.end_time || rental.endTime || 0);
+    
+    // Must have future end time
+    if (endT <= 0 || endT <= now) {
+        return false;
+    }
+
+    // Must have either timing or price
+    const hasTiming = Boolean(info.startTime || rental.start_time || rental.startTime);
+    const hasPrice = parseFloat(info?.price?.paid || rental?.price || 0) > 0;
+    
+    // Check status
+    const statusRaw = rental?.status || rental?.state || rental?.rig?.status;
+    const status = String(typeof statusRaw === 'object' ? statusRaw?.status || '' : statusRaw || '').toLowerCase();
+    const isActiveStatus = status.includes('rented') || status.includes('active') || status.includes('running');
+
+    return (hasTiming || hasPrice || isActiveStatus) && endT > now;
 }
 
 /**
@@ -205,21 +325,16 @@ async function getPriceRoi(info, acct, now) {
 export async function processRental(rental, acct, now, forceNotify, notifiedRentalIdsThisRun, notifications, liveRig = null) {
     const info = extractRentalInfo(rental, liveRig);
     const isValidRental = isRealRental(rental, info, now);
-    const isNewRentalCandidate = hasActiveRentalSignal(rental, info);
 
-    if (!isValidRental && !isNewRentalCandidate) {
+    if (!isValidRental) {
         logger.debug(`[monitor:process] Skipped invalid or ghost rental: ${rental.id || 'N/A'}`);
         return { isValid: false };
     }
 
-    const parseUtc = (d) => {
-        if (!d) return 0;
-        const s = String(d);
-        return new Date(s.endsWith("UTC") || s.endsWith("Z") || s.includes("+") ? s : s + " UTC").getTime();
-    };
-
-    const startT = parseUtc(info.startTime);
-    const endT = parseUtc(info.endTime);
+    // ✅ Use consistent UTC parsing
+    const startT = parseUtcTime(info.startTime);
+    const endT = parseUtcTime(info.endTime);
+    
     const totalDurationMs = startT > 0 && endT > 0 ? endT - startT : 0;
     const elapsedMs = startT > 0 ? Math.max(0, Math.min(now - startT, totalDurationMs)) : 0;
     const remainingMs = endT > 0 ? Math.max(0, endT - now) : 0;
@@ -231,10 +346,7 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
     const average = parseFloat(info.hashrate?.average || 0);
     const suffix = info.hashrate?.suffix || "H/s";
 
-    // BUGFIX: Get current hashrate DIRECTLY from extractRentalInfo output.
-    // Do NOT fall back to rental?.hashrate?.current -- that bypasses the
-    // extraction logic and can hide a true 0 value (stalled rig).
-    // extractRentalInfo already merges liveRig data and tries all sources.
+    // Get current hashrate from extractRentalInfo output
     const current = parseFloat(info.hashrate?.current || 0);
 
     // Log raw values for debugging
@@ -243,10 +355,6 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
     // ============================================================
     // FORMAT HASHRATE VALUES FOR DISPLAY
     // ============================================================
-    // BUGFIX: If current is 0 but average is non-zero, the rig IS hashing.
-    // The current value is just stale (e.g. empty 15-min window).
-    // Show the average as the "current" for display, and only show
-    // the warning when BOTH current AND average are 0 (truly stalled).
     let currentDisplay;
     if (current > 0) {
       currentDisplay = formatHashrate(current, suffix);
@@ -325,23 +433,26 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
     // --- New Rental Notification ---
     const isNewToMonitor = lastNotified === 0;
     const alreadyNotifiedThisRun = notifiedRentalIdsThisRun.has(String(rental.id));
-    if (!alreadyNotifiedThisRun && (forceNotify || isNewToMonitor) && (isValidRental || isNewRentalCandidate)) {
+    if (!alreadyNotifiedThisRun && (forceNotify || isNewToMonitor)) {
         notifiedRentalIdsThisRun.add(String(rental.id));
         const hbType = forceNotify ? "MONITOR" : "NEW RENTAL";
-        const remD = Math.floor(remainingMs / 86400000);
-        const remH = Math.floor((remainingMs % 86400000) / 3600000);
-        const remM = Math.floor((remainingMs % 3600000) / 60000);
-        const remStr = remainingMs <= 0 ? "Finished" : remD > 0 ? `${remD}d ${remH}h` : `${remH}h ${remM}m`;
+        
+        // ✅ Use the formatRemainingTime helper
+        const remStr = formatRemainingTime(remainingMs);
         const rentalForNotice = { ...rental, name: liveRig?.name || rental.name || rental.id };
+        
+        // ✅ Get the algorithm display name
+        const algoDisplay = resolveRentalAlgo(rental, info);
+        
         const msg = forceNotify
             ? TelegramTemplates.rentedNotice(
                 hbType,
                 rentalForNotice,
                 info,
                 acct,
-                orderDiff,
+                orderDiff, // ROI
                 remStr,
-                resolveRentalAlgo(rentalForNotice, info),
+                algoDisplay,
                 advDisplay
             )
             : TelegramTemplates.newRental(
@@ -350,7 +461,7 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
                 info.price?.paid || "0.00",
                 info.startTime,
                 info.endTime,
-                resolveRentalAlgo(rentalForNotice, info),
+                algoDisplay,
                 advDisplay
             );
 
@@ -370,41 +481,39 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
     }
 
     // --- Build Summary Line with PROPER HASHRATE VALUES ---
-    const hasEndTime = endT > 0;
-    const isFinished_s = remainingMs <= 0;
-    const remD_s = Math.floor(remainingMs / 86400000);
-    const remH_s = Math.floor((remainingMs % 86400000) / 3600000);
-    const remM_s = Math.floor((remainingMs % 3600000) / 60000);
+    const remStr_s = formatRemainingTime(remainingMs);
+    const perfEmoji = efficiency >= 100 ? "✅" : efficiency >= 90 ? "🟢" : efficiency >= 70 ? "🔵" : efficiency >= 50 ? "🟡" : "🔴";
 
-    const remStr_s = isFinished_s ? "Finished" : hasEndTime ? (remD_s > 0 ? `${remD_s}d ${remH_s}h` : `${remH_s}h ${remM_s}m`) : "Active";
-    const perfEmoji = efficiency >= 100 ? "✅" : efficiency >= 90 ? "🟢" : efficiency >= 70 ? "🔵" : efficiency >= 50 ? "🟡" : "🚼"; // eslint-disable-line no-nested-ternary
-
-    const nhOrderPrice = await getNiceHashOrderPriceForRental(rental, acct);
-    // ============================================================
-    // BUILD ACTIVE RENTAL LINE
-    // ============================================================
-    logger.debug(`[monitor] ${rental.id} - Display: cur=${currentDisplay}, avg=${avgDisplay}, adv=${advDisplay}`);
+    // ✅ Get the algorithm display name for the summary
+    const algoDisplay = resolveRentalAlgo(rental, info);
 
     // ============================================================
-    // BUILD ACTIVE RENTAL LINE WITH CORRECT PARAMETER ORDER with core/telegram.js
+    // BUILD ACTIVE RENTAL LINE WITH CORRECT PARAMETER ORDER
     // ============================================================
     const activeRentalLine = TelegramTemplates.activeRentalLine(
         perfEmoji,                    // 1: perfEmoji
-        getAlgoDisplayName(info.algo), // 2: algo
+        algoDisplay,                  // 2: algo (FIXED: using resolved algorithm)
         liveRig?.name || rental.name || rental.id, // 3: name
         remStr_s,                     // 4: remaining
-        efficiency,                   // 5: efficiency (Correct)
-        orderDiff,                    // 6: roi (Correct)
+        efficiency,                   // 5: efficiency
+        orderDiff,                    // 6: roi
         avgDisplay,                   // 7: avg
         advDisplay,                   // 8: ads
-        currentDisplay,               // 9: cur (now with fallback)
+        currentDisplay,               // 9: cur
         displayTarget,                // 10: target
-        acct,                         // 12: client
-        info                          // 13: info
+        acct,                         // 11: client
+        info                          // 12: info
     );
 
     return {
         isValid: true,
         activeRentalLine,
+        efficiency,
+        target: displayTarget,
+        current,
+        average,
+        advertised,
+        remainingMs,
+        remStr: remStr_s
     };
 }
