@@ -137,6 +137,32 @@ const convertHashrateValue = (value, fromUnit, toUnit) => {
   return (value * fromMultiplier) / toMultiplier;
 };
 
+const resolveAlgoLookupKeys = (...values) => {
+  const keys = new Set();
+
+  const addKey = (value) => {
+    if (!value) return;
+    const raw = String(value).trim();
+    if (!raw) return;
+    keys.add(raw);
+    keys.add(raw.toUpperCase());
+    keys.add(raw.toLowerCase());
+
+    const normalized = normalizeAlgoForNiceHash(raw);
+    if (normalized && normalized !== "UNKNOWN") {
+      keys.add(normalized);
+      keys.add(normalized.toLowerCase());
+      if (normalized === "SHA256ASICBOOST") {
+        keys.add("SHA256AB");
+        keys.add("sha256ab");
+      }
+    }
+  };
+
+  values.forEach(addKey);
+  return Array.from(keys);
+};
+
 // ─── Main Component ──────────────────────────────────────────────────────
 const MrrRigCard = ({
   rig,

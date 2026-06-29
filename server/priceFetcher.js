@@ -2,7 +2,7 @@
 import { db } from './db.js';
 import { getCmcPrices } from './cmcClient.js';
 import { dbAllAsync, dbRunAsync } from './mrr/db-utils.js';
-import { fetchAllCoinGeckoMarketPrices } from './priceProvider.js';
+import { fetchCoinGeckoSimplePrices } from './priceProvider.js';
 
 // Configuration
 const PRICE_FETCH_CONFIG = {
@@ -173,6 +173,19 @@ const SYMBOL_TO_COINGECKO = {};
 Object.entries(COINGECKO_ID_MAP).forEach(([symbol, id]) => {
   SYMBOL_TO_COINGECKO[symbol.toUpperCase()] = id;
 });
+
+function getFallbackTargetCoins() {
+  const ids = new Set([
+    ...Object.values(COINGECKO_ID_MAP),
+    ...Object.values(SYMBOL_TO_COINGECKO),
+  ]);
+  return Array.from(ids).filter(Boolean).map((id) => ({
+    id,
+    symbol: id.toUpperCase(),
+    name: id,
+    source: 'fallback',
+  }));
+}
 
 // Price sources
 const priceSources = {
@@ -678,8 +691,14 @@ async function getTargetCoinList() {
 
   // Fallback to database cache
   const cachedCoins = await dbAllAsync(db, 'SELECT id, symbol, name FROM coingecko_coins');
-  console.log(`[PriceFetcher] ℹ️ Using ${cachedCoins.length} coins from database cache.`);
-  return cachedCoins.map(c => ({ ...c, source: 'cached' }));
+  if (cachedCoins.length > 0) {
+    console.log(`[PriceFetcher] ℹ️ Using ${cachedCoins.length} coins from database cache.`);
+    return cachedCoins.map(c => ({ ...c, source: 'cached' }));
+  }
+
+  const fallbackCoins = getFallbackTargetCoins();
+  console.warn(`[PriceFetcher] ⚠️ Falling back to ${fallbackCoins.length} built-in coin targets.`);
+  return fallbackCoins;
 }
 
 /**
@@ -710,12 +729,15 @@ async function fetchAndSyncPrices() {
   const initialCoinIds = initialCoinList
     .map((coin) => coin?.id)
     .filter(Boolean);
-  const liveCatalog = await fetchAllCoinGeckoMarketPrices(initialCoinIds);
+  const liveCatalog = await fetchCoinGeckoSimplePrices(initialCoinIds);
   const allFetchedCoins = Array.from(
     new Map(
-      Object.values(liveCatalog)
+      [
+        ...initialCoinList,
+        ...Object.values(liveCatalog),
+      ]
         .filter(Boolean)
-        .map((coin) => [String(coin.coin_id || coin.id || coin.symbol || '').toLowerCase(), coin]),
+        .map((coin) => [String(coin.id || coin.coin_id || coin.symbol || '').toLowerCase(), coin]),
     ).values(),
   );
   const merged = mergeCoinData(initialCoinList.filter(Boolean), allFetchedCoins);
@@ -795,7 +817,7 @@ export async function fetchAndStoreCoinPrices() {
 
   } catch (error) {
     console.error('[PriceFetcher] ❌ Critical error during price update:', error.message);
-    // Optional: Send alert for critical failures
+    throw error;
   }
 }
 

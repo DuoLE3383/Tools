@@ -37,6 +37,15 @@ function formatHashrate(value, suffix) {
   return `${scaled.toFixed(2)}${unit.toUpperCase()}`;
 }
 
+function hasActiveRentalSignal(rental, info) {
+    const statusRaw = rental?.status || rental?.state || rental?.rig?.status?.status || rental?.rig?.status;
+    const status = String(typeof statusRaw === "object" ? statusRaw?.status || "" : statusRaw || "").toLowerCase();
+    const hasRentalId = Boolean(rental?.id || rental?.rentalid || rental?.rental_id);
+    const hasTiming = Boolean(info?.startTime || info?.endTime || rental?.start_time || rental?.startTime || rental?.end_time || rental?.created_at);
+    const hasPrice = parseFloat(info?.price?.paid || rental?.price || 0) > 0;
+    return hasRentalId && (hasTiming || hasPrice || status.includes("rented") || status.includes("active") || status.includes("running"));
+}
+
 /**
  * Checks if a rental is actively mining and has data, or is new enough to be considered valid.
  * This filters out "ghost" rentals that are stuck in a rented state without ever starting.
@@ -196,8 +205,9 @@ async function getPriceRoi(info, acct, now) {
 export async function processRental(rental, acct, now, forceNotify, notifiedRentalIdsThisRun, notifications, liveRig = null) {
     const info = extractRentalInfo(rental, liveRig);
     const isValidRental = isRealRental(rental, info, now);
+    const isNewRentalCandidate = hasActiveRentalSignal(rental, info);
 
-    if (!isValidRental) {
+    if (!isValidRental && !isNewRentalCandidate) {
         logger.debug(`[monitor:process] Skipped invalid or ghost rental: ${rental.id || 'N/A'}`);
         return { isValid: false };
     }
@@ -315,7 +325,7 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
     // --- New Rental Notification ---
     const isNewToMonitor = lastNotified === 0;
     const alreadyNotifiedThisRun = notifiedRentalIdsThisRun.has(String(rental.id));
-    if (!alreadyNotifiedThisRun && (forceNotify || isNewToMonitor)) {
+    if (!alreadyNotifiedThisRun && (forceNotify || isNewToMonitor) && (isValidRental || isNewRentalCandidate)) {
         notifiedRentalIdsThisRun.add(String(rental.id));
         const hbType = forceNotify ? "MONITOR" : "NEW RENTAL";
         const remD = Math.floor(remainingMs / 86400000);
@@ -367,7 +377,7 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
     const remM_s = Math.floor((remainingMs % 3600000) / 60000);
 
     const remStr_s = isFinished_s ? "Finished" : hasEndTime ? (remD_s > 0 ? `${remD_s}d ${remH_s}h` : `${remH_s}h ${remM_s}m`) : "Active";
-    const perfEmoji = efficiency >= 100 ? "✅" : efficiency >= 90 ? "🟢" : efficiency >= 70 ? "🔵" : efficiency >= 50 ? "🟡" : "🔴"; // eslint-disable-line no-nested-ternary
+    const perfEmoji = efficiency >= 100 ? "✅" : efficiency >= 90 ? "🟢" : efficiency >= 70 ? "🔵" : efficiency >= 50 ? "🟡" : "🚼"; // eslint-disable-line no-nested-ternary
 
     const nhOrderPrice = await getNiceHashOrderPriceForRental(rental, acct);
     // ============================================================

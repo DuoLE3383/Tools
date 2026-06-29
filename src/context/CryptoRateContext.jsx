@@ -1,5 +1,6 @@
 // src/context/CryptoRateContext.jsx
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { loadCryptoPriceCache, saveCryptoPriceCache, mergeCryptoPriceCatalog } from "../core/coinGrecko.js";
 
 const CryptoRateContext = createContext();
 
@@ -12,14 +13,31 @@ const COINGECKO_IDS = {
   BCH: 'bitcoin-cash',
 };
 
-export function CryptoRateProvider({ children, onCall }) {
-  const [rates, setRates] = useState({
+function buildRatesFromCatalog(catalog = {}) {
+  const nextRates = {
     BTC: { usd: 0, change24h: 0 },
     ETH: { usd: 0, change24h: 0 },
     LTC: { usd: 0, change24h: 0 },
     DOGE: { usd: 0, change24h: 0 },
     BCH: { usd: 0, change24h: 0 },
+  };
+
+  Object.keys(COINGECKO_IDS).forEach((symbol) => {
+    const coinId = COINGECKO_IDS[symbol];
+    const coinData = catalog?.[coinId] || catalog?.[symbol] || catalog?.[symbol.toLowerCase()];
+    if (!coinData) return;
+    nextRates[symbol] = {
+      usd: coinData.usd || 0,
+      change24h: coinData.usd_24h_change || coinData.change24h || 0,
+      sparkline: coinData.sparkline_in_7d?.price || coinData.sparkline || [],
+    };
   });
+
+  return nextRates;
+}
+
+export function CryptoRateProvider({ children, onCall }) {
+  const [rates, setRates] = useState(() => buildRatesFromCatalog(loadCryptoPriceCache()));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [wsStatus, setWsStatus] = useState('disconnected');
@@ -38,23 +56,24 @@ export function CryptoRateProvider({ children, onCall }) {
       const data = res?.data || res;
       
       if (data) {
-        const newRates = {};
-        Object.keys(COINGECKO_IDS).forEach((symbol) => {
-          const coinId = COINGECKO_IDS[symbol];
-          const coinData = data[coinId];
-          if (coinData) {
-            newRates[symbol] = {
-              usd: coinData.usd || 0,
-              change24h: coinData.usd_24h_change || 0,
-              sparkline: coinData.sparkline_in_7d?.price || [],
-            };
-          }
-        });
+        const newRates = buildRatesFromCatalog(data);
         setRates(newRates);
+        saveCryptoPriceCache(data, { source: "CryptoRateContext.fetchRates" });
+        return;
+      }
+
+      const cachedPrices = loadCryptoPriceCache();
+      if (cachedPrices) {
+        setRates(buildRatesFromCatalog(cachedPrices));
       }
     } catch (err) {
       console.error('[CryptoRate] Fetch failed:', err);
       setError(err.message);
+      const cachedPrices = loadCryptoPriceCache();
+      if (cachedPrices) {
+        setRates(buildRatesFromCatalog(cachedPrices));
+        setError(null);
+      }
     } finally {
       setLoading(false);
     }
@@ -100,6 +119,9 @@ export function CryptoRateProvider({ children, onCall }) {
                     usd: message.data[key].usd || message.data[key] || 0,
                   };
                 }
+              });
+              saveCryptoPriceCache(mergeCryptoPriceCatalog(loadCryptoPriceCache() || {}, message.data), {
+                source: "CryptoRateContext.ws",
               });
               return newRates;
             });

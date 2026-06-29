@@ -7,6 +7,60 @@ import { saveToDatabase } from "./_helpers.js";
 import { runRentalMonitor } from "../monitor.js";
 
 export function registerMrrRoutes(app) {
+  async function fetchMrrRigPageRate(algo) {
+    const slug = String(algo || "").trim().toLowerCase();
+    if (!slug) throw new Error("Missing MRR algo slug");
+
+    const url = `https://www.miningrigrentals.com/rigs/${slug}`;
+    const response = await fetch(url, {
+      headers: {
+        Accept: "text/html,application/xhtml+xml",
+        "User-Agent": "Mozilla/5.0",
+      },
+      signal: AbortSignal.timeout(8000),
+    });
+
+    if (!response.ok) {
+      throw new Error(`MRR rigs page returned ${response.status}`);
+    }
+
+    const html = await response.text();
+    const lastPattern = /Last Price Per\s+([A-Za-z0-9]+)[\s\S]{0,220}?<h3[^>]*class="title text-primary"[^>]*>([\d.,]+)<\/h3>/i;
+    const avgPattern = /Average \(Last 10\) Per\s+([A-Za-z0-9]+)[\s\S]{0,220}?<h3[^>]*class="title text-primary"[^>]*>([\d.,]+)<\/h3>/i;
+
+    const lastMatch = html.match(lastPattern);
+    const avgMatch = html.match(avgPattern);
+
+    const unit = String(lastMatch?.[1] || avgMatch?.[1] || "PH").toUpperCase();
+    const lastPrice = parseFloat(String(lastMatch?.[2] || "0").replace(/,/g, ""));
+    const avgPrice = parseFloat(String(avgMatch?.[2] || "0").replace(/,/g, ""));
+    const price = Number.isFinite(avgPrice) && avgPrice > 0 ? avgPrice : lastPrice;
+
+    if (!Number.isFinite(price) || price <= 0) {
+      throw new Error(`Unable to parse MRR price from ${slug}`);
+    }
+
+    return {
+      success: true,
+      data: {
+        price,
+        last_price: lastPrice,
+        average_price: avgPrice,
+        BTC: price,
+        price_unit: unit,
+        unit,
+        suggested_price: { amount: price, currency: "BTC" },
+        stats: {
+          prices: {
+            lowest: { price: lastPrice > 0 ? lastPrice : price },
+            average: { price: avgPrice > 0 ? avgPrice : price },
+          },
+        },
+        source: "rigs-page",
+        algo: slug,
+      },
+    };
+  }
   // ─── Monitor ──────────────────────────────────────────────────
   app.post("/api/v2/mrr/monitor/run", asyncHandler(async (req, res) => {
     const scope = String(req.query.client || req.body?.client || "ALL").trim().toUpperCase();
@@ -17,8 +71,48 @@ export function registerMrrRoutes(app) {
   // ─── MRR Market Proxy (public API, avoids CORS) ─────────────
   app.get("/api/v2/mrr/market/algos/:algo", asyncHandler(async (req, res) => {
     const { algo } = req.params;
-    const url = `https://www.miningrigrentals.com/api/v2/market/algos/${algo}`;
     try {
+      if (String(algo || "").trim().toLowerCase() === "sha256ab") {
+        const url = `https://www.miningrigrentals.com/rigs/sha256ab`;
+        const response = await fetch(url, {
+          headers: {
+            Accept: "text/html,application/xhtml+xml",
+            "User-Agent": "Mozilla/5.0",
+          },
+          signal: AbortSignal.timeout(8000),
+        });
+
+        if (!response.ok) {
+          throw new Error(`MRR rigs page returned ${response.status}`);
+        }
+
+        const html = await response.text();
+        const lastMatch = html.match(/Last Price Per\s+([A-Za-z0-9]+)[\s\S]{0,220}?<h3[^>]*class="title text-primary"[^>]*>([\d.,]+)<\/h3>/i);
+        const avgMatch = html.match(/Average \(Last 10\) Per\s+([A-Za-z0-9]+)[\s\S]{0,220}?<h3[^>]*class="title text-primary"[^>]*>([\d.,]+)<\/h3>/i);
+        const unit = String(lastMatch?.[1] || avgMatch?.[1] || "PH").toUpperCase();
+        const lastPrice = parseFloat(String(lastMatch?.[2] || "0").replace(/,/g, ""));
+        const avgPrice = parseFloat(String(avgMatch?.[2] || "0").replace(/,/g, ""));
+        const price = Number.isFinite(avgPrice) && avgPrice > 0 ? avgPrice : lastPrice;
+
+        res.json({
+          success: true,
+          data: {
+            price,
+            BTC: price,
+            price_unit: unit,
+            unit,
+            suggested_price: { amount: price, currency: "BTC" },
+            stats: {
+              prices: {
+                lowest: { price: lastPrice > 0 ? lastPrice : price },
+                average: { price: avgPrice > 0 ? avgPrice : price },
+              },
+            },
+          },
+        });
+        return;
+      }
+      const url = `https://www.miningrigrentals.com/api/v2/market/algos/${algo}`;
       const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
       const data = await response.json();
       res.json(data);

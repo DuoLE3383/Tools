@@ -2,7 +2,6 @@
 import { asyncHandler } from "../utils.js";
 import {
   getStoredCoinPriceCatalog,
-  fetchAllCoinGeckoMarketPrices,
   fetchCoinGeckoSimplePrices,
 } from "../priceProvider.js";
 import { fetchAndStoreCoinPrices } from "../priceFetcher.js";

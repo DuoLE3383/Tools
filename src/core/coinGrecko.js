@@ -4,6 +4,49 @@
  */
 import { normalizeAlgoForNiceHash } from "./mapping.js";
 
+const CRYPTO_PRICE_CACHE_KEY = "nicehash_crypto_price_cache_v1";
+
+function canUseLocalStorage() {
+  return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
+}
+
+export function loadCryptoPriceCache() {
+  if (!canUseLocalStorage()) return null;
+  try {
+    const raw = window.localStorage.getItem(CRYPTO_PRICE_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return null;
+    if (!parsed.data || typeof parsed.data !== "object") return null;
+    return parsed.data;
+  } catch {
+    return null;
+  }
+}
+
+export function saveCryptoPriceCache(data, meta = {}) {
+  if (!canUseLocalStorage() || !data || typeof data !== "object") return;
+  try {
+    window.localStorage.setItem(
+      CRYPTO_PRICE_CACHE_KEY,
+      JSON.stringify({
+        savedAt: new Date().toISOString(),
+        meta,
+        data,
+      }),
+    );
+  } catch {
+    // Ignore storage quota / privacy errors.
+  }
+}
+
+export function mergeCryptoPriceCatalog(base = {}, incoming = {}) {
+  return {
+    ...(base && typeof base === "object" ? base : {}),
+    ...(incoming && typeof incoming === "object" ? incoming : {}),
+  };
+}
+
 const COIN_TO_COINGECKO_MAP = {
   BTC: "bitcoin",
   BITCOIN: "bitcoin",
@@ -11,6 +54,8 @@ const COIN_TO_COINGECKO_MAP = {
   LITECOIN: "litecoin",
   DOGE: "dogecoin",
   DOGECOIN: "dogecoin",
+  BCH: "bitcoin-cash",
+  BITCOINCASH: "bitcoin-cash",
   ETH: "ethereum",
   ETHEREUM: "ethereum",
   ETC: "ethereum-classic",

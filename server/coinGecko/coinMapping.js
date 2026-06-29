@@ -5,6 +5,7 @@ export const COIN_TO_COINGECKO_MAP = {
   'BTC': 'bitcoin', 'BITCOIN': 'bitcoin',
   'LTC': 'litecoin', 'LITECOIN': 'litecoin',
   'DOGE': 'dogecoin', 'DOGECOIN': 'dogecoin',
+  'BCH': 'bitcoin-cash', 'BITCOINCASH': 'bitcoin-cash',
   
   // Ethereum ecosystem
   'ETH': 'ethereum', 'ETHEREUM': 'ethereum',
@@ -45,7 +46,7 @@ export const COIN_TO_COINGECKO_MAP = {
 
 export const TRACKED_COINS = [
   'bitcoin', 'ethereum', 'monero', 'ravencoin', 'ergo', 'kaspa',
-  'beam', 'ethereum-classic', 'litecoin', 'dogecoin',
+  'beam', 'ethereum-classic', 'litecoin', 'dogecoin', 'bitcoin-cash',
   'zephyr-protocol', 'iron-fish', 'dynex', 'alephium', 'nexa',
   'clore-ai', 'conflux', 'qrl', 'xelis', 'zano', 'aipg'
 ];
@@ -73,6 +74,7 @@ export function getCoinGeckoId(coinName, algorithm) {
     else if (lower.includes('etc')) id = 'ethereum-classic';
     else if (lower.includes('eth')) id = 'ethereum';
     else if (lower.includes('btc')) id = 'bitcoin';
+    else if (lower.includes('bch') || lower.includes('bitcoin-cash')) id = 'bitcoin-cash';
   }
   return id;
 }

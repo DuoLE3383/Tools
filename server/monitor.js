@@ -138,6 +138,15 @@ function isRealRental(rental, info) {
   return (hasHashrate || hasPaid) && hasValidId;
 }
 
+function hasActiveRentalSignal(rental, info) {
+  const statusRaw = rental?.status || rental?.state || rental?.rig?.status?.status || rental?.rig?.status;
+  const status = String(typeof statusRaw === 'object' ? statusRaw?.status || '' : statusRaw || '').toLowerCase();
+  const hasRentalId = Boolean(rental?.id || rental?.rentalid || rental?.rental_id);
+  const hasTiming = Boolean(info?.startTime || info?.endTime || rental?.start_time || rental?.startTime || rental?.end_time || rental?.created_at);
+  const hasPrice = parseFloat(info?.price?.paid || rental?.price || 0) > 0;
+  return hasRentalId && (hasTiming || hasPrice || status.includes('rented') || status.includes('active') || status.includes('running'));
+}
+
 /**
  * Gets the real rental count from a list of rentals
  */
@@ -755,6 +764,7 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
           // UPGRADED: Check if this is a real rental
           // ============================================================
           const isValidRental = isRealRental(r, info);
+          const isNewRentalCandidate = hasActiveRentalSignal(r, info);
           if (isValidRental) {
             realRentalCount++;
             validRentalsForDisplay.push({ rental: r, info, startT, endT, totalDurationMs, elapsedMs, remainingMs });
@@ -958,7 +968,13 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
               const perfectKey = `perfect_100_${r.id}`;
               const lastPerfect = lastAlertTimes.get(perfectKey) || 0;
               if (now - lastPerfect >= 3600000) {
-                const msg = TelegramTemplates.perfectEfficiency(acct, r, efficiency, `${info.price.paid} ${info.price.currency}`, remainingMs, resolveRentalAlgo(r, info));
+                const msg = TelegramTemplates.perfectEfficiency(
+                  acct, 
+                  r, 
+                  efficiency, 
+                  `${info.price.paid} ${info.price.currency}`, 
+                  remainingMs, 
+                  resolveRentalAlgo(r, info));
                 queueTelegramMessage(msg, {
                   type: 'PERFECT 100%',
                   label: `Perfect efficiency ${acct} ${r.id}`,
@@ -978,7 +994,7 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
             const remM_s = Math.floor((remainingMs % 3600000) / 60000);
 
             const remStr_s = isFinished_s ? 'Finished' : (hasEndTime ? (remD_s > 0 ? `${remD_s}d ${remH_s}h` : `${remH_s}h ${remM_s}m`) : 'Active');
-            const perfEmoji = efficiency >= 100 ? '🎊' : (efficiency >= 90 ? '🟢' : (efficiency >= 70 ? '🔵' : (efficiency >= 50 ? '🟡' : '🔴')));
+            const perfEmoji = efficiency >= 100 ? '✅' : (efficiency >= 90 ? '🟢' : (efficiency >= 70 ? '🔵' : (efficiency >= 50 ? '🟡' : '🚼')));
             const divider = '━━━━━━━━━━━━━━━━━';
 
             const currentSpeedVal = parseFloat(info.hashrate.current || 0);
@@ -1005,7 +1021,7 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
           // Send "rented" notification if new rental (first sighting)
           const isNewToMonitor = lastNotified === 0;
           const alreadyNotifiedThisRun = notifiedRentalIdsThisRun.has(String(r.id));
-          const shouldNotify = !alreadyNotifiedThisRun && isValidRental && (forceNotify || isNewToMonitor);
+          const shouldNotify = !alreadyNotifiedThisRun && (forceNotify || isNewToMonitor) && (isValidRental || isNewRentalCandidate);
 
           if (shouldNotify) {
             notifiedRentalIdsThisRun.add(String(r.id));

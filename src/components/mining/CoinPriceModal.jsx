@@ -1,6 +1,10 @@
 // CoinPriceModal.jsx
 import { useState, useEffect, useCallback } from "react";
-import { resolveCoinPriceTarget } from "../../core/coinGrecko.js";
+import {
+  loadCryptoPriceCache,
+  saveCryptoPriceCache,
+  resolveCoinPriceTarget,
+} from "../../core/coinGrecko.js";
 
 function formatPrice(value) {
   const num = Number(value);
@@ -127,12 +131,40 @@ export default function CoinPriceModal({
         });
         setLastUpdated(updatedAt);
         setSource("coingecko");
+        saveCryptoPriceCache(data, { source: "CoinPriceModal.fetchPrice", coinId });
         resolved = true;
       }
     } catch (cmcErr) {
       console.warn("Coin price fetch failed:", cmcErr.message);
     }
     if (!resolved) {
+      const cachedPrices = loadCryptoPriceCache();
+      if (cachedPrices) {
+        const cachedEntry = extractMarketEntry(cachedPrices, coinId, resolvedCoin);
+        const cachedPrice = toNumber(cachedEntry?.usd ?? cachedEntry?.price ?? cachedEntry?.current_price ?? cachedEntry);
+        const cachedMarketCap = toNumber(cachedEntry?.usd_market_cap ?? cachedEntry?.marketCap ?? cachedEntry?.market_cap);
+        const cachedVolume24h = toNumber(cachedEntry?.usd_24h_vol ?? cachedEntry?.volume24h ?? cachedEntry?.total_volume);
+        const cachedChange24h = toNumber(cachedEntry?.usd_24h_change ?? cachedEntry?.change24h ?? cachedEntry?.price_change_percentage_24h);
+        const cachedUpdatedAt = cachedEntry?.lastUpdated || cachedEntry?.last_updated || new Date().toISOString();
+
+        if (cachedPrice > 0 || cachedMarketCap > 0 || cachedVolume24h > 0) {
+          setPriceData({
+            price: cachedPrice,
+            marketCap: cachedMarketCap,
+            volume24h: cachedVolume24h,
+            change24h: cachedChange24h,
+            high24h: toNumber(cachedEntry?.high_24h ?? cachedEntry?.high24h),
+            low24h: toNumber(cachedEntry?.low_24h ?? cachedEntry?.low24h),
+            supply: toNumber(cachedEntry?.circulating_supply ?? cachedEntry?.supply),
+            lastUpdated: cachedUpdatedAt,
+          });
+          setLastUpdated(cachedUpdatedAt);
+          setSource("database");
+          setError(`Live market data unavailable. Showing cached price for ${resolvedCoin.symbol || resolvedCoin.name || coinId || "coin"}.`);
+          setLoading(false);
+          return;
+        }
+      }
       setError(
         `Failed to fetch price for ${resolvedCoin.symbol || resolvedCoin.name || coinId || "coin"}`,
       );

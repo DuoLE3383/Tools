@@ -868,7 +868,7 @@ export default function Pools({
   return (
     <div className="card pools-manager">
       <div className="market-inputs" style={{ marginBottom: "15px" }}>
-        <small style={{ opacity: 0.8, fontSize: "13px", marginLeft: "10px" }}>
+        <small style={{ overflow: "hidden", opacity: 0.8, fontSize: "13px", marginLeft: "10px" }}>
           ACTIVE NICEHASH CLIENT
         </small>
         <select

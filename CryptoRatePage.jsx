@@ -1,5 +1,10 @@
 // CryptoRatePage.jsx
 import React, { useState, useEffect, useCallback, useMemo } from "react";
+import {
+  loadCryptoPriceCache,
+  saveCryptoPriceCache,
+  mergeCryptoPriceCatalog,
+} from "./src/core/coinGrecko.js";
 
 const COINS = [
   { id: "bitcoin", symbol: "BTC", name: "Bitcoin" },
@@ -8,6 +13,14 @@ const COINS = [
   { id: "dogecoin", symbol: "DOGE", name: "Dogecoin" },
   { id: "bitcoin-cash", symbol: "BCH", name: "Bitcoin Cash" },
 ];
+
+const COIN_ALIASES = {
+  bitcoin: ["bitcoin", "BTC", "btc"],
+  ethereum: ["ethereum", "ETH", "eth"],
+  litecoin: ["litecoin", "LTC", "ltc"],
+  dogecoin: ["dogecoin", "DOGE", "doge"],
+  "bitcoin-cash": ["bitcoin-cash", "bitcoin_cash", "bitcoincash", "BCH", "bch"],
+};
 
 function Sparkline({ data, width = 180, height = 80, color = "#60a5fa" }) {
   if (!data || !Array.isArray(data) || data.length < 2) {
@@ -59,7 +72,7 @@ function Sparkline({ data, width = 180, height = 80, color = "#60a5fa" }) {
 }
 
 export default function CryptoRatePage({ onCall, onPriceUpdate, onNavigateHome }) {
-  const [prices, setPrices] = useState(null);
+  const [prices, setPrices] = useState(() => loadCryptoPriceCache());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [wsStatus, setWsStatus] = useState("disconnected");
@@ -92,6 +105,29 @@ export default function CryptoRatePage({ onCall, onPriceUpdate, onNavigateHome }
     return formatted;
   }, []);
 
+  const resolveCoinData = useCallback((data, coinOrId) => {
+    if (!data) return null;
+    const coin = COINS.find((c) => c.id === coinOrId || c.symbol === coinOrId);
+    const candidates = [
+      coinOrId,
+      coin?.id,
+      coin?.symbol,
+      coin?.symbol?.toLowerCase(),
+      coin?.symbol?.replace(/[^a-z0-9]/gi, "").toLowerCase(),
+      ...(coin?.id ? COIN_ALIASES[coin.id] || [] : []),
+    ].filter(Boolean);
+
+    for (const key of candidates) {
+      if (data[key]) return data[key];
+      const lowerKey = String(key).toLowerCase();
+      if (data[lowerKey]) return data[lowerKey];
+      const upperKey = String(key).toUpperCase();
+      if (data[upperKey]) return data[upperKey];
+    }
+
+    return null;
+  }, []);
+
   const fetchPrices = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -104,8 +140,9 @@ export default function CryptoRatePage({ onCall, onPriceUpdate, onNavigateHome }
 
       const data = res?.data || (res && typeof res === "object" && !res.error ? res : null);
 
-      if (data && (data.bitcoin || data.BTC || data.btc)) {
+      if (data && (data.bitcoin || data.BTC || data.btc || data["bitcoin-cash"] || data.BCH || data.bch)) {
         setPrices(data);
+        saveCryptoPriceCache(data, { source: "RootCryptoRatePage.fetchPrices" });
         // ✅ Send formatted prices to parent
         if (onPriceUpdate) {
           const formatted = formatPricesForRigCard(data);
@@ -129,6 +166,14 @@ export default function CryptoRatePage({ onCall, onPriceUpdate, onNavigateHome }
       }
     } catch (err) {
       console.error(`[CryptoRate] REST fetch failed: ${err.message}`);
+      const cachedPrices = loadCryptoPriceCache();
+      if (cachedPrices) {
+        setPrices(cachedPrices);
+        if (onPriceUpdate) {
+          onPriceUpdate(formatPricesForRigCard(cachedPrices));
+        }
+        setError(`Live market data unavailable. Showing cached prices.`);
+      }
     } finally {
       setLoading(false);
     }
@@ -165,7 +210,11 @@ export default function CryptoRatePage({ onCall, onPriceUpdate, onNavigateHome }
         try {
           const message = JSON.parse(event.data);
           if (message.type === "price_update" && message.data) {
-            setPrices((prev) => ({ ...prev, ...message.data }));
+            setPrices((prev) => {
+              const merged = mergeCryptoPriceCatalog(prev, message.data);
+              saveCryptoPriceCache(merged, { source: "RootCryptoRatePage.ws" });
+              return merged;
+            });
             // ✅ Send updated prices to parent
             if (onPriceUpdate) {
               const formatted = formatPricesForRigCard(message.data);
@@ -217,8 +266,7 @@ export default function CryptoRatePage({ onCall, onPriceUpdate, onNavigateHome }
   }, [fetchPrices, wsStatus, loading]);
 
   const getCoinData = (id) => {
-    const coin = COINS.find((c) => c.id === id);
-    return prices?.[id] || prices?.[coin?.symbol] || prices?.[coin?.symbol?.toLowerCase()];
+    return resolveCoinData(prices, id);
   };
 
   const getPrice = (data) => data?.usd || (typeof data === "number" ? data : 0);

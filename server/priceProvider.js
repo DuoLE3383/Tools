@@ -379,10 +379,12 @@ export async function fetchCoinGeckoSimplePrices(coinIds = []) {
 
     const data = await response.json().catch(() => ({}));
     const entries = [];
+    const foundIds = new Set();
 
     for (const id of ids) {
       const priceData = data?.[id];
       if (!priceData) continue;
+      foundIds.add(id);
       const symbol = COINGECKO_ID_TO_SYMBOL.get(id) || id.toUpperCase();
       entries.push(
         makePriceEntry({
@@ -399,8 +401,14 @@ export async function fetchCoinGeckoSimplePrices(coinIds = []) {
       );
     }
 
+    const missing = ids.filter((id) => !foundIds.has(id));
+    if (missing.length > 0) {
+      const fallbackEntries = await fetchFallbackPriceEntries(missing);
+      entries.push(...fallbackEntries);
+    }
+
     return buildCoinPriceCatalog(entries);
   } catch {
-    return {};
+    return buildCoinPriceCatalog(await fetchFallbackPriceEntries(ids));
   }
 }

@@ -468,11 +468,15 @@ export async function sendMiningStatus() {
   if (!status.success) return status;
   const s = status.summary;
   const msg = `${s.profitable > 0 ? "🟢" : "🔴"} <b>Mining System Status</b>\n` +
-    `━━━━━━━━━━━━━━━━━━\n<b>Time:</b> ${new Date().toLocaleString()}\n` +
-    `<b>Algos:</b> ${s.total}\n<b>Miners:</b> ${(s.total_miners || 0).toLocaleString()}\n` +
-    `━━━━━━━━━━━━━━━━━━\n<b>Profitability:</b>\n  🟢 Profitable: ${s.profitable}\n  🟡 Neutral: ${s.neutral}\n  🔴 Loss: ${s.loss}\n` +
-    `━━━━━━━━━━━━━━━━━━\n<b>Stats:</b>\n  📊 Avg Spread: ${(s.avg_spread || 0).toFixed(2)}%\n  📈 Max Spread: ${(s.max_spread || 0).toFixed(2)}%\n` +
-    `━━━━━━━━━━━━━━━━━━\n<i>System scans every 15 minutes</i>`;
+    `<b>Time:</b> ${new Date().toLocaleString()}\n` +
+    `<b>Algos:</b> ${s.total}\n
+    <b>Miners:</b> ${(s.total_miners || 0).toLocaleString()}\n` +
+    `
+    <b>Profitability:</b>\n  🟢 Profitable: ${s.profitable}\n  🟡 Neutral: ${s.neutral}\n  🆘 Loss: ${s.loss}\n` +
+    `
+    <b>Stats:</b>\n  📊 Avg Spread: ${(s.avg_spread || 0).toFixed(2)}%\n  📈 Max Spread: ${(s.max_spread || 0).toFixed(2)}%\n` +
+    `━━━━━━━━━━━━━━━━━━\n
+    <i>System scans every 15 minutes</i>`;
   await sendMineTelegram(msg);
   return { success: true };
 }
