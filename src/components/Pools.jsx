@@ -1444,7 +1444,7 @@ export default function Pools({
                 >
                   {poolAlgorithmGroups.map(([algorithm, count]) => (
                     <div className="algorithm-row" key={algorithm}>
-                      <span>{ALGO_MAPPING(algorithm)}</span>
+                      <span>{getAlgoMapping(algorithm).displayName}</span>
                       <strong style={{ marginLeft: 3 }}>{count}</strong>
                       <button
                         type="button"

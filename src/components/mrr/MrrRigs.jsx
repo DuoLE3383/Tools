@@ -966,7 +966,7 @@ export default function MrrRigs({
                         fontWeight: "bold",
                       }}
                     >
-                      {ALGO_MAPPING(algoName)}
+                      {getAlgoMapping(algoName).displayName}
                     </span>
                     <span
                       style={{
