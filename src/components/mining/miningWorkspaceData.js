@@ -214,7 +214,9 @@ export function mergeMiningRoutes(
     dutchByAlgo.set(row.nicehashAlgo, current);
   }
 
+  // ✅ FIX: Combine algorithms from all sources to ensure none are missed.
   const algos = new Set([...heroByAlgo.keys(), ...dutchByAlgo.keys()]);
+
   return Array.from(algos)
     .map((nicehashAlgo) => {
       const dutch = dutchByAlgo.get(nicehashAlgo);

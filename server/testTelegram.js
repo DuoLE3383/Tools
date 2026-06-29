@@ -1,61 +1,84 @@
 // test-telegram.js
 import 'dotenv/config';
+import { request } from 'undici';
 
-async function testTelegram() {
-  const botToken = process.env.TELEGRAM_MINE_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_GROUP_ID;
-  
-  console.log('=== Telegram Test ===');
-  console.log(`Bot Token: ${botToken ? '✓ Present (length: ' + botToken.length + ')' : '✗ Missing'}`);
-  console.log(`Chat ID: ${chatId ? '✓ Present (length: ' + chatId.length + ')' : '✗ Missing'}`);
-  
-  if (!botToken || !chatId) {
-    console.log('❌ Missing credentials. Check .env file');
-    return;
+const BOTS = {
+  MAIN: {
+    name: 'Main Bot (Monitor)',
+    token: process.env.TELEGRAM_BOT_TOKEN,
+    chatId: process.env.TELEGRAM_CHAT_ID,
+  },
+  MINE: {
+    name: 'Mining Bot (Workspace)',
+    token: process.env.TELEGRAM_MINE_BOT_TOKEN,
+    chatId: process.env.TELEGRAM_GROUP_ID,
+  },
+};
+
+async function testBot(botKey) {
+  const bot = BOTS[botKey];
+  console.log(`\n--- Testing: ${bot.name} ---`);
+
+  console.log(`  Token: ${bot.token ? '✓ Present' : '✗ Missing'}`);
+  console.log(`  Chat ID: ${bot.chatId ? '✓ Present' : '✗ Missing'}`);
+
+  if (!bot.token || !bot.chatId) {
+    console.log('  ❌ Skipping test due to missing credentials.');
+    return false;
   }
-  
+
   try {
     // Test bot token
-    console.log('\n1. Testing bot token...');
-    const meRes = await fetch(`https://api.telegram.org/bot${botToken}/getMe`);
-    const meData = await meRes.json();
-    
-    if (!meData.ok) {
-      console.log(`❌ Bot token invalid: ${meData.description}`);
-      return;
+    process.stdout.write('  1. Verifying token... ');
+    const meRes = await request(`https://api.telegram.org/bot${bot.token}/getMe`);
+    const meData = await meRes.body.json();
+
+    if (meRes.statusCode !== 200 || !meData.ok) {
+      console.log(`❌ Invalid: ${meData.description}`);
+      return false;
     }
-    console.log(`✅ Bot connected: @${meData.result.username}`);
-    
+    console.log(`✅ OK (@${meData.result.username})`);
+
     // Test send message
-    console.log('\n2. Testing send message...');
-    const msg = `🔍 <b>Telegram Test</b>\n━━━━━━━━━━━━━━━━━━\nBot is working! ✅\nTime: ${new Date().toLocaleString()}\n━━━━━━━━━━━━━━━━━━`;
-    
-    const sendRes = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+    process.stdout.write('  2. Sending test message... ');
+    const msg = `✅ <b>Telegram Test: ${bot.name}</b>\n━━━━━━━━━━━━━━━━━━\nThis bot is working correctly.\nTime: ${new Date().toLocaleString()}`;
+
+    const sendRes = await request(`https://api.telegram.org/bot${bot.token}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        chat_id: chatId,
+        chat_id: bot.chatId,
         text: msg,
         parse_mode: 'HTML',
-        disable_web_page_preview: true
-      })
+        disable_web_page_preview: true,
+      }),
     });
-    
-    const sendData = await sendRes.json();
-    
-    if (!sendData.ok) {
-      console.log(`❌ Failed to send: ${sendData.description}`);
-      console.log('   Tip: Make sure you started a chat with the bot first');
-      return;
+
+    const sendData = await sendRes.body.json();
+
+    if (sendRes.statusCode !== 200 || !sendData.ok) {
+      console.log(`❌ Failed: ${sendData.description}`);
+      console.log('     Tip: Ensure the bot has been added to the chat/group and can send messages.');
+      return false;
     }
-    
-    console.log('✅ Test message sent successfully!');
-    console.log(`   Chat ID: ${sendData.result.chat.id}`);
-    console.log(`   Message ID: ${sendData.result.message_id}`);
-    
+
+    console.log('✅ Sent!');
+    return true;
   } catch (err) {
-    console.error('❌ Error:', err.message);
+    console.error('  ❌ Network or fetch error:', err.message);
+    return false;
   }
 }
 
-testTelegram();
+async function runAllTests() {
+  console.log('=== Telegram Notifier Debugger ===');
+  let allOk = true;
+  for (const key of Object.keys(BOTS)) {
+    const result = await testBot(key);
+    if (!result) allOk = false;
+  }
+  console.log(`\n--- Finished ---`);
+  console.log(allOk ? '✅ All configured bots are working.' : '⚠️ Some bots have issues.');
+}
+
+runAllTests();

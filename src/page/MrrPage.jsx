@@ -29,7 +29,7 @@ export default function MrrPage({
   );
 
   return (
-    <div className="app-shell" style={{ padding: "0 20px 40px", maxWidth: "1600px", margin: "0 auto" }}>
+    <div className="app-shell" style={{ padding: "20px 20px 40px", maxWidth: "1600px", margin: "0 auto" }}>
       <DashboardHeader
         state={state}
         currentUser={currentUser}

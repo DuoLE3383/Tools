@@ -13,6 +13,7 @@
 
 .app-shell {
   width: min(100%, var(--app-max));
+  min-width: 800px;
   margin: 0 auto;
   padding: var(--shell-pad);
   position: relative;

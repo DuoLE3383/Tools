@@ -4,7 +4,7 @@ import { useMemo, useState, useEffect, useCallback } from "react";
 import { btcValue, compactNumber, percentValue } from "./miningWorkspaceData.js";
 import { useMiningWorkspace } from "./MiningWorkspaceProvider";
 import { useCoinPrice } from "./CoinPriceContext.jsx";
-
+import { getAlgoDisplayName } from "../../core/mapping.js";
 export default function MiningCoin({ onCall, nhClient = "VN" }) {
   const {
     opportunities: combinedRows,
@@ -337,9 +337,9 @@ export default function MiningCoin({ onCall, nhClient = "VN" }) {
                       <strong style={{ color: "#e2e8f0" }}>{row.label}</strong>
                       <div style={{ color: "#64748b", marginTop: "2px" }}>{row.unit}/day comparison</div>
                     </BodyCell>
-                    <BodyCell>{row.nicehashAlgo}</BodyCell>
-                    <BodyCell>{row.mrrAlgo}</BodyCell>
-                    <BodyCell>
+                    <BodyCell align="left">{row.nicehashAlgo}</BodyCell>
+                    <BodyCell align="left">{row.mrrAlgo}</BodyCell>
+                    <BodyCell align="left">
                       <strong style={{ color: row.miningDutchBtcPerDay > 0 ? "#34d399" : "#64748b" }}>
                         {btcValue(row.miningDutchBtcPerDay)}
                       </strong>
@@ -347,13 +347,13 @@ export default function MiningCoin({ onCall, nhClient = "VN" }) {
                         {row.miningDutchMiners ? `${compactNumber(row.miningDutchMiners, 0)} MD miners` : row.miningDutchHashrate}
                       </div>
                     </BodyCell>
-                    <BodyCell>{btcValue(row.niceHashPrice)}</BodyCell>
-                    <BodyCell>
+                    <BodyCell align="left">{btcValue(row.niceHashPrice)}</BodyCell>
+                    <BodyCell align="left">
                       <span style={{ color: row.spread > 0 ? "#34d399" : row.spread < 0 ? "#f87171" : "#94a3b8", fontWeight: 700 }}>
                         {row.spread === null ? "N/A" : percentValue(row.spread)}
                       </span>
                     </BodyCell>
-                    <BodyCell>
+                    <BodyCell align="left">
                       <strong style={{ color: "#60a5fa" }}>{compactNumber(row.heroMiners, 0)}</strong>
                       <div style={{ color: "#64748b", marginTop: "2px" }}>{compactNumber(row.heroWorkers, 0)} workers</div>
                     </BodyCell>

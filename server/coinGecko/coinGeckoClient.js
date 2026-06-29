@@ -54,13 +54,22 @@ export async function fetchAndSaveCoinPrices(force = false) {
 
     for (const batch of batches) {
       try {
-        const ids = batch.join(',');
-        const url = `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd,btc&include_24hr_change=true&include_24hr_vol=true&include_market_cap=true`;
+        const idsParam = batch.join(',');
+        const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${idsParam}&order=market_cap_desc&per_page=${batchSize}&page=1&sparkline=false&price_change_percentage=24h`;
         const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
         if (!res.ok) continue;
-        const data = await res.json();
+        const marketData = await res.json();
 
-        for (const [coinId, priceData] of Object.entries(data)) {
+        for (const coinData of marketData) {
+          const coinId = coinData.id;
+          const priceData = {
+            usd: coinData.current_price,
+            btc: coinData.current_price / (marketData.find(c => c.id === 'bitcoin')?.current_price || 1), // Approximate BTC price
+            usd_market_cap: coinData.market_cap,
+            usd_24h_vol: coinData.total_volume,
+            usd_24h_change: coinData.price_change_percentage_24h,
+          };
+
           await run(db,
             `INSERT OR REPLACE INTO coin_prices 
              (coin_id, coin_name, symbol, price_usd, price_btc, market_cap, volume_24h, price_change_24h, captured_at)
@@ -70,8 +79,11 @@ export async function fetchAndSaveCoinPrices(force = false) {
              priceData.usd_24h_change || 0, capturedAt]
           );
           totalUpdated++;
+          
+          const cacheData = coinGeckoCache.get('prices')?.data || {};
+          cacheData[coinId] = priceData;
+          coinGeckoCache.set('prices', { data: cacheData, timestamp: now });
         }
-        coinGeckoCache.set('prices', { data, timestamp: now });
       } catch (err) {
         console.warn('[CoinGecko] Batch error:', err.message);
       }

@@ -345,14 +345,15 @@ function AppContent({ authToken, onLoginSuccess, onLogout, callApi, setAuthToken
             isOpen={state.responseModalOpen}
             onClose={() => dispatch({ type: "SET_RESPONSE_MODAL", payload: false })}
             title="API Response Details"
-            maxWidth="1100px"
+            maxWidth="1280px"
+            minWidth="800px"
           >
             {state.lastCall && (
               <div className="response-meta" style={{ marginBottom: "15px", opacity: 0.8, fontSize: "12px" }}>
                 <span>{state.lastCall.method} {state.lastCall.path} — {state.lastCall.status} ({state.lastCall.durationMs}ms)</span>
               </div>
             )}
-            <pre className="response-body modal" style={{ maxHeight: "60vh", overflow: "auto" }}>
+            <pre className="response-body modal" style={{ maxHeight: "40vh", overflow: "auto" }}>
               {JSON.stringify(state.responseModalContent || state.output, null, 2)}
             </pre>
           </Modal>
@@ -361,8 +362,8 @@ function AppContent({ authToken, onLoginSuccess, onLogout, callApi, setAuthToken
             isOpen={state.completionModalOpen}
             onClose={() => dispatch({ type: "SET_COMPLETION_MODAL", payload: false })}
             title="Rental Completion Calculator"
-            maxWidth="750px"
-          >
+            maxWidth="1280px"
+            minWidth="800px"          >
             <HashCompletionCalculator {...state.completionCalculatorContext} />
           </Modal>
         </div>

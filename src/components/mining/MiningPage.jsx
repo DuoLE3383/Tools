@@ -183,18 +183,16 @@ function MiningRouteHero({ onCall }) {
   const {
     opportunities,
     heroStats,
+    heroLoading,
+    heroError,
     dutchStats,
+    dutchLoading,
+    dutchError,
     loading,
     error,
     lastUpdated,
     refresh,
-    priceFetchStatus,
-    hasHeroData,
-    heroLoading,
-    heroError,
-    heroLastUpdated,
-    hasDutchData,
-    dutchLoading,
+    priceFetchStatus
   } = useMiningWorkspace();
   const { openCoinModal } = useCoinPrice();
   const { notify: sendMineNotice } = useTelegramMine();
@@ -203,7 +201,12 @@ function MiningRouteHero({ onCall }) {
   const [lastHeartbeatResult, setLastHeartbeatResult] = useState(null);
   const [lastHeartbeatTime, setLastHeartbeatTime] = useState(null);
   const heartbeatTimerRef = useRef(null);
+  const [autoRefresh, setAutoRefresh] = useState(true);
   const heartbeatCooldownRef = useRef(0);
+
+  // ✅ Derive data presence from stats
+  const hasHeroData = !!heroStats?.coinStats?.length;
+  const hasDutchData = !!dutchStats?.coinStats?.length;
 
   const bestRoute = opportunities[0] || null;
   const activeRouteCount = opportunities.filter(
@@ -240,9 +243,13 @@ function MiningRouteHero({ onCall }) {
   }, [onCall, refresh]);
 
   useEffect(() => {
+    if (!autoRefresh) {
+      if (heartbeatTimerRef.current) clearInterval(heartbeatTimerRef.current);
+      return;
+    }
     heartbeatTimerRef.current = setInterval(() => runHeartbeat(true), HEARTBEAT_INTERVAL_MS);
     return () => { if (heartbeatTimerRef.current) clearInterval(heartbeatTimerRef.current); };
-  }, [runHeartbeat]);
+  }, [runHeartbeat, autoRefresh]);
 
   // Fetch initial data on component mount
   useEffect(() => {
@@ -294,13 +301,21 @@ function MiningRouteHero({ onCall }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <HeartbeatBadge status={heartbeatStatus} lastResult={lastHeartbeatResult} />
           <div style={{ width: '1px', height: '20px', background: 'rgba(148,163,184,0.15)' }}></div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-            <StatusIndicator label="HeroMiners" hasData={hasHeroData} isLoading={heroLoading} error={heroError} lastUpdated={heroLastUpdated} />
-            <StatusIndicator label="Mining-Dutch" hasData={hasDutchData} isLoading={dutchLoading} error={null} lastUpdated={lastUpdated} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <StatusIndicator label="HeroMiners" hasData={hasHeroData} isLoading={heroLoading} error={heroError} lastUpdated={heroStats?.fetchedAt} />
+            <StatusIndicator label="Mining-Dutch" hasData={hasDutchData} isLoading={dutchLoading} error={dutchError} lastUpdated={dutchStats?.fetchedAt} />
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
           {heartbeatTimeAgo && <span style={{ color: "#64748b", fontSize: "10px", fontStyle: 'italic' }}>Last: {heartbeatTimeAgo}</span>}
+          <button
+            className="btn-pro secondary"
+            onClick={() => setAutoRefresh(prev => !prev)}
+            style={{ fontSize: "11px", padding: "4px 12px", minWidth: '120px', color: autoRefresh ? '#34d399' : '#f87171' }}
+            title={autoRefresh ? "Click to disable auto-refresh" : "Click to enable auto-refresh"}
+          >
+            {autoRefresh ? "AUTO-REFRESH: ON" : "AUTO-REFRESH: OFF"}
+          </button>
           <button className="btn-pro secondary" onClick={handleForceHeartbeat} disabled={heartbeatStatus === "running"} style={{ fontSize: "11px", padding: "4px 12px" }}>
             {heartbeatStatus === "running" ? "Running..." : "Force Heartbeat"}
           </button>

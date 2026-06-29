@@ -1,52 +1,64 @@
 // CryptoRatePage.jsx - FIXED
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { useWebSocket } from "./src/components/WebSocketContext";
 
-const COINS = [
-  { id: "bitcoin", symbol: "BTC", name: "Bitcoin" },
-  { id: "ethereum", symbol: "ETH", name: "Ethereum" },
-  { id: "litecoin", symbol: "LTC", name: "Litecoin" },
-  { id: "dogecoin", symbol: "DOGE", name: "Dogecoin" },
-  { id: "monero", symbol: "XMR", name: "Monero" },
-  { id: "ravencoin", symbol: "RVN", name: "Ravencoin" },
-  { id: "kaspa", symbol: "KAS", name: "Kaspa" },
-  { id: "bitcoin-cash", symbol: "BCH", name: "Bitcoin Cash" },
-  { id: "ethereum-classic", symbol: "ETC", name: "Ethereum Classic" },
-  { id: "zcash", symbol: "ZEC", name: "Zcash" },
-];
-
-// ✅ Alternative IDs for fallback
-const COIN_IDS = [
-  "bitcoin",
-  "ethereum", 
-  "litecoin",
-  "dogecoin",
-  "bitcoin-cash",
-  "monero",
-  "ravencoin",
-  "kaspa",
-  "ethereum-classic",
-  "zcash"
-];
-
-export default function CryptoRatePage({ onCall, onNavigateHome }) {
-  const [prices, setPrices] = useState({});
+export default function CryptoRatePage({ onCall, onNavigateHome, coinPrices: initialCoinPrices, onPriceUpdate }) {
+  const [coins, setCoins] = useState([]);
+  const [prices, setPrices] = useState(initialCoinPrices || null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
 
+  // ✅ Use the central WebSocket context for live updates
+  const { prices: wsPrices, isConnected: wsIsConnected } = useWebSocket();
+
+  const allCoinIds = useMemo(() => coins.map(c => c.id), [coins]);
+
+  useEffect(() => {
+    const fetchCoinList = async () => {
+      try {
+        const result = await onCall("/api/v2/coins/list", { silent: true });
+        if (result?.success && Array.isArray(result.data)) {
+          setCoins(result.data);
+        }
+      } catch (err) {
+        setError("Failed to load coin list from database.");
+      }
+    };
+    fetchCoinList();
+  }, [onCall]);
+
+  const formatPricesForRigCard = useCallback((data) => {
+    if (!data) return {};
+    const formatted = {};
+    Object.keys(data).forEach(key => {
+        const coinData = data[key];
+        const coin = coins.find(c => c.id === key || c.symbol.toLowerCase() === key.toLowerCase());
+        if (coin) {
+            formatted[coin.symbol] = {
+                usd: coinData?.usd || 0,
+                btc: coinData?.btc || 0,
+            };
+        }
+    });
+    return formatted;
+  }, [coins]);
+
   const fetchPrices = useCallback(async () => {
+    if (allCoinIds.length === 0) return;
     setLoading(true);
     setError(null);
 
     try {
-      // ✅ Use the correct endpoint with proper IDs
-      const ids = COIN_IDS.join(',');
+      const ids = allCoinIds.join(',');
       const result = await onCall("/api/v2/prices/coingecko", {
         query: {
           ids: ids,
-          vs_currency: 'usd',
-          include_24hr_change: 'true'
+          vs_currencies: 'usd,btc', // Fetch both USD and BTC
+          include_24hr_change: 'true',
+          include_market_cap: 'true',
+          include_24hr_vol: 'true',
         },
         silent: true,
       });
@@ -56,7 +68,7 @@ export default function CryptoRatePage({ onCall, onNavigateHome }) {
       
       if (result && result.data) {
         priceData = result.data;
-      } else if (result && typeof result === 'object') {
+      } else if (result && typeof result === 'object' && !result.error) {
         // Check if it's already in the right format
         if (result.bitcoin || result.ethereum) {
           priceData = result;
@@ -69,27 +81,14 @@ export default function CryptoRatePage({ onCall, onNavigateHome }) {
         }
       }
 
-      // ✅ Ensure bitcoin-cash is properly mapped
-      if (priceData['bitcoin-cash'] && !priceData['bitcoincash']) {
-        priceData['bitcoincash'] = priceData['bitcoin-cash'];
-      }
-      if (priceData['bitcoincash'] && !priceData['bitcoin-cash']) {
-        priceData['bitcoin-cash'] = priceData['bitcoincash'];
-      }
-
-      // ✅ Check if we got data
       if (Object.keys(priceData).length === 0) {
-        throw new Error('No price data received');
+        throw new Error('No price data received from bulk fetch.');
       }
 
       setPrices(priceData);
       setLastUpdated(new Date().toISOString());
-      
-      // ✅ Debug log to verify BCH
-      if (priceData['bitcoin-cash']) {
-        console.log('✅ BCH Price:', priceData['bitcoin-cash'].usd);
-      } else {
-        console.warn('⚠️ BCH not found in response:', Object.keys(priceData));
+      if (onPriceUpdate) {
+        onPriceUpdate(formatPricesForRigCard(priceData));
       }
 
     } catch (err) {
@@ -101,18 +100,23 @@ export default function CryptoRatePage({ onCall, onNavigateHome }) {
     } finally {
       setLoading(false);
     }
-  }, [onCall]);
+  }, [onCall, onPriceUpdate, formatPricesForRigCard, allCoinIds]);
 
   // ✅ Fallback: Fetch individual coin prices
   const fetchIndividualPrices = useCallback(async () => {
     console.log('[CryptoRate] Trying individual price fetch...');
+    if (allCoinIds.length === 0) return;
     
     try {
+      const existingPrices = prices || {};
+      const missingCoins = allCoinIds.filter(id => !existingPrices[id]);
+      if (missingCoins.length === 0) return;
+
       const results = await Promise.all(
-        COIN_IDS.map(async (id) => {
+        missingCoins.map(async (id) => {
           try {
             const result = await onCall("/api/v2/prices/coingecko", {
-              query: { ids: id, vs_currency: 'usd' },
+              query: { ids: id, vs_currencies: 'usd,btc', include_24hr_change: 'true' },
               silent: true,
             });
             
@@ -125,29 +129,48 @@ export default function CryptoRatePage({ onCall, onNavigateHome }) {
         })
       );
 
-      const newPrices = {};
+      const newPrices = { ...existingPrices };
+      let fetchedNew = false;
       results.forEach(({ id, data }) => {
         if (data && typeof data === 'object') {
           newPrices[id] = data;
+          fetchedNew = true;
         }
       });
 
-      if (Object.keys(newPrices).length > 0) {
+      if (fetchedNew) {
         console.log('[CryptoRate] Individual fetch succeeded:', Object.keys(newPrices));
         setPrices(newPrices);
         setLastUpdated(new Date().toISOString());
         setError(null);
+        if (onPriceUpdate) {
+          onPriceUpdate(formatPricesForRigCard(newPrices));
+        }
       }
     } catch (err) {
       console.error('[CryptoRate] Individual fetch failed:', err.message);
     }
-  }, [onCall]);
+  }, [onCall, prices, onPriceUpdate, formatPricesForRigCard, allCoinIds]);
+
+  // ✅ Merge prices from WebSocket into the local state
+  useEffect(() => {
+    if (wsPrices && Object.keys(wsPrices).length > 0) {
+      setPrices(prev => ({ ...prev, ...wsPrices }));
+    }
+  }, [wsPrices]);
 
   useEffect(() => {
-    fetchPrices();
-    const interval = setInterval(fetchPrices, 60000); // Refresh every minute
-    return () => clearInterval(interval);
-  }, [fetchPrices]);
+    if (coins.length > 0) {
+      fetchPrices();
+      // Only poll if WebSocket is not connected
+      const interval = setInterval(() => {
+        if (!wsIsConnected) {
+          fetchPrices();
+        }
+      }, 60000); // Poll every 60 seconds as requested
+      return () => clearInterval(interval);
+    }
+  }, [coins, fetchPrices, wsIsConnected, onPriceUpdate]);
 
   // Format price display
   const formatPrice = (price) => {
@@ -159,14 +182,22 @@ export default function CryptoRatePage({ onCall, onNavigateHome }) {
   };
 
   // Get coin display info
-  const getCoinInfo = (coinId) => {
-    const coin = COINS.find(c => c.id === coinId);
-    return coin || { symbol: coinId.toUpperCase(), name: coinId };
-  };
+  const getCoinData = useCallback((coinId) => {
+    if (!prices) return {};    
+
+    const possibleIds = [coinId, coinId.toLowerCase(), coinId.toUpperCase()];
+    for (const id of possibleIds) {
+      if (prices[id]) return prices[id];
+      if (prices[id.toLowerCase()]) return prices[id.toLowerCase()];
+      if (prices[id.toUpperCase()]) return prices[id.toUpperCase()];
+    }
+
+    return {};
+  }, [prices, coins]);
 
   // Get price change
   const getPriceChange = (data) => {
-    return data?.usd_24h_change ?? data?.change ?? data?.price_change_24h ?? null;
+    return data?.usd_24h_change ?? data?.change ?? data?.price_change_percentage_24h ?? null;
   };
 
   return (
@@ -233,8 +264,8 @@ export default function CryptoRatePage({ onCall, onNavigateHome }) {
           gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", 
           gap: "16px" 
         }}>
-          {COINS.map((coin) => {
-            const data = prices[coin.id] || prices[coin.symbol.toLowerCase()] || {};
+          {coins.map((coin) => {
+            const data = getCoinData(coin.id);
             const price = data?.usd || data?.price || 0;
             const change = getPriceChange(data);
             const hasData = price > 0;

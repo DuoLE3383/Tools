@@ -34,7 +34,7 @@ export default function DashboardPage({
     }, [dispatch]);
 
   return (
-    <div className="app-shell" style={{ padding: "0 20px 40px", maxWidth: "1600px", margin: "0 auto" }}>
+    <div className="app-shell" style={{ padding: "20px 20px 40px", maxWidth: "1600px", margin: "0 auto" }}>
       <DashboardHeader
         state={state}
         currentUser={currentUser}
@@ -74,10 +74,10 @@ export default function DashboardPage({
       </section>
 
       {/* QUICK ACTIONS */}
-      <QuickActions
+      {/* <QuickActions
         onCalculator={() => dispatch({ type: "SET_CALCULATOR_MODAL", payload: true })}
         onNavigate={handleNavClick}
-      />
+      /> */}
 
       {/* MODALS */}
       <UserManagement

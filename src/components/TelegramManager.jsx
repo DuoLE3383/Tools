@@ -1,3 +1,5 @@
+// components/TelegramManager.jsx - COMPLETE FIXED VERSION
+
 import { useCallback, useMemo, useState, useEffect } from "react";
 import MonitorDbEditor from "./MonitorDbEditor";
 import { TelegramTemplates } from "../core/telegram.js";
@@ -32,9 +34,12 @@ function getPaidAmount(r) {
 export function useTelegram(onCall, mrrClient) {
   const sendTelegram = useCallback(
     (message, options = {}) => {
+      // ✅ Ensure message is a string
+      const text = typeof message === 'string' ? message : JSON.stringify(message);
       return onCall("/api/v2/notify/telegram", {
         method: "POST",
-        body: { message },
+        body: { message: text },
+        showModal: options.showModal || false,
         ...options,
       });
     },
@@ -214,12 +219,23 @@ export function useTelegram(onCall, mrrClient) {
 
   const sendManualNotice = useCallback(
     (r) => {
+      if (!r) {
+        console.error("No rental data provided for manual notice");
+        return Promise.reject(new Error("No rental data provided"));
+      }
+
       const startT = new Date(
         r.start + (String(r.start).endsWith("UTC") ? "" : " UTC"),
       ).getTime();
       const endT = new Date(
         r.end + (String(r.end).endsWith("UTC") ? "" : " UTC"),
       ).getTime();
+      
+      if (!startT || !endT) {
+        console.error("Invalid start or end time for rental:", r.id);
+        return Promise.reject(new Error("Invalid rental time data"));
+      }
+
       const now = Date.now();
       const totalMs = endT - startT;
       const elapsedMs = Math.max(0, Math.min(now - startT, totalMs));
@@ -237,8 +253,7 @@ export function useTelegram(onCall, mrrClient) {
       const account = getTelegramAccount(r, mrrClient);
       const rawRoi = efficiency - 100;
       const roi = Number.isFinite(rawRoi) ? rawRoi.toFixed(1) : "0.0";
-      const progress =
-        totalMs > 0 ? Math.floor((elapsedMs / totalMs) * 100) : 0;
+      const progress = totalMs > 0 ? Math.floor((elapsedMs / totalMs) * 100) : 0;
       const avg = Number.isFinite(
         parseFloat(r.hashrate?.average?.hash || r.hashrate?.average || 0),
       )
@@ -295,7 +310,7 @@ export function useTelegram(onCall, mrrClient) {
   );
 }
 
-export default function TelegramManager({ onCall, mrrClient }) {
+export default function TelegramManager({ onCall, mrrClient, onSummaryUpdate }) {
   const [isMonitorDbOpen, setIsMonitorDbOpen] = useState(false);
   const [isTelegramOn, setIsTelegramOn] = useState(true);
   const [isToggling, setIsToggling] = useState(false);
@@ -303,14 +318,17 @@ export default function TelegramManager({ onCall, mrrClient }) {
   const [heartbeatStatus, setHeartbeatStatus] = useState("");
   const [health, setHealth] = useState(null);
 
-  const isConfigured = health?.configured !== false;
+  // Determine if Telegram is properly configured
+  const isConfigured = health?.configured === true;
   const statusLabel =
-    health?.configured === false
+    !isConfigured
       ? "Missing Telegram credentials"
       : isTelegramOn
         ? "Notifications enabled"
         : "Notifications disabled";
+  
   const scopeLabel = String(mrrClient || "ALL").toUpperCase();
+  const actualScope = scopeLabel === "VN" ? "ALL" : scopeLabel;
 
   // Fetch current notification status from server on mount.
   useEffect(() => {
@@ -363,9 +381,10 @@ export default function TelegramManager({ onCall, mrrClient }) {
     try {
       const res = await onCall("/api/v2/mrr/monitor/run", {
         method: "POST",
-        body: { client: scopeLabel },
+        body: { client: actualScope },
         silent: true,
       });
+      
       const accounts = Array.isArray(res?.summary?.accounts)
         ? res.summary.accounts.length
         : null;
@@ -373,12 +392,21 @@ export default function TelegramManager({ onCall, mrrClient }) {
         accounts !== null
           ? ` across ${accounts} account${accounts === 1 ? "" : "s"}`
           : "";
+      
+      const rented = res?.summary?.totals?.rented || 0;
       setHeartbeatStatus(
-        res?.success ? `Heartbeat sent${suffix}` : "Heartbeat request finished",
+        res?.success 
+          ? `✅ Heartbeat sent${suffix}. Found ${rented} active rentals.`
+          : "Heartbeat request finished",
       );
+
+      // Update parent component with the summary data
+      if (res?.summary && onSummaryUpdate) {
+        onSummaryUpdate(res.summary);
+      }
     } catch (err) {
       console.error("Force heartbeat failed:", err);
-      setHeartbeatStatus(`Heartbeat failed: ${err.message || "unknown error"}`);
+      setHeartbeatStatus(`❌ Heartbeat failed: ${err.message || "unknown error"}`);
     } finally {
       setIsHeartbeatRunning(false);
     }
@@ -424,7 +452,7 @@ export default function TelegramManager({ onCall, mrrClient }) {
           className={`btn-pro ${isTelegramOn ? "primary" : "secondary"}`}
           onClick={handleToggle}
           title={
-            health?.configured === false
+            !isConfigured
               ? "Telegram not configured in .env"
               : isTelegramOn
                 ? "Notifications are ON"
@@ -475,23 +503,23 @@ export default function TelegramManager({ onCall, mrrClient }) {
             Force heartbeat
           </div>
           <div style={{ fontSize: "11px", opacity: 0.68 }}>
-            Runs monitor now for <b>{scopeLabel}</b> and sends the Telegram
+            Runs monitor now for <b>{actualScope}</b> and sends the Telegram
             summary.
           </div>
         </div>
         <button
           className="btn-pro primary"
           onClick={handleForceHeartbeat}
-          disabled={isHeartbeatRunning}
+          disabled={isHeartbeatRunning || !isConfigured}
           style={{
             minWidth: "118px",
-            background: isHeartbeatRunning
+            background: isHeartbeatRunning || !isConfigured
               ? "rgba(100, 116, 139, 0.16)"
               : "linear-gradient(135deg, rgba(14, 165, 233, 0.28), rgba(16, 185, 129, 0.22))",
-            borderColor: isHeartbeatRunning
+            borderColor: isHeartbeatRunning || !isConfigured
               ? "rgba(148, 163, 184, 0.35)"
               : "rgba(56, 189, 248, 0.55)",
-            color: isHeartbeatRunning ? "#94a3b8" : "#e0f2fe",
+            color: isHeartbeatRunning || !isConfigured ? "#94a3b8" : "#e0f2fe",
           }}
         >
           {isHeartbeatRunning ? "Running..." : "Send Now"}
@@ -534,6 +562,7 @@ export default function TelegramManager({ onCall, mrrClient }) {
         className="btn-pro secondary"
         onClick={() => setIsMonitorDbOpen(true)}
         style={{ justifySelf: "start", fontSize: "11px", padding: "7px 10px" }}
+        disabled={!isConfigured}
       >
         Open Monitor DB
       </button>

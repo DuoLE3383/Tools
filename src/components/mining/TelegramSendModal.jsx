@@ -1,4 +1,6 @@
-import React, { useState, useCallback, useEffect } from "react";
+// mining/TelegramSendModal.jsx - FIXED VERSION
+
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import Modal from "../Modal";
 import { useTelegramMine } from "../mrr/TelegramMineContext";
 
@@ -14,14 +16,14 @@ export default function TelegramSendModal({
   const [message, setMessage] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [sendStatus, setSendStatus] = useState("");
-  const [heartbeatInterval, setHeartbeatInterval] = useState(null);
   const [isHeartbeatRunning, setIsHeartbeatRunning] = useState(false);
   const [lastHeartbeatTime, setLastHeartbeatTime] = useState(null);
   const [heartbeatCount, setHeartbeatCount] = useState(0);
   const [isForceRunning, setIsForceRunning] = useState(false);
+  const heartbeatIntervalRef = useRef(null);
   const { notify } = useTelegramMine();
 
-  // Build heartbeat message from stats
+  // ✅ Build heartbeat message from stats
   const buildHeartbeatMessage = useCallback(
     (statsData, coinSymbol, isForce = false) => {
       if (!statsData) return "⛏️ Mining Heartbeat - No stats available";
@@ -72,8 +74,6 @@ ${emoji} <b>Mining Heartbeat - ${forceLabel}</b>
 • Current Hashrate: <b>${liveStats.currentHashrate || "0 H/s"}</b>
 • Avg 15m: <b>${hashrate15m}</b>
 • Avg 1h: <b>${hashrate1h}</b>
-• Avg 6h: <b>${liveStats.avg6h || "0 H/s"}</b>
-• Avg 24h: <b>${liveStats.avg24h || "0 H/s"}</b>
 • Workers: <b>${liveStats.workersOnline || 0}/${liveStats.workersTotal || 0}</b>
 • Last Share: <b>${liveStats.lastShare || "N/A"}</b>
 
@@ -102,7 +102,7 @@ ${emoji} <b>Mining Heartbeat - ${forceLabel}</b>
     [heartbeatCount],
   );
 
-  // Send heartbeat with monitor run
+  // ✅ Send heartbeat with monitor run
   const sendHeartbeat = useCallback(
     async (isForce = false) => {
       if (!stats) {
@@ -126,7 +126,7 @@ ${emoji} <b>Mining Heartbeat - ${forceLabel}</b>
           );
         }
 
-        // Trigger monitor run if onCall is provided
+        // ✅ Trigger monitor run if onCall is provided
         if (onCall) {
           try {
             const monitorResult = await onCall("/api/v2/mrr/monitor/run", {
@@ -140,8 +140,8 @@ ${emoji} <b>Mining Heartbeat - ${forceLabel}</b>
 📊 <b>Monitor Run Complete</b>
 • Rented: <b>${summary.rented || 0}</b>
 • Ghosts: <b>${summary.ghost || 0}</b>
-• Total: <b>${summary.total || 0}</b>
-          `.trim();
+• Total: <b>${summary.rigs || 0}</b>
+            `.trim();
 
             await notify(monitorMessage);
           } catch (monitorErr) {
@@ -160,6 +160,7 @@ ${emoji} <b>Mining Heartbeat - ${forceLabel}</b>
         setTimeout(() => setSendStatus(""), 3000);
       } catch (err) {
         setSendStatus(`❌ Error: ${err.message}`);
+        console.error("Heartbeat error:", err);
       } finally {
         setIsSending(false);
         setIsForceRunning(false);
@@ -168,7 +169,7 @@ ${emoji} <b>Mining Heartbeat - ${forceLabel}</b>
     [stats, coin, notify, buildHeartbeatMessage, onCall],
   );
 
-  // Force heartbeat - manual trigger
+  // ✅ Force heartbeat - manual trigger
   const handleForceHeartbeat = useCallback(async () => {
     if (isForceRunning || isSending) return;
 
@@ -188,13 +189,13 @@ ${emoji} <b>Mining Heartbeat - ${forceLabel}</b>
     }
   }, [isForceRunning, isSending, notify, sendHeartbeat]);
 
-  // Start/stop heartbeat interval
+  // ✅ Start/stop heartbeat interval
   const toggleHeartbeat = useCallback(() => {
     if (isHeartbeatRunning) {
       // Stop heartbeat
-      if (heartbeatInterval) {
-        clearInterval(heartbeatInterval);
-        setHeartbeatInterval(null);
+      if (heartbeatIntervalRef.current) {
+        clearInterval(heartbeatIntervalRef.current);
+        heartbeatIntervalRef.current = null;
       }
       setIsHeartbeatRunning(false);
       setSendStatus("⏹️ Heartbeat stopped");
@@ -215,30 +216,31 @@ ${emoji} <b>Mining Heartbeat - ${forceLabel}</b>
           sendHeartbeat(false);
         },
         15 * 60 * 1000,
-      ); // 15 minutes
+      );
 
-      setHeartbeatInterval(interval);
+      heartbeatIntervalRef.current = interval;
       setIsHeartbeatRunning(true);
       setSendStatus("🔄 Heartbeat started (every 15m)");
       setTimeout(() => setSendStatus(""), 3000);
     }
-  }, [isHeartbeatRunning, heartbeatInterval, stats, sendHeartbeat]);
+  }, [isHeartbeatRunning, stats, sendHeartbeat]);
 
-  // Cleanup interval on unmount
+  // ✅ Cleanup interval on unmount
   useEffect(() => {
     return () => {
-      if (heartbeatInterval) {
-        clearInterval(heartbeatInterval);
+      if (heartbeatIntervalRef.current) {
+        clearInterval(heartbeatIntervalRef.current);
+        heartbeatIntervalRef.current = null;
       }
     };
-  }, [heartbeatInterval]);
+  }, []);
 
-  // Reset heartbeat count when stats change
+  // ✅ Reset heartbeat count when stats change
   useEffect(() => {
     setHeartbeatCount(0);
   }, [stats]);
 
-  // Handle custom message send
+  // ✅ Handle custom message send
   const handleSend = useCallback(async () => {
     if (!message.trim() || isSending) return;
 
@@ -264,7 +266,7 @@ ${emoji} <b>Mining Heartbeat - ${forceLabel}</b>
     }
   }, [message, isSending, notify, onClose]);
 
-  // Format time since last heartbeat
+  // ✅ Format time since last heartbeat
   const getTimeSinceLastHeartbeat = () => {
     if (!lastHeartbeatTime) return "Never";
     const diff = Date.now() - lastHeartbeatTime.getTime();

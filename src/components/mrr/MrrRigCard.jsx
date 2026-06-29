@@ -293,7 +293,11 @@ const MrrRigCard = ({
         BCH: "bitcoin-cash",
       };
       const id = map[String(currency).toUpperCase()];
-      return coinPrices?.[id]?.usd || 0;
+      if (!id || !coinPrices) return 0;
+
+      // Handle various keys for the same coin
+      const coinData = coinPrices[id] || coinPrices[String(currency).toUpperCase()] || coinPrices[String(currency).toLowerCase()];
+      return coinData?.usd || 0;
     },
     [coinPrices],
   );

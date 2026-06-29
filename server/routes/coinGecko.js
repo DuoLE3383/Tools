@@ -1,6 +1,7 @@
 // routes/coinGecko.js
 import { asyncHandler } from "../utils.js";
 import { db } from "../db.js";
+import { getCoinMetadata } from "../coinGecko/coinGeckoClient.js";
 
 let coinGeckoCache = {
   data: null,
@@ -77,5 +78,14 @@ export function registerCoinGeckoRoutes(app) {
         res.status(500).json({ success: false, error: err.message });
       }
     }),
+  );
+
+  app.get(
+    "/api/v2/coins/list",
+    asyncHandler(async (req, res) => {
+      const metadata = await getCoinMetadata();
+      const coins = metadata.map(m => ({ id: m.coin_id, symbol: m.symbol, name: m.coin_name }));
+      res.json({ success: true, data: coins });
+    })
   );
 }

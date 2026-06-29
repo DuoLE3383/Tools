@@ -1,7 +1,7 @@
 // CryptoRatePage.jsx - FIXED (remove direct WebSocket)
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { useWebSocket } from "./WebSocketContext"; // ✅ Use the context
+import { useWebSocket } from "./WebSocketContext"; 
 
 const COINS = [
   { id: "bitcoin", symbol: "BTC", name: "Bitcoin" },
@@ -197,10 +197,7 @@ export default function CryptoRatePage({ onCall, onPriceUpdate }) {
         background: "transparent",
         fontFamily: "sans-serif",
         maxWidth: "100%",
-        overflow: "hidden",
         boxSizing: "border-box",
-        width: "600px",
-        height: "500px"
       }}
     >
       {/* Header */}
@@ -211,7 +208,7 @@ export default function CryptoRatePage({ onCall, onPriceUpdate }) {
           alignItems: "center",
           justifyContent: "space-between",
           gap: "8px",
-          marginBottom: "12px",
+          marginBottom: "16px",
           borderBottom: "1px solid rgba(255,255,255,0.05)",
           paddingBottom: "8px",
         }}
@@ -289,7 +286,7 @@ export default function CryptoRatePage({ onCall, onPriceUpdate }) {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))",
           gap: "8px",
         }}
       >
@@ -297,7 +294,6 @@ export default function CryptoRatePage({ onCall, onPriceUpdate }) {
           <div
             key={coin.id}
             style={{
-              aspectRatio: "2 / 1",
               background: baseCoin === coin.id ? "rgba(96,165,250,0.06)" : "rgba(30,41,59,0.12)",
               border: baseCoin === coin.id ? "1px solid rgba(96,165,250,0.15)" : "1px solid rgba(255,255,255,0.03)",
               borderRadius: "10px",

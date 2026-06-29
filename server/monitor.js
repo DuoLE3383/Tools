@@ -1,6 +1,6 @@
 // ==========================
-//  MONITOR.JS - REFACTORED
-//  Using external 
+//  MONITOR.JS - UPGRADED
+//  Full Telegram bot support
 // ==========================
 
 import { db } from './db.js';
@@ -61,6 +61,23 @@ const { ALERT_COOLDOWN_MS, WARNING_RIG_THRESHOLD } = TELEGRAM_CONFIG;
 const RENTED_HEARTBEAT_MS = 15 * 60 * 1000;
 
 // ==========================
+//  TELEGRAM BOT CONFIGURATION
+// ==========================
+
+const TELEGRAM_BOTS = {
+  MAIN_BOT: {
+    token: process.env.TELEGRAM_BOT_TOKEN,
+    chatId: process.env.TELEGRAM_CHAT_ID,
+    name: 'Main Bot',
+  },
+  MINE_BOT: {
+    token: process.env.TELEGRAM_MINE_BOT_TOKEN,
+    chatId: process.env.TELEGRAM_GROUP_ID,
+    name: 'Mining Bot',
+  }
+};
+
+// ==========================
 //  STATE
 // ==========================
 
@@ -110,9 +127,30 @@ export async function getMonitorNhActiveOrders(clientName) {
 }
 
 // ==========================
-//  TELEGRAM FUNCTIONS
+//  TELEGRAM FUNCTIONS - UPGRADED
 // ==========================
 
+/**
+ * Get health status for both Telegram bots
+ */
+export async function getTelegramHealth() {
+  return {
+    mainBot: {
+      tokenPresent: !!process.env.TELEGRAM_BOT_TOKEN,
+      chatIdPresent: !!process.env.TELEGRAM_CHAT_ID,
+      configured: !!process.env.TELEGRAM_BOT_TOKEN && !!process.env.TELEGRAM_CHAT_ID,
+    },
+    mineBot: {
+      tokenPresent: !!process.env.TELEGRAM_MINE_BOT_TOKEN,
+      chatIdPresent: !!process.env.TELEGRAM_GROUP_ID,
+      configured: !!process.env.TELEGRAM_MINE_BOT_TOKEN && !!process.env.TELEGRAM_GROUP_ID,
+    }
+  };
+}
+
+/**
+ * Get Telegram notification status
+ */
 export async function getTelegramStatus() {
   try {
     await dbRunAsync(db, "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)");
@@ -124,6 +162,9 @@ export async function getTelegramStatus() {
   }
 }
 
+/**
+ * Set Telegram notification status
+ */
 export async function setTelegramStatus(enabled) {
   const val = enabled ? 'true' : 'false';
   await dbRunAsync(db, "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)");
@@ -135,24 +176,40 @@ export async function setTelegramStatus(enabled) {
   return { enabled: !!enabled };
 }
 
-export async function sendTelegramInternal(message) {
+/**
+ * Send message via Telegram (supports both bots)
+ * @param {string} message - The message to send
+ * @param {string} botType - 'MAIN_BOT' or 'MINE_BOT'
+ * @param {object} options - Additional options
+ */
+export async function sendTelegramInternal(message, botType = 'MAIN_BOT', options = {}) {
+  // Check if notifications are globally enabled
   const status = await getTelegramStatus();
   if (!status.enabled) {
     console.log('[telegram] Notifications are globally disabled');
     return { ok: true, description: 'Notifications disabled' };
   }
 
-  const botToken = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_CHAT_ID;
+  // Get bot configuration
+  const botConfig = TELEGRAM_BOTS[botType];
+  if (!botConfig) {
+    console.warn(`[telegram] Unknown bot type: ${botType}, falling back to MAIN_BOT`);
+    return sendTelegramInternal(message, 'MAIN_BOT', options);
+  }
+
+  const { token: botToken, chatId, name } = botConfig;
+
   if (!botToken || !chatId) {
-    console.warn('[telegram] Credentials missing');
-    throw new Error('Telegram credentials missing');
+    console.warn(`[telegram:${botType}] Credentials missing for ${name}`);
+    throw new Error(`Telegram ${name} credentials missing`);
   }
 
   const text = String(message || '').trim();
   if (!text) throw new Error('Message empty');
 
-  const maxAttempts = 3;
+  console.log(`[telegram:${botType}] Sending message (${text.length} chars)...`);
+
+  const maxAttempts = options.maxAttempts || 3;
   let lastError = null;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -160,22 +217,48 @@ export async function sendTelegramInternal(message) {
       const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' })
+        body: JSON.stringify({ 
+          chat_id: chatId, 
+          text, 
+          parse_mode: 'HTML',
+          disable_web_page_preview: true,
+          ...options
+        })
       });
 
       const data = await res.json();
-      if (res.ok && data?.ok) return data;
+      
+      if (res.ok && data?.ok) {
+        console.log(`[telegram:${botType}] Message sent successfully (attempt ${attempt})`);
+        return { ok: true, data };
+      }
+      
       throw new Error(data?.description || `HTTP ${res.status}`);
     } catch (err) {
       lastError = err;
+      console.warn(`[telegram:${botType}] Attempt ${attempt} failed: ${err.message}`);
       if (attempt < maxAttempts) {
-        await new Promise(resolve => setTimeout(resolve, attempt * 300));
+        await new Promise(resolve => setTimeout(resolve, attempt * 500));
       }
     }
   }
 
-  console.error(`[telegram] Failed after ${maxAttempts} attempts: ${lastError.message}`);
+  console.error(`[telegram:${botType}] Failed after ${maxAttempts} attempts: ${lastError.message}`);
   throw lastError;
+}
+
+/**
+ * Send message to Mining bot (convenience function)
+ */
+export async function sendTelegramMine(message, options = {}) {
+  return sendTelegramInternal(message, 'MINE_BOT', options);
+}
+
+/**
+ * Send message to Main bot (convenience function)
+ */
+export async function sendTelegramMain(message, options = {}) {
+  return sendTelegramInternal(message, 'MAIN_BOT', options);
 }
 
 // ==========================
@@ -258,6 +341,10 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
     } catch (priceErr) {
       console.warn(`[Monitor] Could not fetch coin prices for summary: ${priceErr.message}`);
     }
+
+    // ==========================
+    //  PROCESS EACH ACCOUNT
+    // ==========================
     // ... (rest of the monitoring logic using the extracted utilities)
 
     // Use the extracted utilities for processing
