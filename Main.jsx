@@ -18,7 +18,7 @@ import MrrPoolsManager from './src/components/mrr/MrrManager';
 import Login from './src/components/Login';
 import HeroMinersCard from './src/components/HeroMinersCard';
 import MiningCoin from './src/components/MiningCoin.jsx';
-import { HASHRATE_SUFFIXES, normalizeAlgoForNiceHash, getAlgorithmUnit } from './src/core/mapping';
+import { HASHRATE_SUFFIXES, normalizeAlgoForNiceHash, ALGO_MAPPING } from './src/core/mapping';
 import { RentedRigProvider } from './src/components/NiceHashContext';
 import './src/App.css';
 
@@ -98,14 +98,14 @@ export default function App() {
     const adsHashrate = parseHashrateValue(info?.advertised || rig?.hashrate?.advertised || rig?.advertised || rig?.hashrate?.hash || rig?.hash || '');
     const avgHashrate = parseHashrateValue(info?.average || rig?.hashrate?.average || rig?.average || rig?.hash || '');
     const nhAlgo = normalizeAlgoForNiceHash(algo);
-    const unit = HASHRATE_SUFFIXES[getAlgorithmUnit(nhAlgo)]; // Use HASHRATE_SUFFIXES directly with the algorithm's unit
+    const unit = HASHRATE_SUFFIXES[ALGO_MAPPING(nhAlgo)]; // Use HASHRATE_SUFFIXES directly with the algorithm's unit
     const nhPriceData = info?.nicehashPrice || rig?.nicehashPrice;
     const rawPrice = info?.price || rig?.price || rig?.min_price || null;
     const priceSource = rawPrice?.paid !== undefined
       ? { paid: rawPrice.paid, currency: rawPrice.currency || rawPrice.price_unit || 'BTC' }
       : rawPrice;
     const btcPriceSource = info?.price_converted || rig?.price_converted || info?.price?.BTC || rig?.price?.BTC || priceSource;
-    const priceUnit = getAlgorithmUnit(nhAlgo); // This is the string unit
+    const priceUnit = ALGO_MAPPING(nhAlgo); // This is the string unit
 
     setCompletionCalculatorContext({
       initialAlgo: algo,

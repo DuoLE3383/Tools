@@ -67,9 +67,19 @@ function initDatabase() {
   return new Promise((resolve, reject) => {
     dbInstance = new sqlite3.Database(STATS_DB_PATH, (dbErr) => {
       if (dbErr) return reject(dbErr);
-      dbInstance.run('PRAGMA journal_mode = WAL;', (err) => {
+      // Enable WAL with proper busy timeout and synchronous settings for performance
+      dbInstance.serialize(() => {
+        dbInstance.run('PRAGMA journal_mode = WAL;', (err) => {
         if (err) console.warn('[db] Failed to enable WAL mode:', err.message);
-      });
+        });
+        dbInstance.run('PRAGMA busy_timeout = 5000;', (err) => {
+          if (err) console.warn('[db] Failed to set busy timeout:', err.message);
+        });
+        dbInstance.run('PRAGMA synchronous = NORMAL;', (err) => {
+          if (err) console.warn('[db] Failed to set synchronous mode:', err.message);
+        });
+      })
+
       dbInstance.run(`CREATE TABLE IF NOT EXISTS stats_cache (
         key TEXT PRIMARY KEY, data TEXT, ts INTEGER
       )`, (err) => { if (err) reject(err); });
@@ -83,6 +93,12 @@ function initDatabase() {
       dbInstance.run(`CREATE TABLE IF NOT EXISTS settings (
         key TEXT PRIMARY KEY, value TEXT
       )`, (err) => { if (err) console.error(`[db] Failed to create settings table: ${err.message}`); });
+      
+      // Add indexes for performance
+      dbInstance.run(`CREATE INDEX IF NOT EXISTS idx_stats_cache_ts ON stats_cache(ts)`, (err) => {
+        if (err) console.error('[db] Failed to create stats_cache index:', err.message);
+      });
+
       setDb(dbInstance);
       resolve();
     });

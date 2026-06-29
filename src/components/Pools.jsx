@@ -6,7 +6,7 @@ import {
   apiFetch,
   sanitizeNhClientTag,
 } from "../core/poolUtils";
-import { getAlgoDisplayName } from "../core/mapping";
+import { ALGO_MAPPING } from "../core/mapping";
 
 export default function Pools({
   onCall,
@@ -812,7 +812,7 @@ export default function Pools({
       return acc;
     }, {});
     return Object.entries(counts)
-      .map(([algo, count]) => `${getAlgoDisplayName(algo)}: ${count}`)
+      .map(([algo, count]) => `${ALGO_MAPPING(algo)}: ${count}`)
       .join(", ");
   };
 
@@ -1444,7 +1444,7 @@ export default function Pools({
                 >
                   {poolAlgorithmGroups.map(([algorithm, count]) => (
                     <div className="algorithm-row" key={algorithm}>
-                      <span>{getAlgoDisplayName(algorithm)}</span>
+                      <span>{ALGO_MAPPING(algorithm)}</span>
                       <strong style={{ marginLeft: 3 }}>{count}</strong>
                       <button
                         type="button"
@@ -1503,7 +1503,7 @@ export default function Pools({
                     {label}
                   </strong>
                   <code style={{ fontSize: "11px", opacity: 0.7 }}>
-                    {getAlgoDisplayName(ph.getAlgo(pool))}
+                    {ALGO_MAPPING(ph.getAlgo(pool))}
                   </code>
                   {(pool.client || pool.nhClient) && (
                   <span
@@ -1559,7 +1559,7 @@ export default function Pools({
                       {label}
                     </td>
                     <td style={{ color: "#60a5fa" }}>
-                      {getAlgoDisplayName(algo)}
+                      {ALGO_MAPPING(algo)}
                     </td>
                     <td style={{ fontFamily: "monospace", opacity: 0.8 }}>
                       {pool.stratumHost ||
@@ -1710,7 +1710,7 @@ export default function Pools({
                         opacity: 0.8,
                       }}
                     >
-                      {getAlgoDisplayName(algo)}
+                      {ALGO_MAPPING(algo)}
                     </div>
                   </div>
                   <div
@@ -1836,7 +1836,7 @@ export default function Pools({
                           fontFamily: "monospace",
                         }}
                       >
-                        {getAlgoDisplayName(algo)}
+                        {ALGO_MAPPING(algo)}
                       </td>
                       <td style={{ padding: "10px", color: "#f87171" }}>
                         {ph.getVerifyMessage(item.result)}

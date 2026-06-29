@@ -4,7 +4,7 @@ import sqlite3 from "sqlite3";
 import * as cheerio from "cheerio";
 import {
   normalizeAlgo,
-  getAlgorithmDisplayName,
+  ALGO_MAPPING,
 } from "../src/core/mapping.js";
 import { fetchAndSaveCoinPrices, getCoinPricesFromDb } from "./coinGecko/coinGeckoClient.js";
 import { getBtcPrice } from "./utils/priceUtils.js";
@@ -248,9 +248,11 @@ function extractCoinNames(heroRows, dutchRows) {
   for (const row of heroRows || []) {
     if (row.coin) coinNames.add(row.coin.toUpperCase());
     if (row.subdomain) coinNames.add(row.subdomain.toUpperCase());
+    if (row.algorithm) coinNames.add(row.algorithm.toUpperCase());
   }
   for (const row of dutchRows || []) {
     if (row.coin) coinNames.add(row.coin.toUpperCase());
+    if (row.algorithm) coinNames.add(row.algorithm.toUpperCase());
   }
   return Array.from(coinNames);
 }
@@ -351,7 +353,7 @@ export async function scanMiningOpportunities(force = false) {
 
     opportunities.push({
       algo,
-      label: getAlgorithmDisplayName(algo),
+      label: ALGO_MAPPING(algo),
       poolBtcPerDay: poolBtc,
       nhPriceBtc: nhPrice,
       mrrPriceBtc: mrrPrice,

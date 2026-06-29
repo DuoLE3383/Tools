@@ -3,10 +3,10 @@ import { dbRunAsync, dbGetAsync } from "./dbHelpers.js";
 import { logger } from "../logger.js";
 import { TELEGRAM_CONFIG, TelegramTemplates } from "../../src/core/telegram.js";
 import {
-  normalizeAlgoForNiceHash,
   getMrrAlgorithmUnit,
   calculatePriceComparison,
-  getAlgoDisplayName,
+  normalizeAlgoForNiceHash,
+  getAlgoMapping,
 } from "../../src/core/mapping.js";
 import { getBtcPriceData } from "../../src/core/priceUtils.js";
 import { getMonitorNhActiveOrders, sendTelegramInternal } from "../monitor/helpers.js";
@@ -329,9 +329,9 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
                 rentalForNotice,
                 info,
                 acct,
-                orderDiff,
+                orderDiff, // This is ROI
                 remStr,
-                resolveRentalAlgo(rentalForNotice, info),
+                ALGO_MAPPING(info.algo),
                 advDisplay
             )
             : TelegramTemplates.newRental(
@@ -340,7 +340,7 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
                 info.price?.paid || "0.00",
                 info.startTime,
                 info.endTime,
-                resolveRentalAlgo(rentalForNotice, info),
+                ALGO_MAPPING(info.algo),
                 advDisplay
             );
 
@@ -380,7 +380,7 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
     // ============================================================
     const activeRentalLine = TelegramTemplates.activeRentalLine(
         perfEmoji,                    // 1: perfEmoji
-        getAlgoDisplayName(info.algo), // 2: algo
+        getAlgoMapping(info.algo).displayName, // 2: algo
         liveRig?.name || rental.name || rental.id, // 3: name
         remStr_s,                     // 4: remaining
         efficiency,                   // 5: efficiency (Correct)

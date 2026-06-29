@@ -1,4 +1,4 @@
-import { normalizeAlgoForNiceHash, getAlgorithmUnit } from "./mapping.js";
+import { normalizeAlgoForNiceHash, ALGO_MAPPING } from "./mapping.js";
 
 /**
  * Fetches the highest buy order price for a given algorithm from the NiceHash API.
@@ -64,10 +64,10 @@ export async function fetchMarketPrice(callApi, algo, market, client) {
       }
     }
 
-    const priceUnit = getAlgorithmUnit(nhAlgo);
+    const priceUnit = ALGO_MAPPING(nhAlgo);
     return { value: highestPrice, unit: priceUnit };
   } catch (e) {
     console.error(`[marketApi] Failed to fetch market price for ${algo}:`, e);
-    return { value: 0, unit: getAlgorithmUnit(algo) };
+    return { value: 0, unit: ALGO_MAPPING(algo) };
   }
 }

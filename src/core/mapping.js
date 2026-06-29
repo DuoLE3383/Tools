@@ -1,584 +1,224 @@
-// mapping.js - Core algorithm mapping for NiceHash and MRR
-// Enhanced for external use across the application
+// mapping.js - CONSOLIDATED
 
-export const ALGO_DISPLAY_NAMES = {
-  SHA256: "SHA256",
-  SHA256ASICBOOST: "SHA256AB",
-  SHA256AB: "SHA256AB",
-  SCRYPT: "Scrypt",
-  DAGGERHASHIMOTO: "DaggerHashimoto",
-  ETCHASH: "Etchash",
-  EQUIHASH: "Equihash",
-  ZHASH: "ZHash",
-  KAWPOW: "KawPow",
-  AUTOLYKOSV2: "Autolykos v2",
-  AUTOLYKOS: "Autolykos",
-  RANDOMX: "RandomX",
-  RANDOMXMONERO: "RandomXMonero",
-  OCTOPUS: "Octopus",
-  KHEAVYHASH: "KHeavyHash",
-  EAGLESONG: "Eaglesong",
-  VERUSHASH: "VerusHash",
-  NEXAPOW: "NexaPow",
-  FISHHASH: "FishHash",
-  DYNEXSOLVE: "DynexSolve",
-  BEAMHASHIII: "BeamHash III",
-  BLAKE3: "Blake3",
-  BLAKE3_ALPH: "Blake3 (Alephium)",
-  JANUSHASH: "Janushash",
-  XELISHASHV3: "XelisHash v3",
-  PROGPOWZ: "ProgPow Zano",
-  PEARLHASH: "PearlHash",
-  X11: "X11",
-  LYRA2REV2: "Lyra2REv2",
-  LYRA2Z: "Lyra2Z",
-  NEOSCRYPT: "NeoScrypt",
-  YESPOWER: "Yespower",
-  ARGON2: "Argon2",
-  CN_R: "CryptoNight R",
-  CN_HEAVY: "CryptoNight Heavy",
-  IRONFISH: "IronFish",
-  ALEPHIUM: "Alephium",
-  BEAMV3: "BeamV3",
+/**
+ * The single source of truth for all algorithm-related data.
+ * Each key is a normalized MRR algorithm name.
+ * - `displayName`: The user-friendly name.
+ * - `niceHash`: The corresponding NiceHash algorithm enum name.
+ * - `unit`: The hashrate unit for MRR (e.g., 'GH', 'TH').
+ */
+export const ALGO_MAPPING = {
+  SCRYPT: { displayName: 'Scrypt', niceHash: 'SCRYPT', unit: 'GH' },
+  SHA256: { displayName: 'SHA256', niceHash: 'SHA256', unit: 'TH' },
+  SCRYPTN: { displayName: 'Scrypt-N', niceHash: 'SCRYPTN', unit: 'MH' },
+  X11: { displayName: 'X11', niceHash: 'X11', unit: 'MH' },
+  X13: { displayName: 'X13', niceHash: 'X13', unit: 'MH' },
+  KECCAK: { displayName: 'Keccak', niceHash: 'KECCAK', unit: 'MH' },
+  X15: { displayName: 'X15', niceHash: 'X15', unit: 'MH' },
+  NIST5: { displayName: 'Nist5', niceHash: 'NIST5', unit: 'MH' },
+  NEOSCRYPT: { displayName: 'NeoScrypt', niceHash: 'NEOSCRYPT', unit: 'MH' },
+  LYRA2RE: { displayName: 'Lyra2RE', niceHash: 'LYRA2RE', unit: 'MH' },
+  WHIRLPOOLX: { displayName: 'WhirlpoolX', niceHash: 'WHIRLPOOLX', unit: 'MH' },
+  QUBIT: { displayName: 'Qubit', niceHash: 'QUBIT', unit: 'MH' },
+  QUARK: { displayName: 'Quark', niceHash: 'QUARK', unit: 'MH' },
+  AXIOM: { displayName: 'Axiom', niceHash: 'AXIOM', unit: 'MH' },
+  LYRA2REV2: { displayName: 'Lyra2REv2', niceHash: 'LYRA2REV2', unit: 'MH' },
+  SCRYPTJANENX16: { displayName: 'ScryptJaneN16', niceHash: 'SCRYPTJANENX16', unit: 'kH' },
+  BLAKE256R8: { displayName: 'Blake (256r8)', niceHash: 'BLAKE256R8', unit: 'MH' },
+  BLAKE256R14: { displayName: 'Blake (256r14)', niceHash: 'BLAKE256R14', unit: 'MH' },
+  BLAKE256R8VNL: { displayName: 'Blake (256r8vnl)', niceHash: 'BLAKE256R8VNL', unit: 'MH' },
+  HODL: { displayName: 'HODL', niceHash: 'HODL', unit: 'Sol' },
+  DAGGERHASHIMOTO: { displayName: 'DaggerHashimoto', niceHash: 'DAGGERHASHIMOTO', unit: 'MH' },
+  DECRED: { displayName: 'Decred', niceHash: 'DECRED', unit: 'GH' },
+  CRYPTONIGHT: { displayName: 'CryptoNight', niceHash: 'CRYPTONIGHT', unit: 'H' },
+  LBRY: { displayName: 'LBRY', niceHash: 'LBRY', unit: 'GH' },
+  EQUIHASH: { displayName: 'Equihash', niceHash: 'EQUIHASH', unit: 'Sol' },
+  PASCAL: { displayName: 'Pascal', niceHash: 'PASCAL', unit: 'MH' },
+  X11GOST: { displayName: 'X11Gost', niceHash: 'X11GOST', unit: 'MH' },
+  SIA: { displayName: 'Sia', niceHash: 'SIA', unit: 'GH' },
+  BLAKE2S: { displayName: 'Blake (2s)', niceHash: 'BLAKE2S', unit: 'GH' },
+  SKUNK: { displayName: 'Skunk', niceHash: 'SKUNK', unit: 'MH' },
+  CRYPTONIGHTV7: { displayName: 'CryptoNightV7', niceHash: 'CRYPTONIGHTV7', unit: 'H' },
+  CRYPTONIGHTHEAVY: { displayName: 'CryptoNightHeavy', niceHash: 'CRYPTONIGHTHEAVY', unit: 'H' },
+  LYRA2Z: { displayName: 'Lyra2Z', niceHash: 'LYRA2Z', unit: 'MH' },
+  X16R: { displayName: 'X16R', niceHash: 'X16R', unit: 'MH' },
+  CRYPTONIGHTV8: { displayName: 'CryptoNightV8', niceHash: 'CRYPTONIGHTV8', unit: 'H' },
+  SHA256ASICBOOST: { displayName: 'SHA256AsicBoost', niceHash: 'SHA256ASICBOOST', unit: 'TH' },
+  ZHASH: { displayName: 'ZHash', niceHash: 'ZHASH', unit: 'Sol' },
+  BEAM: { displayName: 'Beam', niceHash: 'BEAM', unit: 'Sol' },
+  GRINCUCKAROO29: { displayName: 'GrinCuckaroo29', niceHash: 'GRINCUCKAROO29', unit: 'Graph' },
+  GRINCUCKATOO31: { displayName: 'GrinCuckatoo31', niceHash: 'GRINCUCKATOO31', unit: 'Graph' },
+  LYRA2REV3: { displayName: 'Lyra2REv3', niceHash: 'LYRA2REV3', unit: 'MH' },
+  MTP: { displayName: 'MTP', niceHash: 'MTP', unit: 'MH' },
+  CRYPTONIGHTR: { displayName: 'CryptoNightR', niceHash: 'CRYPTONIGHTR', unit: 'H' },
+  CUCKOOCYCLE: { displayName: 'CuckooCycle', niceHash: 'CUCKOOCYCLE', unit: 'Graph' },
+  GRINCUCKATOO32: { displayName: 'GrinCuckatoo32', niceHash: 'GRINCUCKATOO32', unit: 'Graph' },
+  BEAMV2: { displayName: 'BeamV2', niceHash: 'BEAMV2', unit: 'Sol' },
+  X16RV2: { displayName: 'X16Rv2', niceHash: 'X16RV2', unit: 'MH' },
+  RANDOMXMONERO: { displayName: 'RandomX', niceHash: 'RANDOMXMONERO', unit: 'kH' },
+  EAGLESONG: { displayName: 'Eaglesong', niceHash: 'EAGLESONG', unit: 'GH' },
+  CUCKATOO31: { displayName: 'Cuckatoo31', niceHash: 'GRINCUCKATOO31', unit: 'Graph' },
+  HANDSHAKE: { displayName: 'Handshake', niceHash: 'HANDSHAKE', unit: 'TH' },
+  KAWPOW: { displayName: 'KAWPOW', niceHash: 'KAWPOW', unit: 'MH' },
+  BEAMV3: { displayName: 'BeamV3', niceHash: 'BEAMV3', unit: 'Sol' },
+  OCTOPUS: { displayName: 'Octopus', niceHash: 'OCTOPUS', unit: 'MH' },
+  AUTOLYKOS: { displayName: 'Autolykos', niceHash: 'AUTOLYKOS', unit: 'MH' },
+  ETCHASH: { displayName: 'ETCHash', niceHash: 'ETCHASH', unit: 'MH' },
+  VERUSHASH: { displayName: 'VerusHash', niceHash: 'VERUSHASH', unit: 'MH' },
+  KHEAVYHASH: { displayName: 'kHeavyHash', niceHash: 'KHEAVYHASH', unit: 'TH' },
+  NEXAPOW: { displayName: 'NexaPow', niceHash: 'NEXAPOW', unit: 'MH' },
+  ALEPHIUM: { displayName: 'Alephium', niceHash: 'ALEPHIUM', unit: 'GH' },
+  FISHHASH: { displayName: 'FishHash', niceHash: 'FISHHASH', unit: 'MH' },
+  IRONFISH: { displayName: 'IronFish', niceHash: 'IRONFISH', unit: 'GH' },
+  KARLSENHASH: { displayName: 'KarlsenHash', niceHash: 'KARLSENHASH', unit: 'GH' },
+  PYRINHASH: { displayName: 'PyrinHash', niceHash: 'PYRINHASH', unit: 'GH' },
+
+  // --- Aliases and common variations ---
+  'SHA256AB': { displayName: 'SHA256AsicBoost', niceHash: 'SHA256ASICBOOST', unit: 'TH' },
+  'HASHIMOTOS': { displayName: 'DaggerHashimoto', niceHash: 'DAGGERHASHIMOTO', unit: 'MH' },
+  'ETHASH': { displayName: 'DaggerHashimoto', niceHash: 'DAGGERHASHIMOTO', unit: 'MH' },
+  'RANDOMX': { displayName: 'RandomX', niceHash: 'RANDOMXMONERO', unit: 'kH' },
+  'KASPA': { displayName: 'kHeavyHash', niceHash: 'KHEAVYHASH', unit: 'TH' },
 };
 
-// NiceHash algorithm normalization
-export const NICEHASH_ALGO_MAP = {
-  SHA256: "SHA256",
-  SHA256AB: "SHA256ASICBOOST",
-  SHA256ASICBOOST: "SHA256ASICBOOST",
-  SCRYPT: "SCRYPT",
-  DAGGERHASHIMOTO: "DAGGERHASHIMOTO",
-  EQUIHASH: "EQUIHASH",
-  ZHASH: "ZHASH",
-  ETCHASH: "ETCHASH",
-  KAWPOW: "KAWPOW",
-  AUTOLYKOSV2: "AUTOLYKOS",
-  AUTOLYKOS: "AUTOLYKOS",
-  RANDOMX: "RANDOMXMONERO",
-  RANDOMXMONERO: "RANDOMXMONERO",
-  OCTOPUS: "OCTOPUS",
-  KHEAVYHASH: "KHEAVYHASH",
-  EAGLESONG: "EAGLESONG",
-  VERUSHASH: "VERUSHASH",
-  NEXAPOW: "NEXAPOW",
-  FISHHASH: "FISHHASH",
-  DYNEXSOLVE: "DYNEXSOLVE",
-  BEAMHASHIII: "BEAMV3",
-  BEAMV3: "BEAMV3",
-  BLAKE3_ALPH: "ALEPHIUM",
-  BLAKE3: "ALEPHIUM",
-  JANUSHASH: "JANUSHASH",
-  XELISHASHV3: "XELISHASHV3",
-  X11: "X11",
-  PROGPOWZ: "PROGPOWZ",
-  PEARLHASH: "PEARLHASH",
-  IRONFISH: "IRONFISH",
-  ALEPHIUM: "ALEPHIUM",
-};
-
-// MRR algorithm mapping
-export const MRR_ALGO_MAP = {
-  SHA256: "sha256",
-  SHA256AB: "SHA256ASICBOOST",
-  SHA256ASICBOOST: "SHA256ASICBOOST",
-  SCRYPT: "scrypt",
-  DAGGERHASHIMOTO: "DAGGERHASHIMOTO",
-  EQUIHASH: "equihash",
-  ZHASH: "zhash",
-  ETCHASH: "etchash",
-  KAWPOW: "kawpow",
-  AUTOLYKOSV2: "autolykos_v2",
-  AUTOLYKOS: "autolykos_v2",
-  RANDOMX: "randomx",
-  RANDOMXMONERO: "randomx",
-  OCTOPUS: "octopus",
-  KHEAVYHASH: "kheavyhash",
-  EAGLESONG: "eaglesong",
-  VERUSHASH: "verushash",
-  NEXAPOW: "nexapow",
-  FISHHASH: "fishhash",
-  DYNEXSOLVE: "dynexsolve",
-  BEAMHASHIII: "beamhash_iii",
-  BLAKE3_ALPH: "blake3_alph",
-  BLAKE3: "blake3_alph",
-  JANUSHASH: "janushash",
-  XELISHASHV3: "xelishash_v3",
-  X11: "x11",
-  PROGPOWZ: "progpowz",
-  PEARLHASH: "pearlhash",
-};
-
-// Reverse mappings for lookup
-export const NICEHASH_REVERSE_MAP = Object.entries(NICEHASH_ALGO_MAP).reduce((acc, [key, value]) => {
-  if (!acc[value]) acc[value] = [];
-  acc[value].push(key);
-  return acc;
-}, {});
-
-export const MRR_REVERSE_MAP = Object.entries(MRR_ALGO_MAP).reduce((acc, [key, value]) => {
-  if (!acc[value]) acc[value] = [];
-  acc[value].push(key);
-  return acc;
-}, {});
-
-// Hashrate suffixes for display
+/**
+ * Hashrate unit multipliers relative to H/s.
+ */
 export const HASHRATE_SUFFIXES = {
-  EH: 1e18,
-  PH: 1e15,
-  TH: 1e12,
-  GH: 1e9,
-  MH: 1e6,
-  KH: 1e3,
   H: 1,
-  GSOL: 1e9,
-  MSOL: 1e6,
-  KSol: 1e3,
-  Sol: 1,
-  KSOL: 1e3,
-  SOL: 1,
+  K: 1e3,
+  M: 1e6,
+  G: 1e9,
+  T: 1e12,
+  P: 1e15,
+  E: 1e18,
+  KH: 1e3,
+  MH: 1e6,
+  GH: 1e9,
+  TH: 1e12,
+  PH: 1e15,
+  EH: 1e18,
 };
 
-// Algorithm market units (NiceHash Market Standards)
-export const ALGO_UNITS = {
-  SHA256: "EH",
-  SHA256AB: "EH",
-  SHA256ASICBOOST: "EH",
-  SCRYPT: "TH",
-  X11: "PH",
-  NEOSCRYPT: "TH",
-  DAGGERHASHIMOTO: "TH",
-  ETCHASH: "TH",
-  KAWPOW: "TH",
-  EQUIHASH: "GSOL",
-  ZHASH: "MSOL",
-  AUTOLYKOSV2: "TH",
-  AUTOLYKOS: "TH",
-  RANDOMX: "GH",
-  RANDOMXMONERO: "GH",
-  EAGLESONG: "EH",
-  OCTOPUS: "TH",
-  KHEAVYHASH: "EH",
-  FISHHASH: "TH",
-  DYNEXSOLVE: "TH",
-  BEAMHASHIII: "MSOL",
-  BEAMV3: "MSOL",
-  VERUSHASH: "TH",
-  NEXAPOW: "TH",
-  BLAKE3_ALPH: "PH",
-  BLAKE3: "PH",
-  JANUSHASH: "TH",
-  XELISHASHV3: "TH",
-  PROGPOWZ: "TH",
-  PEARLHASH: "TH",
-  IRONFISH: "TH",
-  ALEPHIUM: "PH",
+/** Power factor mapping for normalization (EH/s base) */
+export const UNIT_TO_POWER = {
+  EH: 0,
+  PH: -3,
+  TH: -6,
+  GH: -9,
+  MH: -12,
+  GSOL: -9,
+  MSOL: -12,
+  E: 0,
+  P: -3,
+  T: -6,
+  G: -9,
+  M: -12,
 };
+/**
+ * Safely retrieves the mapping object for a given algorithm, normalizing the name first.
+ * @param {string} algoName - The raw algorithm name.
+ * @returns {{displayName: string, niceHash: string, unit: string}} The mapping object or a default.
+ */
+export function getAlgoMapping(algoName) {
+  const key = normalizeAlgo(algoName);
+  return ALGO_MAPPING[key] || { displayName: key, niceHash: 'UNKNOWN', unit: 'H' };
+}
+/**
+ * Normalizes an algorithm name from any source (MRR, NiceHash) to a consistent uppercase key.
+ * @param {string} algoName - The raw algorithm name.
+ * @returns {string} The normalized algorithm key, or the original name if no match is found.
+ */
+export function normalizeAlgo(algoName) {
+  if (!algoName) return 'UNKNOWN';
+  const upper = String(algoName).toUpperCase().replace(/[-_\s]/g, '');
 
-// MiningRigRentals marketplace price units (shown as Price/<unit>/Day on MRR).
-export const MRR_ALGO_UNITS = {
-  SHA256: "PH",
-  SHA256AB: "PH",
-  SHA256ASICBOOST: "PH",
-  SCRYPT: "GH",
-  X11: "TH",
-  DAGGERHASHIMOTO: "GH",
-  ETCHASH: "GH",
-  KAWPOW: "GH",
-  EQUIHASH: "GH",
-  ZHASH: "GH",
-  RANDOMX: "MH",
-  RANDOMXMONERO: "MH",
-  OCTOPUS: "GH",
-  KHEAVYHASH: "TH",
-};
+  if (ALGO_MAPPING[upper]) {
+    return upper;
+  }
 
-// Factors relative to TH/s (Used for pricing math in MrrRigCard)
-export const UNIT_FACTORS = {
-  EH: 1e6,
-  PH: 1e3,
-  TH: 1,
-  GH: 1e-3,
-  MH: 1e-6,
-  KH: 1e-9,
-  H: 1e-12,
-  GSol: 1e-3,
-  MSol: 1e-6,
-  KSOL: 1e-9,
-  SOL: 1e-12,
-};
-
-// Algorithm categories for filtering
-export const ALGO_CATEGORIES = {
-  ASIC: ["SHA256", "SHA256ASICBOOST", "SCRYPT", "X11", "EAGLESONG", "KHEAVYHASH", "BLAKE3", "BLAKE3_ALPH"],
-  GPU: ["DAGGERHASHIMOTO", "ETCHASH", "KAWPOW", "AUTOLYKOS", "OCTOPUS", "FISHHASH", "DYNEXSOLVE", "NEXAPOW", "PROGPOWZ", "PEARLHASH", "IRONFISH", "ALEPHIUM"],
-  CPU: ["RANDOMXMONERO", "VERUSHASH"],
-  HYBRID: ["EQUIHASH", "ZHASH", "BEAMV3", "JANUSHASH", "XELISHASHV3"]
-};
-
-// Profitability tiers for quick reference
-export const PROFITABILITY_TIERS = {
-  EXTREME: { min: 50, emoji: "🚀", color: "#ff0000" },
-  HIGH: { min: 25, emoji: "🔥", color: "#ff6600" },
-  GOOD: { min: 10, emoji: "💰", color: "#ffcc00" },
-  MODERATE: { min: 5, emoji: "✅", color: "#00cc00" },
-  LOW: { min: 0, emoji: "📊", color: "#0099ff" }
-};
-
-function extractAlgoText(algo) {
-  if (!algo) return "";
-  if (typeof algo === "string" || typeof algo === "number") return String(algo);
-  if (typeof algo !== "object") return String(algo);
-
-  const candidates = [
-    algo.algo,
-    algo.algorithm,
-    algo.name,
-    algo.type,
-    algo.displayName,
-    algo.enumName,
-    algo.value,
-    algo.id,
-    algo.raw,
-  ];
-
-  for (const candidate of candidates) {
-    if (candidate === undefined || candidate === null) continue;
-    if (typeof candidate === "object") {
-      const nested = extractAlgoText(candidate);
-      if (nested) return nested;
-      continue;
+  // Check display names and nicehash names for a reverse match
+  for (const key in ALGO_MAPPING) {
+    const mapping = ALGO_MAPPING[key];
+    if (
+      mapping.displayName.toUpperCase().replace(/[-_\s]/g, '') === upper ||
+      mapping.niceHash.toUpperCase().replace(/[-_\s]/g, '') === upper
+    ) {
+      return key;
     }
-    const text = String(candidate).trim();
-    if (text) return text;
   }
 
-  return String(algo).trim();
+  return upper || 'UNKNOWN';
 }
 
 /**
- * Normalize algorithm name for NiceHash API
- * @param {string} algo - Raw algorithm name
- * @returns {string} Normalized algorithm name or "UNKNOWN"
+ * Gets the corresponding NiceHash algorithm name for a given algorithm.
+ * @param {string} algoName - The raw algorithm name.
+ * @returns {string} The NiceHash algorithm name, or 'UNKNOWN'.
  */
-export function normalizeAlgoForNiceHash(algo) {
-  const extracted = extractAlgoText(algo);
-  if (!extracted) return "UNKNOWN";
-  const normalized = extracted.toUpperCase().trim();
-
-  // Direct mapping
-  if (NICEHASH_ALGO_MAP[normalized]) {
-    return NICEHASH_ALGO_MAP[normalized];
-  }
-
-  // Handle common variations
-  if (normalized.includes("SHA256AB") || normalized.includes("ASICBOOST"))
-    return "SHA256ASICBOOST";
-  if (normalized.includes("SHA256")) return "SHA256";
-  if (normalized.includes("SCRYPT")) return "SCRYPT";
-  if (normalized.includes("HASHIMOTOS")) return "DAGGERHASHIMOTO";
-  if (normalized.includes("HASHIMOTO")) return "DAGGERHASHIMOTO";
-  if (normalized.includes("DAGGERHASHIMOTO")) return "DAGGERHASHIMOTO";
-  if (normalized.includes("DAGGER HASHIMOTO")) return "DAGGERHASHIMOTO";
-  if (normalized.includes("DAGGER-HASHIMOTO")) return "DAGGERHASHIMOTO";
-  if (normalized.includes("ETCHASH")) return "ETCHASH";
-  if (normalized.includes("KAWPOW")) return "KAWPOW";
-  if (normalized.includes("RANDOMX")) return "RANDOMXMONERO";
-  if (normalized.includes("OCTOPUS")) return "OCTOPUS";
-  if (normalized.includes("KHEAVYHASH")) return "KHEAVYHASH";
-  if (normalized.includes("ZHASH")) return "ZHASH";
-  if (normalized.includes("EAGLESONG")) return "EAGLESONG";
-  if (normalized.includes("VERUSHASH")) return "VERUSHASH";
-  if (normalized.includes("NEXAPOW")) return "NEXAPOW";
-  if (normalized.includes("FISHHASH")) return "FISHHASH";
-  if (normalized.includes("DYNEXSOLVE")) return "DYNEXSOLVE";
-  if (normalized.includes("BEAMHASH")) return "BEAMHASHIII";
-  if (normalized.includes("BLAKE3")) return "BLAKE3";
-  if (normalized.includes("JANUSHASH")) return "JANUSHASH";
-  if (normalized.includes("XELISHASH")) return "XELISHASHV3";
-  if (normalized.includes("PROGPOW")) return "PROGPOWZ";
-  if (normalized.includes("PEARLHASH")) return "PEARLHASH";
-
-  return "UNKNOWN";
+export function normalizeAlgoForNiceHash(algoName) {
+  const key = getNormalizedAlgoKey(algoName);
+  return ALGO_MAPPING[key]?.niceHash || 'UNKNOWN';
 }
 
 /**
- * Map NiceHash algorithm to MRR format
- * @param {string} nicehashAlgo - NiceHash algorithm name
- * @returns {string} MRR algorithm name
+ * Gets the hashrate unit for a given MRR algorithm.
+ * @param {string} algoName - The raw algorithm name.
+ * @returns {string} The hashrate unit (e.g., 'GH', 'TH'), or an empty string.
  */
-export function mapNiceHashToMRR(nicehashAlgo) {
-  if (!nicehashAlgo) return "unknown";
-  const normalized = extractAlgoText(nicehashAlgo).toUpperCase().trim();
-  return MRR_ALGO_MAP[normalized] || normalized.toLowerCase();
+export function getMrrAlgorithmUnit(algoName) {
+  const key = getNormalizedAlgoKey(algoName);
+  return ALGO_MAPPING[key]?.unit || '';
 }
 
 /**
- * Map MRR algorithm back to NiceHash format
- * @param {string} mrrAlgo - MRR algorithm name
- * @returns {string} NiceHash algorithm name or original if not found
+ * Calculates the price difference between an MRR rental and a NiceHash order.
+ * @param {number} mrrPrice - MRR price.
+ * @param {string} mrrUnit - MRR unit.
+ * @param {number} nhPrice - NiceHash price.
+ * @param {string} nhUnit - NiceHash unit.
+ * @returns {number|null} The percentage difference, or null if inputs are invalid.
  */
-export function mapMRRToNiceHash(mrrAlgo) {
-  if (!mrrAlgo) return "unknown";
-  const normalized = extractAlgoText(mrrAlgo).toLowerCase().trim();
-  for (const [niceHash, mrr] of Object.entries(MRR_ALGO_MAP)) {
-    if (mrr === normalized) return niceHash;
-  }
-  return mrrAlgo;
-}
+export function calculatePriceComparison(mrrPrice, mrrUnit, nhPrice, nhUnit) {
+  const nhPriceNum = Number.parseFloat(nhPrice || 0);
+  const mrrPriceNum = Number.parseFloat(mrrPrice || 0);
 
-/**
- * Get the standard unit for an algorithm
- * @param {string} algo - Algorithm name
- * @returns {string} Unit string (e.g., "TH", "MH", "SOL")
- */
-export function getAlgorithmUnit(algo) {
-  if (!algo) return "H/s";
-  const normalized = extractAlgoText(algo).toUpperCase().trim();
-  return ALGO_UNITS[normalized] || "H/s";
-}
+  if (nhPriceNum <= 0 || mrrPriceNum <= 0) return null;
 
-/**
- * Get MRR-specific unit for an algorithm
- * @param {string} algo - Algorithm name
- * @returns {string} MRR unit string
- */
-export function getMrrAlgorithmUnit(algo) {
-  if (!algo) return "TH";
-  const normalized = extractAlgoText(algo).toUpperCase().trim();
-  const niceHashAlgo = normalizeAlgoForNiceHash(normalized);
-  return MRR_ALGO_UNITS[normalized] || MRR_ALGO_UNITS[niceHashAlgo] || "TH";
-  
-}
+  // Robustly extract base unit (e.g., 'GH/s' or 'BTC/TH/Day' -> 'GH' or 'TH')
+  const clean = (u) => {
+    const m = String(u || '').toUpperCase().match(/(EH|PH|TH|GH|MH|KH|H|E|P|T|G|M|K)/);
+    if (!m) return 'TH';
+    let unit = m[0];
+    // Normalize single letters to standard 2-letter codes for mapping
+    const singleMap = { 'E': 'EH', 'P': 'PH', 'T': 'TH', 'G': 'GH', 'M': 'MH', 'K': 'KH' };
+    return singleMap[unit] || unit;
+  };
 
-/**
- * Get display name for algorithm
- * @param {string} algo - Algorithm name
- * @returns {string} Human-readable algorithm name
- */
-export const getAlgoDisplayName = (algo) => getAlgorithmDisplayName(algo);
+  const mrrUnitClean = clean(mrrUnit) || 'TH';
+  const nhUnitClean = clean(nhUnit) || 'TH';
 
-export function getAlgorithmDisplayName(algo) {
-  if (!algo) return "Unknown";
-  const source = extractAlgoText(algo);
-  const normalized = source.toUpperCase().trim();
-  return ALGO_DISPLAY_NAMES[normalized] || source || "Unknown";
-}
+  const mrrP = UNIT_TO_POWER[mrrUnitClean] ?? -6;
+  const nhP = UNIT_TO_POWER[nhUnitClean] ?? -6;
 
-/**
- * Get algorithm category
- * @param {string} algo - Algorithm name
- * @returns {string} Category (ASIC, GPU, CPU, HYBRID, UNKNOWN)
- */
-export function getAlgorithmCategory(algo) {
-  if (!algo) return "UNKNOWN";
-  const normalized = normalizeAlgoForNiceHash(algo);
-  for (const [category, algos] of Object.entries(ALGO_CATEGORIES)) {
-    if (algos.includes(normalized)) return category;
-  }
-  return "UNKNOWN";
-}
+  const mrrPriceNorm = mrrPriceNum / Math.pow(10, mrrP);
+  const nhPriceNorm = nhPriceNum / Math.pow(10, nhP);
 
-/**
- * Get all algorithms in a specific category
- * @param {string} category - Category name
- * @returns {string[]} Array of algorithm names
- */
-export function getAlgorithmsByCategory(category) {
-  return ALGO_CATEGORIES[category] || [];
-}
-
-/**
- * Get profitability tier for a spread percentage
- * @param {number} spreadPct - Spread percentage
- * @returns {Object} Tier information
- */
-export function getProfitabilityTier(spreadPct) {
-  if (spreadPct === null || spreadPct === undefined) return null;
-  const tiers = Object.entries(PROFITABILITY_TIERS).sort((a, b) => b[1].min - a[1].min);
-  for (const [name, tier] of tiers) {
-    if (spreadPct >= tier.min) return { name, ...tier };
+  if (nhPriceNorm > 0) {
+    return ((mrrPriceNorm - nhPriceNorm) / nhPriceNorm) * 100;
   }
   return null;
 }
 
-/**
- * Calculate price comparison between two marketplaces
- * @param {number} yourPrice - Your price
- * @param {string} yourUnit - Your price unit
- * @param {number} marketPrice - Market price
- * @param {string} marketUnit - Market price unit
- * @param {boolean} isMrrVsNh - Whether comparing MRR vs NiceHash
- * @returns {number|null} Percentage difference
- */
-export function calculatePriceComparison(
-  yourPrice,
-  yourUnit,
-  marketPrice,
-  marketUnit,
-  isMrrVsNh = false,
-) {
-  if (!yourPrice || !marketPrice || yourPrice <= 0 || marketPrice <= 0)
-    return null;
+// DEPRECATED: These are kept for backward compatibility but should be phased out.
+export const ALGO_DISPLAY_NAMES = Object.fromEntries(
+  Object.values(ALGO_MAPPING).map(v => [v.niceHash, v.displayName])
+);
 
-  const yourMultiplier = getUnitMultiplier(yourUnit);
-  const marketMultiplier = getUnitMultiplier(marketUnit);
-  if (yourMultiplier <= 0 || marketMultiplier <= 0) return null;
+export const MRR_ALGO_MAP = Object.fromEntries(
+  Object.entries(ALGO_MAPPING).map(([key, value]) => [key, value.niceHash])
+);
 
-  // Prices are quoted per unit per day. Normalize both to price per H/s/day.
-  const yourPerHash = parseFloat(yourPrice) / yourMultiplier;
-  const marketPerHash = parseFloat(marketPrice) / marketMultiplier;
-
-  if (yourPerHash <= 0 || marketPerHash <= 0) return null;
-
-  if (isMrrVsNh) {
-    return ((marketPerHash - yourPerHash) / yourPerHash) * 100;
-  }
-
-  return ((yourPerHash - marketPerHash) / marketPerHash) * 100;
-}
-
-/**
- * Format hashrate with appropriate unit
- * @param {number} hashrate - Hashrate in H/s
- * @param {string} algo - Algorithm name
- * @returns {string} Formatted hashrate (e.g., "1.5 TH/s")
- */
-export function formatHashrate(hashrate, algo) {
-  if (!hashrate || hashrate <= 0) return "0 H/s";
-  
-  const unit = getAlgorithmUnit(algo);
-  const factor = UNIT_FACTORS[unit] || 1;
-  const value = hashrate / factor;
-  
-  return `${value.toFixed(2)} ${unit}/s`;
-}
-
-/**
- * Get all supported algorithms
- * @returns {string[]} Array of supported algorithm names
- */
-export function getAllSupportedAlgorithms() {
-  return [...new Set([
-    ...Object.keys(NICEHASH_ALGO_MAP),
-    ...Object.values(NICEHASH_ALGO_MAP)
-  ])].filter(algo => algo !== "UNKNOWN").sort();
-}
-
-/**
- * Check if algorithm is supported
- * @param {string} algo - Algorithm name
- * @returns {boolean} Whether the algorithm is supported
- */
-export function isSupportedAlgorithm(algo) {
-  return normalizeAlgoForNiceHash(algo) !== "UNKNOWN";
-}
-
-/**
- * Get unit multiplier
- * @param {string} unit - Unit string
- * @returns {number} Multiplier value
- */
-function getUnitMultiplier(unit) {
-  const normalized = String(unit || "")
-    .toUpperCase()
-    .replace(/\/S$/i, "")
-    .trim();
-  return HASHRATE_SUFFIXES[normalized] || 1;
-}
-
-/**
- * Check if algorithm is SHA256 AsicBoost
- * @param {string} algo - Algorithm name
- * @returns {boolean} True if algorithm is SHA256 AsicBoost
- */
-export function isAsicBoost(algo) {
-  if (!algo) return false;
-  const normalized = extractAlgoText(algo).toUpperCase().trim();
-  return normalized === "SHA256ASICBOOST" || 
-         normalized === "SHA256AB" ||
-         normalized.includes("ASICBOOST");
-}
-
-/**
- * Get appropriate MRR algorithm key for API calls
- * Special handling for AsicBoost vs standard SHA256
- * @param {string} algo - Algorithm name
- * @returns {string} MRR API key (e.g., "sha256" or "sha256ab")
- */
-export function getMrrAlgoKey(algo) {
-  if (!algo) return "sha256";
-  const normalized = normalizeAlgoForNiceHash(algo);
-  
-  // If it's AsicBoost, use sha256ab
-  if (isAsicBoost(normalized)) {
-    return "sha256ab";
-  }
-  
-  // Otherwise use standard mapping
-  return mapNiceHashToMRR(normalized);
-}
-
-/**
- * Build MRR API URL for algorithm rate
- * @param {string} algo - Algorithm name
- * @returns {string} Full MRR API URL
- */
-export function buildMrrApiUrl(algo) {
-  const mrrAlgo = getMrrAlgoKey(algo);
-  return `https://www.miningrigrentals.com/api/v2/market/algos/${mrrAlgo}`;
-}
-
-/**
- * Fetch MRR market rate for a specific algorithm
- * @param {string} algo - Algorithm name
- * @param {string} currency - Currency to fetch (default: "BTC")
- * @returns {Promise<number>} Market rate or 0 if failed
- */
-export async function fetchMrrMarketRate(algo, currency = "BTC") {
-  try {
-    const mrrAlgo = getMrrAlgoKey(algo);
-    const url = `https://www.miningrigrentals.com/api/v2/market/algos/${mrrAlgo}`;
-    
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`API returned ${response.status}`);
-    }
-    
-    const data = await response.json();
-    
-    let price = 0;
-    if (data.success && data.data) {
-      price = data.data.price || data.data[currency] || 0;
-    } else if (data.price) {
-      price = data.price;
-    } else if (data[currency]) {
-      price = data[currency];
-    }
-    
-    return price;
-  } catch (error) {
-    console.error(`Failed to fetch MRR rate for ${algo}:`, error);
-    return 0;
-  }
-}
-
-/**
- * Fetch all MRR market rates
- * @returns {Promise<Object|null>} All market rates or null if failed
- */
-export async function fetchAllMrrRates() {
-  try {
-    const response = await fetch("https://www.miningrigrentals.com/api/v2/market/algos");
-    if (!response.ok) {
-      throw new Error(`API returned ${response.status}`);
-    }
-    
-    const data = await response.json();
-    return data.success ? data.data : data;
-  } catch (error) {
-    console.error("Failed to fetch MRR rates:", error);
-    return null;
-  }
-}
-export const normalizeAlgo = normalizeAlgoForNiceHash;
+export const NICEHASH_ALGO_MAP = Object.fromEntries(
+  Object.values(ALGO_MAPPING).map(v => [v.niceHash, v.niceHash])
+);

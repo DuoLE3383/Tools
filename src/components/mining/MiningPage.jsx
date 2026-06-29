@@ -7,8 +7,13 @@ import {
   useMiningWorkspace,
 } from "./MiningWorkspaceProvider";
 import { btcValue, compactNumber, percentValue } from "./miningWorkspaceData";
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import TelegramSendModal from "./TelegramSendModal.jsx";
+import { useTelegramMine } from "../mrr/TelegramMineContext.jsx";
 import { CoinPriceProvider, useCoinPrice } from "./CoinPriceContext.jsx";
+
+const HEARTBEAT_INTERVAL_MS = 120000; // 2 minutes
+const HEARTBEAT_COOLDOWN_MS = 60000;  // 1 minute minimum between manual triggers
 
 // ===== Stat Cards =====
 function StatCard({ label, value, accent }) {
@@ -85,6 +90,70 @@ function MiniStat({ label, value, tone }) {
   );
 }
 
+// ===== Heartbeat Status Badge =====
+function HeartbeatBadge({ status, lastResult, onClick }) {
+  const getBadgeStyle = () => {
+    switch (status) {
+      case "running":
+        return { color: "#fbbf24", label: "Heartbeating...", pulse: true };
+      case "success":
+        return { color: "#34d399", label: "OK", pulse: false };
+      case "error":
+        return { color: "#f87171", label: "Failed", pulse: false };
+      default:
+        return { color: "#64748b", label: "Idle", pulse: false };
+    }
+  };
+
+  const badge = getBadgeStyle();
+  const rentals = lastResult?.summary?.totals?.rented ?? 0;
+  const ghosts = lastResult?.summary?.totals?.ghost ?? 0;
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "6px",
+          padding: "4px 10px",
+          borderRadius: "999px",
+          background: "rgba(255,255,255,0.03)",
+          border: "1px solid rgba(148,163,184,0.1)",
+          cursor: "default",
+        }}
+      >
+        <span
+          style={{
+            width: "8px",
+            height: "8px",
+            borderRadius: "50%",
+            background: badge.color,
+            boxShadow: badge.pulse
+              ? `0 0 8px ${badge.color}88`
+              : "none",
+            animation: badge.pulse ? "pulse-dot 1.5s infinite" : "none",
+          }}
+        />
+        <span style={{ color: badge.color, fontSize: "11px", fontWeight: 700 }}>
+          {badge.label}
+        </span>
+        {lastResult && status === "success" && (
+          <span style={{ color: "#94a3b8", fontSize: "10px" }}>
+            {rentals} rented / {ghosts} ghost
+          </span>
+        )}
+      </div>
+      <style>{`
+        @keyframes pulse-dot {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.6; transform: scale(0.85); }
+        }
+      `}</style>
+    </div>
+  );
+}
+
 // ===== Main Route Hero =====
 function MiningRouteHero({ onCall }) {
   const {
@@ -98,8 +167,14 @@ function MiningRouteHero({ onCall }) {
     refresh,
     priceFetchStatus,
   } = useMiningWorkspace();
-  const [updatingCoins, setUpdatingCoins] = useState(false);
   const { openCoinModal } = useCoinPrice();
+  const { notify: sendMineNotice } = useTelegramMine();
+
+  const [heartbeatStatus, setHeartbeatStatus] = useState("idle"); // idle | running | success | error
+  const [lastHeartbeatResult, setLastHeartbeatResult] = useState(null);
+  const [lastHeartbeatTime, setLastHeartbeatTime] = useState(null);
+  const heartbeatTimerRef = useRef(null);
+  const heartbeatCooldownRef = useRef(0);
 
   const bestRoute = routes[0] || null;
   const activeRouteCount = routes.filter(
@@ -108,24 +183,156 @@ function MiningRouteHero({ onCall }) {
   const profitableCount = routes.filter((route) => route.spread > 0).length;
   const bestOpportunity = opportunities[0] || null;
 
-  const handleUpdateCoins = async () => {
-    if (updatingCoins) return;
-    setUpdatingCoins(true);
+  // ── Coin Price Update State ────────────────────────────────
+  const [priceUpdateStatus, setPriceUpdateStatus] = useState("idle"); // idle | running | success | error
+
+  // ── Run Heartbeat ──────────────────────────────────────────
+  const runHeartbeat = useCallback(async (isAuto = false) => {
+    // Enforce cooldown for manual triggers
+    if (!isAuto) {
+      const now = Date.now();
+      if (now - heartbeatCooldownRef.current < HEARTBEAT_COOLDOWN_MS) {
+        return;
+      }
+      heartbeatCooldownRef.current = now;
+    }
+
+    setHeartbeatStatus("running");
     try {
-      await onCall("/api/v2/prices/coingecko/update", {
+      const res = await onCall("/api/v2/mrr/monitor/run", {
+        method: "POST",
+        body: { client: "ALL" },
+        silent: true,
+      });
+
+      setLastHeartbeatResult(res);
+      setLastHeartbeatTime(Date.now());
+      setHeartbeatStatus("success");
+
+      // Auto-refresh workspace data so routes re-evaluate
+      refresh(true);
+
+      return res;
+    } catch (err) {
+      setHeartbeatStatus("error");
+      console.error("[Heartbeat] Failed:", err.message);
+      return null;
+    }
+  }, [onCall, refresh]);
+
+  // ── Periodic Heartbeat Timer ───────────────────────────────
+  useEffect(() => {
+    heartbeatTimerRef.current = setInterval(() => {
+      runHeartbeat(true);
+    }, HEARTBEAT_INTERVAL_MS);
+
+    return () => {
+      if (heartbeatTimerRef.current) {
+        clearInterval(heartbeatTimerRef.current);
+      }
+    };
+  }, [runHeartbeat]);
+
+  // ── Manual Coin Price Update ───────────────────────────────
+  const handleUpdatePrices = useCallback(async () => {
+    if (priceUpdateStatus === "running") return;
+    setPriceUpdateStatus("running");
+    try {
+      const res = await onCall("/api/v2/prices/update", {
         method: "POST",
         silent: true,
       });
-      await refresh(true);
+      setPriceUpdateStatus(res?.success ? "success" : "error");
+      setTimeout(() => {
+        setPriceUpdateStatus((prev) => prev === "success" ? "idle" : prev);
+      }, 3000);
     } catch (err) {
-      console.error("Failed to update coin catalog:", err);
-    } finally {
-      setUpdatingCoins(false);
+      setPriceUpdateStatus("error");
+      console.error("[Prices] Update failed:", err.message);
+      setTimeout(() => setPriceUpdateStatus("idle"), 3000);
     }
-  };
+  }, [onCall, priceUpdateStatus]);
 
+  // ── Manual Force Heartbeat ─────────────────────────────────
+  const handleForceHeartbeat = useCallback(async () => {
+    try {
+      await sendMineNotice("🔍 Monitor heartbeat triggered...");
+      const res = await runHeartbeat(false);
+      if (res?.summary?.totals) {
+        const { rented, ghost } = res.summary.totals;
+        await sendMineNotice(
+          `✅ Heartbeat complete. Active: ${rented || 0}, Ghost: ${ghost || 0}`
+        );
+      } else {
+        await sendMineNotice("✅ Heartbeat complete.");
+      }
+    } catch (err) {
+      await sendMineNotice(`❌ Heartbeat failed: ${err.message}`);
+    }
+  }, [runHeartbeat, sendMineNotice]);
+
+  // ── Time since last heartbeat ──────────────────────────────
+  const heartbeatTimeAgo = useMemo(() => {
+    if (!lastHeartbeatTime) return null;
+    const diff = Date.now() - lastHeartbeatTime;
+    if (diff < 60000) return `${Math.floor(diff / 1000)}s ago`;
+    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+    return `${Math.floor(diff / 3600000)}h ago`;
+  }, [lastHeartbeatTime]);
+
+  // ── Render ─────────────────────────────────────────────────
   return (
     <section style={{ display: "grid", gap: "10px", marginBottom: "12px" }}>
+      {/* Heartbeat Status Bar */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: "10px",
+          padding: "8px 12px",
+          borderRadius: "10px",
+          border: "1px solid rgba(148,163,184,0.10)",
+          background: "rgba(2,6,23,0.45)",
+        }}
+      >
+        <HeartbeatBadge
+          status={heartbeatStatus}
+          lastResult={lastHeartbeatResult}
+        />
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          {heartbeatTimeAgo && (
+            <span style={{ color: "#64748b", fontSize: "10px" }}>
+              Last: {heartbeatTimeAgo}
+            </span>
+          )}
+          <button
+            className="btn-pro secondary"
+            onClick={handleForceHeartbeat}
+            disabled={heartbeatStatus === "running"}
+            style={{ fontSize: "11px", padding: "4px 12px" }}
+          >
+            {heartbeatStatus === "running" ? "Running..." : "Force Heartbeat"}
+          </button>
+          <button
+            className="btn-pro secondary"
+            onClick={handleUpdatePrices}
+            disabled={priceUpdateStatus === "running"}
+            style={{ fontSize: "11px", padding: "4px 12px" }}
+          >
+            {priceUpdateStatus === "running" ? "Updating..." : priceUpdateStatus === "success" ? "✅ Prices Updated" : priceUpdateStatus === "error" ? "❌ Failed" : "Update Prices"}
+          </button>
+          <button
+            className="btn-pro secondary"
+            onClick={() => void refresh(true)}
+            disabled={loading}
+            style={{ fontSize: "11px", padding: "4px 12px" }}
+          >
+            {loading ? "Refreshing..." : "Refresh Routes"}
+          </button>
+        </div>
+      </div>
+
       {/* Stats */}
       <div
         style={{
@@ -200,20 +407,6 @@ function MiningRouteHero({ onCall }) {
                 Best route
               </div>
             </div>
-            <button
-              className="btn-pro secondary"
-              onClick={() => void refresh(true)}
-              disabled={loading}
-            >
-              {loading ? "Refreshing..." : "Refresh routes"}
-            </button>
-            <button
-              className="btn-pro secondary"
-              onClick={() => void handleUpdateCoins()}
-              disabled={loading || updatingCoins}
-            >
-              {updatingCoins ? "Updating coins..." : "Update coins"}
-            </button>
           </div>
 
           {error && (
@@ -694,6 +887,8 @@ function MiningRouteHero({ onCall }) {
 
 // ===== Shell =====
 function MiningWorkspaceShell({ onNavigateHome, onCall, nhClient }) {
+  const [telegramModalOpen, setTelegramModalOpen] = useState(false);
+
   return (
     <div
       className="app-shell mining-shell"
@@ -744,12 +939,23 @@ function MiningWorkspaceShell({ onNavigateHome, onCall, nhClient }) {
           </button>
           <button
             className="btn-pro secondary"
+            onClick={() => setTelegramModalOpen(true)}
+          >
+            Telegram
+          </button>
+          <button
+            className="btn-pro secondary"
             onClick={() => window.location.reload()}
           >
-            Refresh
+            Refresh Page
           </button>
         </div>
       </header>
+
+      <TelegramSendModal
+        isOpen={telegramModalOpen}
+        onClose={() => setTelegramModalOpen(false)}
+      />
 
       <MiningRouteHero onCall={onCall} />
 
@@ -785,8 +991,6 @@ function MiningWorkspaceShell({ onNavigateHome, onCall, nhClient }) {
           <MiningCoin onCall={onCall} nhClient={nhClient} />
         </aside>
       </section>
-
-      {/* Stratum Connection Helper removed – endpoints not available on backend */}
     </div>
   );
 }

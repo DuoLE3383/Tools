@@ -1,5 +1,6 @@
 import fs from 'fs/promises';
 import path from 'path';
+import express from 'express';
 import { createHash, createHmac } from 'crypto';
 import { db } from './db.js';
 import { normalizeCredential, sanitizeMrrEndpoint } from './utils.js';
@@ -25,7 +26,6 @@ async function saveRigEndpointToDb(endpoint, client) {
 }
 
 const mrrQueueByClient = new Map(); // Serialized queue storage to prevent parallel nonce usage
-let mrrGlobalCounter = 0; // Biến đếm phụ để chống trùng lặp tuyệt đối
 
 // --- Cache and In-flight request tracking to reduce API hammering ---
 const mrrRequestCache = new Map();
@@ -34,6 +34,8 @@ const MRR_CACHE_TTL_DEFAULT = 10000; // 10 seconds cache
 const MRR_CACHE_TTL_STABLE = 300000; // 5 minutes for stable info/algos
 const MRR_NONCE_RECOVERY_JUMP_SMALL = 60000000000n; // 1 minute
 const MRR_NONCE_RECOVERY_JUMP_LARGE = 3600000000000n; // 1 hour
+
+const USER_AGENT = 'Ben Tre Mining Tool/2.0';
 
 const mrrInstances = new Map(); // This map will store resolved client configs
 
@@ -156,8 +158,8 @@ export async function syncMrrClock(force = false) {
     const startSync = Date.now();
     const trySync = async (url) => {
       try {
-        const res = await fetch(url, { 
-          headers: { 'user-agent': 'Ben Tre Mining Tool/2.0' },
+        const res = await fetch(url, {
+          headers: { 'user-agent': USER_AGENT },
           signal: AbortSignal.timeout(5000)
         });
         if (!res.ok) return null;
@@ -218,36 +220,36 @@ export async function syncMrrClock(force = false) {
  * Keying by API Key prevents collisions if multiple client names share the same credentials.
  */
 export function nextMrrNonce(apiKey, clientLabel) {
-  if (!apiKey) return (BigInt(Date.now()) * 1000000n).toString();
+  // Use high-resolution time as the primary source for the nonce.
+  // process.hrtime.bigint() provides nanoseconds since an arbitrary time, and is guaranteed to be monotonic.
+  const nowNano = process.hrtime.bigint();
   
+  if (!apiKey) return nowNano.toString();
+
   const lastNonce = BigInt(mrrLastNonceByClient.get(apiKey) || 0n);
 
-  // Safety: Only reset if we hit the actual 64-bit unsigned limit (18.4 quintillion).
-  // Your logs show nonces around 1.8 quintillion, which is perfectly safe for Uint64.
-  // We REMOVE the future-drift reset to allow the "Nuclear Jump" to actually catch up to MRR.
-  if (lastNonce > 19446744073709551615n) {
+  // Ensure the nonce is always strictly increasing. If the high-resolution clock provides a value
+  // less than or equal to the last one (e.g., after a restart), we increment the last one.
+  const nonce = (nowNano > lastNonce) ? nowNano : (lastNonce + 1n);
+
+  // Safety: Check for nonce overflow against the 64-bit unsigned integer limit.
+  if (nonce > 18446744073709551615n) {
     console.warn(`[mrr:${clientLabel}] Nonce overflow (Uint64). Resetting baseline.`);
-    mrrLastNonceByClient.set(apiKey, 1n);
+    mrrLastNonceByClient.set(apiKey, nowNano); // Reset to current high-resolution time
+  } else {
+    mrrLastNonceByClient.set(apiKey, nonce); // Update synchronously to block concurrent reads
   }
 
-  const nowMs = BigInt(Date.now()) + mrrClockOffset;
-  // Add a small buffer (e.g., 100ms) to 'now' to avoid race conditions with the server clock
-  const now19 = (nowMs + 100n) * 1000000n;
-
-  // Đảm bảo nonce luôn tăng và cộng thêm biến đếm toàn cục để tránh va chạm mili giây
-  mrrGlobalCounter = (mrrGlobalCounter + 1) % 10000; // Increase range for more entropy
-  const baseNonce = (now19 > lastNonce) ? now19 : (lastNonce + 1n);
-  const nonce = baseNonce + BigInt(mrrGlobalCounter);
-
-  mrrLastNonceByClient.set(apiKey, nonce); // Update synchronously to block concurrent reads
-  
   // Async DB update - don't block the API thread
   new Promise((resolve) => {
     db.run(
       `INSERT INTO mrr_nonces (client, last_nonce) VALUES (?, ?)
        ON CONFLICT(client) DO UPDATE SET last_nonce=excluded.last_nonce`,
       [apiKey, nonce.toString()], // Use apiKey as the unique ID for DB storage
-      () => resolve(),
+      (err) => {
+        if (err) console.error(`[mrr:db] Failed to persist nonce for key ${apiKey.slice(0, 6)}...: ${err.message}`);
+        resolve();
+      },
     );
   });
 
@@ -365,7 +367,7 @@ export async function mrrApiCall({ endpoint, method = 'GET', query, body, client
     const send = async (nStr, sig, authHeaders = {}) => fetch(baseUrl.toString(), {
       method: requestMethod,
       headers: {
-        'user-agent': 'Ben Tre Mining Tool/2.0',
+        'user-agent': USER_AGENT,
         'accept': 'application/json',
         'cache-control': 'no-store, no-cache, must-revalidate',
         ...authHeaders,
@@ -385,19 +387,21 @@ export async function mrrApiCall({ endpoint, method = 'GET', query, body, client
       'x-api-sign': signatureV2,
     });
 
-    let text;
+    let text, data;
     try {
       text = await response.text();
+      // Attempt to parse JSON, but fall back to a structured error if it fails
+      try {
+        data = text ? JSON.parse(text) : { success: false, message: 'Empty response from MRR' };
+      } catch (parseError) {
+        // Handle cases where MRR returns non-JSON error pages (e.g., Cloudflare blocks)
+        data = { success: false, message: `MRR returned non-JSON response: ${text.slice(0, 150)}...` };
+      }
     } catch (e) {
-      text = '{"success":false,"message":"Network Error"}';
-    }
-
-    let data;
-    try {
-      data = text ? JSON.parse(text) : { success: false, message: 'Empty response' };
-    } catch {
-      // Handle cases where MRR returns non-JSON error pages (Cloudflare, etc)
-      data = { success: false, message: text };
+      // This block handles network errors (like connection refused) or if the response isn't valid JSON.
+      const errorMessage = e.message.includes('fetch failed') ? 'Connection to MRR API failed. The service may be down.' : `Network or parsing error: ${e.message}`;
+      console.error(`[mrr:${clientName}] Critical fetch/parse error:`, errorMessage);
+      return { statusCode: 503, data: { success: false, message: errorMessage, error: 'ServiceUnavailable' }, clientName };
     }
 
     let authMessage = String(data?.data?.message || data?.message || '');
@@ -625,3 +629,19 @@ export async function fetchAggregatedRentals(query = {}, clientParam = 'BT') {
     clientName: isAll ? 'ALL' : clientParam,
   };
 }
+
+// ---------- Default Router (mountable) ----------
+const router = express.Router();
+
+router.get('/rentals', async (req, res) => {
+  try {
+    const { client: clientParam, ...query } = req.query;
+    const { statusCode, data, clientName } = await fetchAggregatedRentals(query, clientParam);
+    res.set('X-MRR-Client', clientName);
+    res.status(statusCode).json(data);
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+export default router;

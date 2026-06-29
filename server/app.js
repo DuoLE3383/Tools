@@ -9,8 +9,8 @@ import { initMrrConfigs, mrrConfigs, initNonces, syncMrrClock, mrrApiCall } from
 import { registerRoutes } from './routes.js';
 import { corsMiddleware, logRequestMiddleware } from './utils.js';
 import { runRentalMonitor } from './monitor.js';
-import { startMiningOpportunityScanner } from './miningOpportunityNotifier.js';
-import { authMiddleware, generateToken, initAuthStore, invalidateAllSessions } from './auth.js';
+import { startMiningOpportunityScanner } from './miningOpportunityNotifier.js'; 
+import { validateAuthConfig } from './auth.js';
 import authRoutes from './auth.js';
 
 export function createApp({ distPath }) {
@@ -22,9 +22,8 @@ export function createApp({ distPath }) {
 
   // Authentication routes
   app.use('/api/auth', authRoutes);
-  app.use('/api/v2', authMiddleware);
 
-  registerRoutes(app);
+  // Routes are now registered in the main index.js after app initialization
 
   // Create HTTP server and attach WebSocket
   const server = http.createServer(app);
@@ -40,12 +39,6 @@ export function createApp({ distPath }) {
 
   if (distPath) {
     app.use(express.static(distPath));
-    app.get(/.*/, (req, res) => {
-      if (req.path.startsWith('/api')) {
-        return res.status(404).json({ error: 'Not Found' });
-      }
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
   }
 
   return app;
@@ -56,21 +49,7 @@ export async function initializeApp(env) {
     console.log('🚀 Initializing system...');
     initNhConfigs(env); // Initialize NiceHash configurations
     initMrrConfigs(env); // Initialize MiningRigRentals configurations
-    await initAuthStore();
-    await invalidateAllSessions('startup');
-
-    // Validate Authentication Configuration
-    const requiredAuth = ['JWT_SECRET', 'ADMIN_USER', 'ADMIN_PASS'];
-    const missing = requiredAuth.filter(key => !env[key]);
-
-    if (missing.length > 0) {
-      console.warn(`⚠️  WARNING: Missing authentication variables: ${missing.join(', ')}. Login will fail.`);
-    } else {
-      console.log('✅ Auth Configuration Loaded:');
-      console.log(`   - ADMIN_USER: ${env.ADMIN_USER}`);
-      console.log(`   - JWT_SECRET: ${env.JWT_SECRET ? '******** (Set)' : 'MISSING'}`);
-      console.log(`   - ADMIN_PASS: ${env.ADMIN_PASS ? '******** (Set)' : 'MISSING'}`);
-    }
+    validateAuthConfig(); // Centralized auth config validation
 
     await initNonces();
     await syncMrrClock();
@@ -104,9 +83,6 @@ export async function initializeApp(env) {
         startMonitor();
       });
   }, 15000);
-
-  // Start mining opportunity scanner for Telegram alerts
-  setTimeout(() => startMiningOpportunityScanner(), 30000);
 
   try {
     const { client } = resolveNhClient('BT');

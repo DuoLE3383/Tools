@@ -2,9 +2,9 @@
 import { asyncHandler, extractRentalInfo, extractRigInfo } from "../utils.js";
 import { mrrApiCall, mrrRequest, fetchAggregatedRentals, mrrConfigs, defaultMrrClient } from "../mrr.js";
 import { resolveNhClient, isAggregate, getNiceHashApp, normalizeAlgoForNiceHash, getCachedNhPools } from "../nh.js";
-import { db } from "../db.js";
+import { db, getTrendDb } from "../db.js";
 import { saveToDatabase } from "./_helpers.js";
-import { runRentalMonitor } from "../monitor.js";
+import { runRentalMonitor } from "../monitor.js"; // Corrected path
 
 export function registerMrrRoutes(app) {
   // ─── Monitor ──────────────────────────────────────────────────
@@ -175,6 +175,23 @@ export function registerMrrRoutes(app) {
     res.status(result.statusCode).json(result.data);
   }));
 
+  app.get("/api/v2/mrr/rentals/cached", asyncHandler(async (req, res) => {
+    const limit = parseInt(req.query.limit, 10) || 100;
+    db.all(`SELECT * FROM mrr_rentals ORDER BY rowid DESC LIMIT ?`, [limit], (err, rows) => {
+      if (err) {
+        return res.status(500).json({ success: false, error: err.message });
+      }
+      // Mimic the structure of the live API response for frontend compatibility
+      res.json({
+        success: true,
+        data: {
+          rentals: rows || [],
+        },
+        source: 'cache'
+      });
+    });
+  }));
+
   app.get("/api/v2/mrr/rental/history", asyncHandler(async (req, res) => {
     const { client: clientQuery, ...forwardQuery } = req.query || {};
     const result = await fetchAggregatedRentals({ ...forwardQuery, history: '1' }, String(clientQuery || defaultMrrClient).toUpperCase());
@@ -296,7 +313,7 @@ export function registerMrrRoutes(app) {
   // ─── Account / Balance / Algos ──────────────────────────────
   app.get("/api/v2/mrr/balance", asyncHandler(async (req, res) => mrrRequest('/account/balance', req, res)));
   app.get("/api/v2/mrr/algos", asyncHandler(async (req, res) => {
-    const { statusCode, data, clientName } = await mrrApiCall({ endpoint: '/info/algos', clientNameRaw: req.query.client });
+    const { statusCode, data, clientName } = await mrrApiCall({ endpoint: '/market/algos', clientNameRaw: req.query.client });
     if (statusCode === 200 && data?.success && data.data) {
       const items = Array.isArray(data.data) ? data.data : (data.data.algos || []);
       items.forEach(a => { a.nicehashAlgo = normalizeAlgoForNiceHash(a.algo || a.name || a.slug); });

@@ -1,5 +1,5 @@
 import { NiceHashClient } from '../NiceHashClient.js';
-import { mapNiceHashToMRR, normalizeAlgoForNiceHash } from '../src/core/mapping.js';
+import { NICEHASH_ALGO_MAP, normalizeAlgoForNiceHash } from '../src/core/mapping.js';
 import { normalizeCredential } from './utils.js';
 import { db } from './db.js';
 
@@ -22,7 +22,7 @@ export function normalizeMarket(market) {
   return m;
 }
 
-export { mapNiceHashToMRR, normalizeAlgoForNiceHash }; // Keep these exports
+export { NICEHASH_ALGO_MAP, normalizeAlgoForNiceHash }; // Keep these exports
 
 export let nhConfigs = {}; // Declare as mutable
 
@@ -42,9 +42,9 @@ export function initNhConfigs(env) {
 
     },
     LN: {
-      apiKey: normalizeCredential(env.NICEHASH_API_KEY_LN),
-      apiSecret: normalizeCredential(env.NICEHASH_API_SECRET_LN),
-      orgId: normalizeCredential(env.NICEHASH_ORG_ID_LN),
+      apiKey: normalizeCredential(env.NICEHASH_API_KEY_KIMLOAN),
+      apiSecret: normalizeCredential(env.NICEHASH_API_SECRET_KIMLOAN),
+      orgId: normalizeCredential(env.NICEHASH_ORG_ID_KIMLOAN),
       environment: normalizeCredential(env.NICEHASH_ENVIRONMENT || 'production'),
 
     },
@@ -78,7 +78,7 @@ export const isAggregate = (c) => {
 };
 
 export function resolveNhClient(clientNameRaw) {
-  const clientName = isAggregate(clientNameRaw) ? AGGREGATE_CLIENT : String(clientNameRaw || 'BT').trim().toUpperCase();
+  const clientName = isAggregate(clientNameRaw) ? AGGREGATE_CLIENT : String(clientNameRaw || 'VN').trim().toUpperCase();
 
   // 1. Handle Aggregate (VN) resolution
   if (isAggregate(clientName)) {

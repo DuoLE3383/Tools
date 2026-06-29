@@ -6,12 +6,34 @@ import { getBtcPrice } from "../utils/priceUtils.js";
 const HERO_CACHE = new Map();
 const HERO_CACHE_TTL = 60000;
 
+/**
+ * Maps coin subdomains from HeroMiners to their correct mining algorithm.
+ * This is crucial because the API does not provide the algorithm directly.
+ * List is compiled from various mining sources and sitemap analysis.
+ */
 const COIN_TO_ALGO_MAP = {
-  ergo: "autolykos", salvium: "randomx", etc: "etchash",
-  aipg: "aipg", karlsen: "kheavyhash", clore: "kawpow",
-  neoxa: "kawpow", nexa: "nexapow", rvn: "kawpow",
-  kaspa: "kheavyhash", beam: "beamv3", zeph: "randomx",
-  iron: "fishhash", dynex: "dynexsolve", alephium: "blake3",
+  aipg: "kawpow",
+  alephium: "blake3",
+  alph: "blake3",
+  beam: "beamv3",
+  clore: "kawpow",
+  cfx: "octopus",
+  conflux: "octopus",
+  dynex: "dynexsolve",
+  ergo: "autolykos2",
+  etc: "etchash",
+  ethw: "ethash",
+  flux: "zelhash",
+  iron: "fishhash",
+  karlsen: "karlsenhash",
+  kaspa: "kheavyhash",
+  neoxa: "kawpow",
+  nexa: "nexapow",
+  qrl: "randomx",
+  ravencoin: "kawpow",
+  rvn: "kawpow",
+  salvium: "randomx",
+  zeph: "randomx",
 };
 
 async function discoverHeroMinersSubdomains() {
@@ -38,13 +60,72 @@ async function discoverHeroMinersSubdomains() {
       }
     }
   } catch (err) {
-    ["ergo", "salvium", "etc", "aipg", "karlsen", "clore", "neoxa", "nexa", "rvn", "kaspa", "beam", "zeph", "iron", "dynex", "alephium"]
-      .forEach(c => discovered.add(c));
+    // Fallback to a comprehensive hardcoded list if sitemap fails
+    [
+      "aipg",
+      "alephium",
+      "beam",
+      "clore",
+      "conflux",
+      "dynex",
+      "ergo",
+      "etc",
+      "flux",
+      "iron",
+      "karlsen",
+      "kaspa",
+      "neoxa",
+      "nexa",
+      "qrl",
+      "ravencoin",
+      "zeph",
+    ].forEach(c => discovered.add(c));
   }
 
   const result = Array.from(discovered);
   HERO_CACHE.set(cacheKey, { data: result, timestamp: Date.now() });
   return result;
+}
+
+async function scrapeHeroMinersAddress(address, coin) {
+  if (!address) {
+    return { success: false, error: "Address is required for HeroMiners lookup." };
+  }
+  if (!coin) {
+    return { success: false, error: "Coin is required for HeroMiners address lookup." };
+  }
+
+  try {
+    // Revert to using the coin-specific subdomain, which is more reliable.
+    const url = `https://${coin.toLowerCase()}.herominers.com/api/stats_address?address=${address}`;
+    const response = await fetch(url, {
+      headers: { ...COMMON_HEADERS, Accept: "application/json" },
+      signal: AbortSignal.timeout(CONFIG.REQUEST_TIMEOUT_MS),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HeroMiners API returned status ${response.status} for address ${address} on ${coin} pool.`);
+    }
+
+    const data = await response.json();
+
+    // The response for a specific coin is a single object of stats.
+    const algorithm = COIN_TO_ALGO_MAP[coin.toLowerCase()] || coin.toLowerCase();
+    const coinStats = [{
+      algorithm,
+      coin: coin.toUpperCase(),
+      hashrate: data.hashrate,
+      unpaid: data.unpaid,
+      paid: data.paid,
+      miners: data.workers_online || 0,
+      normalizedAlgo: normalizeAlgo(algorithm),
+    }];
+
+    return { success: true, coinStats, miners: data.workers_online || 0 };
+  } catch (err) {
+    console.error(`[HeroMiners] Error fetching address stats for ${address}:`, err.message);
+    return { success: false, error: err.message, stats: null };
+  }
 }
 
 async function scrapeHeroMinersCoin(coin, btcPrice) {
@@ -119,6 +200,8 @@ export async function scrapeHeroMinersGlobal(btcPrice) {
 // Export all functions that might be needed elsewhere
 export {
   scrapeHeroMinersCoin,
+  scrapeHeroMinersAddress,
+  COIN_TO_ALGO_MAP,
   discoverHeroMinersSubdomains,
   parseHeroMinersApiData,
 };

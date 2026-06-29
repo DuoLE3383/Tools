@@ -28,7 +28,7 @@ export async function scrapeMiningDutchGlobal(btcPrice, force = false) {
             algorithm,
             normalizedAlgo: normalizeAlgo(algorithm),
             nicehashAlgo: algorithm.toUpperCase(),
-            coin: "",
+            coin: algorithm.toUpperCase(),
             miners: 0,
             btcPerDay: Number.isFinite(btcPerDay) ? btcPerDay : 0,
             usdPerDay: Number.isFinite(btcPerDay) ? btcPerDay * btcPrice : 0,

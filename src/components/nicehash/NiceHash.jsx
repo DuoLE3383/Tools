@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useState, useCallback } from "react";
 import Accounting from "../Accounting";
 import CryptoRatePage from "../CryptoRatePage";
 import NiceHashOrderCard from "./NiceHashOrdersCard.jsx";
-import { getAlgoDisplayName } from "../../core/mapping.js";
+import { getAlgoMapping } from "../../core/mapping.js";
 import { useNiceHashOrders } from "./NiceHashContext";
 
 function NiceHashOrderManager({ onCall, nhClient, setNhClient }) {
@@ -236,8 +236,8 @@ function NiceHashOrderManager({ onCall, nhClient, setNhClient }) {
           <option value="VN">VN (All Clients)</option>
           <option value="BT">BT Account</option>
           <option value="PH">PH Account</option>
-          <option value="NHATLINH">NhatLinh</option>
           <option value="LN">LN</option>
+          <option value="NHATLINH">NhatLinh</option>
         </select>
         <NiceHashOrdersCardView />
       </div>
@@ -298,9 +298,10 @@ function NiceHashOrderManager({ onCall, nhClient, setNhClient }) {
                 ? order.algorithm.algorithm || order.algorithm.displayName
                 : order?.algorithm;
             const poolName = order?.pool?.name || order?.pool?.stratumHostname;
+            const algoInfo = getAlgoMapping(algoName);
             const label = poolName
-              ? `${poolName} (${getAlgoDisplayName(algoName) || "N/A"})`
-              : getAlgoDisplayName(algoName) ||
+              ? `${poolName} (${algoInfo.displayName || "N/A"})`
+              : algoInfo.displayName ||
                 order?.title ||
                 order?.name ||
                 `Order ${index + 1}`;

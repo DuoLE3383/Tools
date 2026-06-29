@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useContext } from "react";
 import { poolApi } from "../../core/poolUtils.js";
-import { normalizeAlgoForNiceHash, getAlgoDisplayName } from "../../core/mapping.js";
+import { normalizeAlgoForNiceHash, getAlgoMapping } from "../../core/mapping.js";
 import { getBtcPriceData as getBtcPriceDataUtils } from "../../core/priceUtils.js";
 import { NiceHashOrderContext } from "../nicehash/NiceHashContext.jsx";
 import MrrRigCard from "./MrrRigCard.jsx";
@@ -219,7 +219,7 @@ export default function MrrRigs({
 
         // Ensure rig.price exists before calling the template function
         let perfEmoji = "⚪";
-        if (effNum >= 100) perfEmoji = "🎊";
+        if (effNum >= 100) perfEmoji = "✅";
         else if (effNum >= 95) perfEmoji = "🟢";
         else if (effNum >= 70) perfEmoji = "🔵";
         else if (effNum < 50) perfEmoji = "🔴";
@@ -260,7 +260,7 @@ export default function MrrRigs({
 
     const onlineAlgoLines = Object.entries(algoGroups)
       .sort(([, countA], [, countB]) => countB - countA)
-      .map(([name, count]) => `• ${getAlgoDisplayName(name)}: ${count}`);
+      .map(([name, count]) => `• ${getAlgoMapping(name).displayName}: ${count}`);
 
     return {
       onlineAll: stats.online,
@@ -966,7 +966,7 @@ export default function MrrRigs({
                         fontWeight: "bold",
                       }}
                     >
-                      {getAlgoDisplayName(algoName)}
+                      {ALGO_MAPPING(algoName)}
                     </span>
                     <span
                       style={{

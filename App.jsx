@@ -3,6 +3,7 @@ import Login from './src/components/Login.jsx';
 import Dashboard from './src/components/Dashboard.jsx';
 import MiningPage from './src/components/mining/MiningPage.jsx';
 import { RentedRigProvider } from './src/components/mrr/RentedRigContext.jsx';
+import { TelegramMineProvider } from './src/components/mrr/TelegramMineContext.jsx';
 import CryptoRatePage from './src/components/CryptoRatePage.jsx';
 import './src/App.css';
 
@@ -96,19 +97,22 @@ class ApiCache {
   get(key) {
     const entry = this.cache.get(key);
     if (entry && Date.now() - entry.timestamp < this.ttl) {
-      return entry.data;
+      // ✅ Return a copy to prevent mutation
+      return JSON.parse(JSON.stringify(entry.data));
     }
     this.cache.delete(key);
     return null;
   }
 
   set(key, data, ttl = this.ttl) {
+    // ✅ Clone data before caching
+    const clonedData = JSON.parse(JSON.stringify(data));
     // Limit cache size
     if (this.cache.size >= this.maxSize) {
       const oldest = this.cache.keys().next().value;
       this.cache.delete(oldest);
     }
-    this.cache.set(key, { data, timestamp: Date.now(), ttl });
+    this.cache.set(key, { data: clonedData, timestamp: Date.now(), ttl });
   }
 
   clear() {
@@ -141,15 +145,13 @@ export default function App() {
   const apiCache = useRef(new ApiCache());
   const authTokenRef = useRef(() => localStorage.getItem('token'));
   const [authToken, setAuthToken] = useState(() => localStorage.getItem('token'));
-  const [sessionReady, setSessionReady] = useState(false);
-  const [currentUser, setCurrentUser] = useState(null);
   const isMounted = useRef(true);
   const backgroundIntervalRef = useRef(null);
 
   // ============================================
   // MEMOIZED SELECTORS
   // ============================================
-  const isAuthenticated = useMemo(() => !!authToken && sessionReady, [authToken, sessionReady]);
+  const isAuthenticated = useMemo(() => !!authToken, [authToken]);
 
   // ============================================
   // DEBUG LOGGING
@@ -167,16 +169,12 @@ export default function App() {
   const handleLoginSuccess = useCallback((token) => {
     localStorage.setItem('token', token);
     setAuthToken(token);
-    setCurrentUser(null);
-    setSessionReady(true);
     addDebugLog('Login successful, token stored.', 'success');
   }, [addDebugLog]);
 
   const handleLogout = useCallback(() => {
     localStorage.removeItem('token');
     setAuthToken(null);
-    setCurrentUser(null);
-    setSessionReady(true);
     apiCache.current.clear();
     apiCache.current.clearInflight();
     dispatch({ type: 'RESET_STATE' });
@@ -227,7 +225,7 @@ export default function App() {
     // Deduplicate inflight requests (GET only)
     if (method === 'GET') {
       const inflight = apiCache.current.getInflight(cacheKey);
-      if (inflight) {
+      if (inflight && !background) { // Allow background refreshes to proceed
         addDebugLog(`Deduplicating: ${path}`, 'api');
         return inflight;
       }
@@ -258,19 +256,20 @@ export default function App() {
       if (qs) finalPath += (finalPath.includes('?') ? '&' : '?') + qs;
     }
 
-    addDebugLog(`API: ${method} ${finalPath}`, 'api');
+    const requestPromise = (async () => {
+      const startedAt = performance.now();
+      addDebugLog(`API: ${method} ${finalPath}`, 'api');
 
-    if (!silent) {
+      if (!silent && !background) {
       dispatch({ type: 'SET_LOADING', payload: true });
       dispatch({ type: 'SET_ERROR', payload: '' });
-    }
+      }
 
-    const requestPromise = (async () => {
       try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
 
-        const res = await fetch(finalPath, {
+        const response = await fetch(finalPath, {
           ...options,
           method,
           headers,
@@ -279,92 +278,77 @@ export default function App() {
           credentials: 'omit',
           signal: controller.signal,
         });
-
         clearTimeout(timeoutId);
 
         let data = null;
-        if (res.status !== 204 && res.status !== 205) {
-          const text = await res.text();
+        if (response.status !== 204 && response.status !== 205) {
+          const text = await response.text();
           try {
             data = text ? JSON.parse(text) : null;
           } catch {
             data = text;
           }
         }
-
+        
         const duration = Math.round(performance.now() - startedAt);
         dispatch({
           type: 'SET_LAST_CALL',
-          payload: { method, path: finalPath, status: `${res.status} ${res.statusText}`, durationMs: duration }
+          payload: { method, path: finalPath, status: `${response.status} ${response.statusText}`, durationMs: duration }
         });
 
-        // Handle 401/403 - unauthorized or expired session
-        if (res.status === 401 || res.status === 403) {
+        if (response.status === 401) {
           const isProxyFailure = data?.msg?.includes('Invalid Key') || data?.message?.includes('Invalid Key');
           if (!isProxyFailure) {
-            addDebugLog(`Session expired (${res.status}), logging out`, 'error');
+            addDebugLog('Session expired (401), logging out', 'error');
             handleLogout();
           }
-          return { success: false, error: 'Unauthorized' };
+          throw new Error('Unauthorized');
         }
 
-        // Check for API errors
-        const isError = !res.ok || (data && typeof data === 'object' &&
+        const isError = !response.ok || (data && typeof data === 'object' &&
           (data.success === false || data.error || data.errors));
 
         if (isError) {
           const errorMsg = typeof data === 'string' ? data :
-            data?.errors?.[0]?.message || data?.error || data?.message || res.statusText;
-          addDebugLog(`API Error ${res.status}: ${errorMsg}`, 'error');
-          if (!silent) dispatch({ type: 'SET_ERROR', payload: errorMsg });
-          if (options.showModal) {
-            dispatch({ type: 'SET_MODAL', payload: { content: data || { error: errorMsg }, open: true } });
-          }
-          return { success: false, error: errorMsg };
+            data?.errors?.[0]?.message || data?.error || data?.message || response.statusText;
+          throw new Error(errorMsg);
         }
 
-        // Success
-        if (!silent) dispatch({ type: 'SET_ERROR', payload: '' });
+        // --- Success Path ---
+        if (!silent && !background) dispatch({ type: 'SET_ERROR', payload: '' });
+        if (options.showModal && data) dispatch({ type: 'SET_MODAL', payload: { content: data, open: true } });
 
-        if (options.showModal && data) {
-          dispatch({ type: 'SET_MODAL', payload: { content: data, open: true } });
-        }
-
-        // Update section state
         const detectedSection = section || (
           path.includes('/pools') ? 'pools' :
             path.includes('/mining') || path.includes('/hashpower') ? 'mining' :
               path.includes('/rigs') ? 'rigs' : ''
         );
-        updateSectionState(detectedSection, data);
+        if (!background) updateSectionState(detectedSection, data);
 
-        // Cache successful GET responses (not price requests)
         if (method === 'GET' && data && !isPriceReq) {
           const ttl = path.includes('/pools') || path.includes('/algorithms') ? 300000 : 30000;
           apiCache.current.set(cacheKey, data, ttl);
         }
 
         return data || { success: true };
+
       } catch (err) {
         let errorMsg = err.message || String(err);
         if (err.name === 'AbortError') {
           errorMsg = 'Request timeout (30s)';
         } else if (errorMsg.includes('Failed to fetch') || errorMsg.includes('ERR_CONNECTION_REFUSED')) {
-          errorMsg = 'Backend server unreachable. Please ensure the server is running.';
+          errorMsg = 'Backend server unreachable.';
         }
 
-        if (!silent) {
+        addDebugLog(`API Error: ${errorMsg}`, 'error');
+        if (!silent && !background) {
           dispatch({ type: 'SET_ERROR', payload: errorMsg });
-          dispatch({
-            type: 'SET_LAST_CALL',
-            payload: { method, path: finalPath, status: 'Failed', durationMs: Math.round(performance.now() - startedAt) }
-          });
+          if (options.showModal) dispatch({ type: 'SET_MODAL', payload: { content: { error: errorMsg }, open: true } });
         }
-
-        return { success: false, error: errorMsg };
+        return { success: false, error: errorMsg }; // Return error object for callers
       } finally {
         apiCache.current.deleteInflight(cacheKey);
-        if (!silent) dispatch({ type: 'SET_LOADING', payload: false });
+        if (!silent && !background) dispatch({ type: 'SET_LOADING', payload: false });
       }
     })();
 
@@ -436,6 +420,30 @@ export default function App() {
     dispatch({ type: 'SET_MRR_CLIENT', payload: client });
   }, []);
 
+  const handleForceHeartbeat = useCallback(async (client) => {
+    addDebugLog(`Forcing rental monitor run for client: ${client || 'ALL'}`, 'warn');
+    const result = await callApi('/api/v2/mrr/monitor/run', { query: { clientScope: client || 'ALL' }, showModal: true, noCache: true });
+
+    // The API call utility shows the modal. We just need to format the content better if it's a monitor run.
+    if (result && result.summary) {
+        const { rented, ghost, warning, offline } = result.summary.totals || {};
+        const rentedCount = result.summary.activeRentals?.length || rented || 0;
+
+        const summaryContent = {
+            ...result,
+            message: `Heartbeat complete.`,
+            details: `Rented: ${rentedCount}, Ghosts: ${ghost || 0}, Warnings: ${warning || 0}, Offline: ${offline || 0}`
+        };
+
+        // Re-dispatch to update the modal content with our formatted summary
+        dispatch({
+            type: 'SET_MODAL',
+            payload: { content: summaryContent, open: true }
+        });
+    }
+    return result;
+  }, [callApi, addDebugLog]);
+
   // ============================================
   // EFFECTS
   // ============================================
@@ -454,54 +462,7 @@ export default function App() {
     return () => window.removeEventListener('popstate', handlePath);
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const verifyPersistedSession = async () => {
-      if (!authToken) {
-        if (!cancelled) setSessionReady(true);
-        if (!cancelled) setCurrentUser(null);
-        return;
-      }
-
-      if (!cancelled) setSessionReady(false);
-
-      try {
-        const res = await fetch('/api/v2/time', {
-          method: 'GET',
-          headers: { Authorization: `Bearer ${authToken}` },
-          credentials: 'omit',
-        });
-
-        if (!res.ok) {
-          throw new Error(`Session check failed (${res.status})`);
-        }
-
-        const profileRes = await fetch('/api/auth/profile', {
-          method: 'GET',
-          headers: { Authorization: `Bearer ${authToken}` },
-          credentials: 'omit',
-        });
-
-        if (!profileRes.ok) {
-          throw new Error(`Profile check failed (${profileRes.status})`);
-        }
-
-        const profileData = await profileRes.json().catch(() => null);
-        if (!cancelled) setSessionReady(true);
-        if (!cancelled) setCurrentUser(profileData?.user || null);
-      } catch {
-        if (!cancelled) handleLogout();
-      }
-    };
-
-    verifyPersistedSession();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [authToken, handleLogout]);
-
+  
   // Initial load - fetch data
   useEffect(() => {
     if (isAuthenticated) {
@@ -520,12 +481,17 @@ export default function App() {
   useEffect(() => {
     if (isAuthenticated) {
       backgroundIntervalRef.current = setInterval(() => {
-        // Only refresh if not already loading
+        // Only refresh if not already loading and data is stale
         if (!state.loading) {
-          callApi('/api/v2/mining/address', { silent: true, background: true, section: 'mining' });
-          callApi('/api/v2/pools', { silent: true, background: true, section: 'pools', noCache: true });
+          const lastRefresh = localStorage.getItem('lastRefresh');
+          if (!lastRefresh || Date.now() - parseInt(lastRefresh) > 120000) {
+            addDebugLog('Background refreshing stale data...', 'info');
+            callApi('/api/v2/mining/address', { silent: true, background: true, section: 'mining' });
+            callApi('/api/v2/pools', { silent: true, background: true, section: 'pools', noCache: true });
+            localStorage.setItem('lastRefresh', String(Date.now()));
+          }
         }
-      }, 60000); // 60 seconds
+      }, 120000); // 2 minutes
     }
 
     return () => {
@@ -534,7 +500,7 @@ export default function App() {
         backgroundIntervalRef.current = null;
       }
     };
-  }, [isAuthenticated, callApi, state.loading]);
+  }, [isAuthenticated, callApi, state.loading, addDebugLog]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -549,16 +515,6 @@ export default function App() {
   // RENDER
   // ============================================
 
-  if (authToken && !sessionReady) {
-    return (
-      <div className="app-shell" style={{ minHeight: '100vh', display: 'grid', placeItems: 'center' }}>
-        <div className="panel" style={{ padding: '24px 32px', maxWidth: '480px', width: '100%', textAlign: 'center' }}>
-          Verifying session...
-        </div>
-      </div>
-    );
-  }
-
   // Login screen
   if (!isAuthenticated) {
     return <Login onLoginSuccess={handleLoginSuccess} onCall={callApi} />;
@@ -567,35 +523,32 @@ export default function App() {
   // CryptoRate view
   if (state.view === 'cryptorate') {
     return (
-      <div className="app-shell" style={{ background: '#0f172a', minHeight: '100vh' }}>
-        <div style={{ padding: '16px 20px' }}>
-          <button
-            className="btn-pro secondary"
-            onClick={() => {
-              window.history.pushState({}, '', '/');
-              dispatch({ type: 'SET_VIEW', payload: 'dashboard' }); // Navigate home
-            }}
-          >
-            ← Back to Dashboard
-          </button>
-        </div>
-        <CryptoRatePage onCall={callApi} />
+      <div className="app-shell">
+        <CryptoRatePage
+          onCall={callApi}
+          onNavigateHome={() => {
+            window.history.pushState({}, '', '/');
+            dispatch({ type: 'SET_VIEW', payload: 'dashboard' });
+          }}
+        />
       </div>
     );
   }
 
   if (state.view === 'mining') {
     return (
-      <RentedRigProvider callApi={callApi}>
-        <MiningPage
-          onCall={callApi}
-          nhClient={state.nhOrderClient}
-          onNavigateHome={() => {
-            window.history.pushState({}, '', '/');
-            dispatch({ type: 'SET_VIEW', payload: 'dashboard' });
-          }}
-        />
-      </RentedRigProvider>
+      <TelegramMineProvider onCall={callApi}>
+        <RentedRigProvider callApi={callApi}>
+          <MiningPage
+            onCall={callApi}
+            nhClient={state.nhOrderClient}
+            onNavigateHome={() => {
+              window.history.pushState({}, '', '/');
+              dispatch({ type: 'SET_VIEW', payload: 'dashboard' });
+            }}
+          />
+        </RentedRigProvider>
+      </TelegramMineProvider>
     );
   }
 
@@ -609,13 +562,13 @@ export default function App() {
         dispatch={dispatch}
         callApi={callApi}
         handleLogout={handleLogout}
-        currentUser={currentUser}
         forceCheckStatus={forceCheckStatus}
         handleMiningCall={handleMiningCall}
         handleOpenMrrPools={handleOpenMrrPools}
         setNhOrderClient={setNhOrderClient}
         setNhPoolClient={setNhPoolClient}
         setMrrClient={setMrrClient}
+        handleForceHeartbeat={handleForceHeartbeat}
       />
     </RentedRigProvider>
   );

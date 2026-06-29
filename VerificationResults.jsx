@@ -1,6 +1,6 @@
 import React from 'react';
 import { poolHelpers as ph } from './src/core/poolUtils';
-import { getAlgoDisplayName } from './src/core/mapping';
+import { ALGO_MAPPING } from './src/core/mapping';
 
 export default function VerificationResults({
   verifyResults,
@@ -18,7 +18,7 @@ export default function VerificationResults({
       return acc
     }, {})
     return Object.entries(counts)
-      .map(([algo, count]) => `${getAlgoDisplayName(algo)}: ${count}`)
+      .map(([algo, count]) => `${ALGO_MAPPING(algo)}: ${count}`)
       .join(', ')
   }
 
@@ -86,7 +86,7 @@ export default function VerificationResults({
                 {pending ? 'PENDING' : success ? 'SUCCESS' : 'ERROR'}
               </div>
               <div style={{ flex: 1, minWidth: 0, fontWeight: 600 }}>{item.label}</div>
-              <div style={{ width: '120px', flexShrink: 0, opacity: 0.6, fontFamily: 'monospace' }}>{getAlgoDisplayName(algorithm)}</div>
+              <div style={{ width: '120px', flexShrink: 0, opacity: 0.6, fontFamily: 'monospace' }}>{ALGO_MAPPING(algorithm)}</div>
               <div style={{ flex: 2, minWidth: 0, opacity: 0.8, fontSize: '11px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {pending ? 'Waiting...' : ph.getVerifyMessage(item.result)}
               </div>

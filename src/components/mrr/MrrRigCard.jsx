@@ -12,9 +12,8 @@ import {
 } from "../../core/mrrUtils.js";
 import {
   HASHRATE_SUFFIXES,
-  getAlgoDisplayName,
+  ALGO_MAPPING,
   normalizeAlgoForNiceHash,
-  getAlgorithmUnit,
   getMrrAlgorithmUnit,
   calculatePriceComparison,
   getMrrAlgoKey,
@@ -483,7 +482,7 @@ const MrrRigCard = ({
         ? Number.parseFloat(nhOrder.add_fee ?? nhOrder.priceWithFee)
         : buyNhPrice
       : 0;
-  const myNhUnit = getAlgorithmUnit(
+  const myNhUnit = ALGO_MAPPING(
     normalizeAlgoForNiceHash(algoName || rawAlgo),
   );
 
@@ -523,7 +522,7 @@ const MrrRigCard = ({
     return "No NH price";
   }, [roiPercent, niceHashSourcePrice, finalMrrRate, isLoadingMrrRate]);
 
-  const displayAlgo = getAlgoDisplayName(normalizedAlgo || rawAlgo);
+  const displayAlgo = ALGO_MAPPING(normalizedAlgo || rawAlgo);
 
   const elapsedMs =
     nowMs > 0 && totalMs > 0

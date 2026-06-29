@@ -10,7 +10,7 @@ import React, {
 import {
   normalizeAlgoForNiceHash,
   calculatePriceComparison,
-  getAlgorithmUnit,
+  ALGO_MAPPING,
 } from "../../core/mapping.js";
 import { fetchMarketPrice } from "../../core/marketApi.js";
 export const NiceHashOrderContext = createContext();
@@ -167,7 +167,7 @@ export function NiceHashOrderProvider({ children, nhClient, callApi }) {
           const marketPrice = p.rawOrder?.marketPrice || 0;
           const marketUnit =
             p.rawOrder?.marketUnit ||
-            getAlgorithmUnit(normalizeAlgoForNiceHash(p.algo));
+            ALGO_MAPPING(normalizeAlgoForNiceHash(p.algo));
           const orderDiff = p.rawOrder?.orderDiff || null;
 
           return {
