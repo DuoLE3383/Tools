@@ -444,8 +444,14 @@ const priceSources = {
           // If response is not OK, just return empty and let the next source try.
           return [];
       } catch (error) {
-        console.warn(`[PriceFetcher] Blockchain.com API error: ${error.message}. Skipping source.`);
-        return [];
+        console.warn(`[PriceFetcher] Blockchain.com API error: ${error.message}. Attempting scrape fallback...`);
+        // Only fall back to scraping on network/fetch errors, not bad HTTP statuses.
+        try {
+            return await scrapeBlockchainPrices(coinIds);
+        } catch (scrapeError) {
+            console.error(`[PriceFetcher] Blockchain.com scrape fallback also failed: ${scrapeError.message}`);
+            return [];
+        }
       }
     },
   },
@@ -578,7 +584,57 @@ const priceSources = {
   },
 };
 
-// Remove broken scrape fallback – use API-only approach
+// Fallback: Scrape prices from Blockchain.com HTML
+async function scrapeBlockchainPrices(coinIds) {
+  try {
+    const url = 'https://www.blockchain.com/explorer/prices';
+    const response = await fetchWithRetry(url, {}, 2);
+    
+    if (!response.ok) return [];
+    
+    const html = await response.text();
+    
+    // Extract the price data from the page
+    const priceRegex = /"price":"([^"]+)"/g;
+    const symbolRegex = /"symbol":"([^"]+)"/g;
+    const prices = [];
+    
+    let match;
+    const priceMatches = [];
+    const symbolMatches = [];
+    
+    while ((match = priceRegex.exec(html)) !== null) {
+      priceMatches.push(parseFloat(match[1]));
+    }
+    
+    while ((match = symbolRegex.exec(html)) !== null) {
+      symbolMatches.push(match[1]);
+    }
+    
+    for (let i = 0; i < Math.min(symbolMatches.length, priceMatches.length, 50); i++) {
+      const symbol = symbolMatches[i];
+      const coinId = coinIds.find(id => idToSymbolMap.get(id) === symbol);
+      if (coinId) {
+        prices.push({
+          id: coinId,
+          symbol: symbol,
+          name: symbol,
+          price_usd: priceMatches[i] || 0,
+          market_cap: 0,
+          volume_24h: 0,
+          price_change_24h: 0,
+          last_updated: new Date().toISOString(),
+          source: 'blockchain_scrape',
+        });
+      }
+    }
+    
+    return prices;
+  } catch (error) {
+    console.warn(`[PriceFetcher] Failed to scrape Blockchain.com: ${error.message}`);
+    return [];
+  }
+}
 
 // Make idToSymbolMap accessible globally
 let idToSymbolMap = new Map();
