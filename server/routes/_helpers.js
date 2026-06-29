@@ -1,4 +1,4 @@
-// routes/_helpers.js
+// server/routes/_helpers.js
 import { db } from "../db.js";
 import path from "path";
 

@@ -1,4 +1,4 @@
-// start.js - with better error handling
+// start.js – FIXED for Windows
 
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
@@ -29,13 +29,14 @@ function cleanup() {
 process.on('SIGINT', cleanup);
 process.on('SIGTERM', cleanup);
 
+const isWindows = process.platform === 'win32';
+
 // Start backend
 console.log('📡 Starting backend server...');
-
-// ✅ Use process.argv to pass args properly
 const backend = spawn('node', ['index.js'], {
-  stdio: ['ignore', 'pipe', 'pipe'], // Separate stdout/stderr
-  env: { ...process.env, RUN_MAIN: 'true' }
+  stdio: ['ignore', 'pipe', 'pipe'],
+  env: { ...process.env, RUN_MAIN: 'true' },
+  windowsHide: true,
 });
 
 processes.push(backend);
@@ -54,15 +55,24 @@ backend.stdout.on('data', (data) => {
     
     setTimeout(() => {
       console.log('🎨 Starting frontend...');
-      const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+      const npmCmd = isWindows ? 'npm.cmd' : 'npm';
       const frontend = spawn(npmCmd, ['run', 'dev'], {
         stdio: 'inherit',
-        env: { ...process.env }
+        shell: isWindows,
+        env: { ...process.env },
+        cwd: __dirname,
+        windowsHide: true,
       });
       processes.push(frontend);
       
       frontend.on('error', (err) => {
         console.error('❌ Frontend error:', err.message);
+      });
+      
+      frontend.on('close', (code) => {
+        if (code !== 0 && code !== null) {
+          console.error(`❌ Frontend exited with code ${code}`);
+        }
       });
     }, 1500);
   }
@@ -71,8 +81,6 @@ backend.stdout.on('data', (data) => {
 backend.stderr.on('data', (data) => {
   const error = data.toString();
   errorBuffer += error;
-  
-  // Log errors but ignore deprecation warnings
   if (!error.includes('DeprecationWarning') && 
       !error.includes('ECONNREFUSED') &&
       !error.includes('UV_HANDLE_CLOSING')) {

@@ -1,47 +1,62 @@
-// index.js – CORRECTED STARTUP
+// index.js – COMPLETE FIXED VERSION
 
-import 'dotenv/config';
-import express from 'express';
-import http from 'http';
-import cors from 'cors';
-import path from 'path';
-import fs from 'fs';
-import { fileURLToPath } from 'url';
-import sqlite3 from 'sqlite3';
+import "dotenv/config";
+import express from "express";
+import http from "http";
+import cors from "cors";
+import path from "path";
+import fs from "fs";
+import { fileURLToPath } from "url";
+import sqlite3 from "sqlite3";
 
-import { setupWebSocket } from './server/ws.js';
-import { registerRoutes } from './server/routes.js';
-import { startMiningOpportunityScanner } from './server/miningOpportunityNotifier.js';
-import { createApp, initializeApp } from './server/app.js';
-import { verifyToken } from './server/auth.js';
-import { resolveNhClient, getNiceHashApp, nhConfigs } from './server/nh.js';
-import { mrrApiCall, initMrrConfigs, mrrConfigs, defaultMrrClient } from './server/mrr.js';
-import { migrateOldCsvToDb } from './server/migrate.js';
-import { initMiningTrainingDb } from './server/miningTrainingDb.js';
-import { setDb } from './server/db.js';
-import { fetchAndSaveCoinPrices } from './server/coinGecko/coinGeckoClient.js';
+import { setupWebSocket } from "./server/ws.js";
+import { registerRoutes } from "./server/routes.js";
+import { startMiningOpportunityScanner } from "./server/miningOpportunityNotifier.js";
+import { createApp, initializeApp } from "./server/app.js";
+import { verifyToken } from "./server/auth.js";
+import { resolveNhClient, getNiceHashApp, nhConfigs } from "./server/nh.js";
+import {
+  mrrApiCall,
+  initMrrConfigs,
+  mrrConfigs,
+  defaultMrrClient,
+} from "./server/mrr.js";
+import { migrateOldCsvToDb } from "./server/migrate.js";
+import { initMiningTrainingDb } from "./server/miningTrainingDb.js";
+import { setDb } from "./server/db.js";
+import { fetchAndSaveCoinPrices } from "./server/coinGecko/coinGeckoClient.js";
 
 // ✅ Handle mergeDatabases import with fallback
 let mergeDatabases;
 try {
-  const mergeModule = await import('./data/merge.js');
-  mergeDatabases = mergeModule.mergeDatabases || mergeModule.default || (() => {});
-  console.log('[init] ✅ mergeDatabases loaded successfully');
+  const mergeModule = await import("./data/merge.js");
+  mergeDatabases =
+    mergeModule.mergeDatabases || mergeModule.default || (() => {});
+  console.log("[init] ✅ mergeDatabases loaded successfully");
 } catch (err) {
-  console.warn('[init] ⚠️ mergeDatabases not found, skipping database merge');
-  mergeDatabases = async () => { console.log('[init] Database merge skipped (module not found)'); };
+  console.warn("[init] ⚠️ mergeDatabases not found, skipping database merge");
+  mergeDatabases = async () => {
+    console.log("[init] Database merge skipped (module not found)");
+  };
 }
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const distPath = path.join(__dirname, 'dist', 'client');
+const distPath = path.join(__dirname, "dist", "client");
 
-const DATA_DIR = path.join(__dirname, 'data');
-const STATS_DB_PATH = path.join(DATA_DIR, 'stats.db');
+const DATA_DIR = path.join(__dirname, "data");
+const STATS_DB_PATH = path.join(DATA_DIR, "stats.db");
 
 // ✅ Client tags - consolidated
-const VALID_NH_CLIENT_TAGS = new Set(['BT', 'PH', 'LN', 'NHATLINH', 'VN', 'ALL']);
-const VALID_MRR_CLIENT_TAGS = new Set(['BT', 'SL', 'LN', 'LUCKY', 'VN', 'ALL']);
+const VALID_NH_CLIENT_TAGS = new Set([
+  "BT",
+  "PH",
+  "LN",
+  "NHATLINH",
+  "VN",
+  "ALL",
+]);
+const VALID_MRR_CLIENT_TAGS = new Set(["BT", "SL", "LN", "LUCKY", "VN", "ALL"]);
 
 // ============================================================
 // CREATE APP
@@ -59,21 +74,8 @@ app.use(express.urlencoded({ extended: true }));
 // ============================================================
 // HEALTH CHECK ROUTES
 // ============================================================
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
-
-app.get('/', (req, res) => {
-  res.json({
-    service: 'NiceHash API Toolbox',
-    status: 'running',
-    version: '1.0.0',
-    endpoints: { 
-      health: '/api/health', 
-      time: '/api/v2/time', 
-      mining: '/api/v2/mining-stats' 
-    }
-  });
+app.get("/api/health", (req, res) => {
+  res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
 // ============================================================
@@ -90,60 +92,87 @@ function initDatabase() {
 
     dbInstance = new sqlite3.Database(STATS_DB_PATH, (dbErr) => {
       if (dbErr) return reject(dbErr);
-      
+
       // Enable WAL with proper busy timeout and synchronous settings for performance
       dbInstance.serialize(() => {
-        dbInstance.run('PRAGMA journal_mode = WAL;', (err) => {
-          if (err) console.warn('[db] Failed to enable WAL mode:', err.message);
+        dbInstance.run("PRAGMA journal_mode = WAL;", (err) => {
+          if (err) console.warn("[db] Failed to enable WAL mode:", err.message);
         });
-        dbInstance.run('PRAGMA busy_timeout = 5000;', (err) => {
-          if (err) console.warn('[db] Failed to set busy timeout:', err.message);
+        dbInstance.run("PRAGMA busy_timeout = 5000;", (err) => {
+          if (err)
+            console.warn("[db] Failed to set busy timeout:", err.message);
         });
-        dbInstance.run('PRAGMA synchronous = NORMAL;', (err) => {
-          if (err) console.warn('[db] Failed to set synchronous mode:', err.message);
+        dbInstance.run("PRAGMA synchronous = NORMAL;", (err) => {
+          if (err)
+            console.warn("[db] Failed to set synchronous mode:", err.message);
         });
-        dbInstance.run('PRAGMA cache_size = -20000;', (err) => {
-          if (err) console.warn('[db] Failed to set cache_size:', err.message);
+        dbInstance.run("PRAGMA cache_size = -20000;", (err) => {
+          if (err) console.warn("[db] Failed to set cache_size:", err.message);
         });
       });
 
       // Create tables
-      dbInstance.run(`CREATE TABLE IF NOT EXISTS stats_cache (
+      dbInstance.run(
+        `CREATE TABLE IF NOT EXISTS stats_cache (
         key TEXT PRIMARY KEY, 
         data TEXT, 
         ts INTEGER
-      )`, (err) => { 
-        if (err) reject(err); 
-      });
-      
-      dbInstance.run(`CREATE TABLE IF NOT EXISTS api_errors (
+      )`,
+        (err) => {
+          if (err) reject(err);
+        },
+      );
+
+      dbInstance.run(
+        `CREATE TABLE IF NOT EXISTS api_errors (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         timestamp TEXT, 
         source TEXT, 
         content_type TEXT, 
         content TEXT
-      )`, (err) => { 
-        if (err) console.error(`[db] Failed to create api_errors table: ${err.message}`); 
-      });
-      
-      dbInstance.run(`CREATE TABLE IF NOT EXISTS mrr_nonces (
+      )`,
+        (err) => {
+          if (err)
+            console.error(
+              `[db] Failed to create api_errors table: ${err.message}`,
+            );
+        },
+      );
+
+      dbInstance.run(
+        `CREATE TABLE IF NOT EXISTS mrr_nonces (
         client TEXT PRIMARY KEY, 
         last_nonce TEXT
-      )`, (err) => { 
-        if (err) reject(err); 
-      });
-      
-      dbInstance.run(`CREATE TABLE IF NOT EXISTS settings (
+      )`,
+        (err) => {
+          if (err) reject(err);
+        },
+      );
+
+      dbInstance.run(
+        `CREATE TABLE IF NOT EXISTS settings (
         key TEXT PRIMARY KEY, 
         value TEXT
-      )`, (err) => { 
-        if (err) console.error(`[db] Failed to create settings table: ${err.message}`); 
-      });
-      
+      )`,
+        (err) => {
+          if (err)
+            console.error(
+              `[db] Failed to create settings table: ${err.message}`,
+            );
+        },
+      );
+
       // Add indexes for performance
-      dbInstance.run(`CREATE INDEX IF NOT EXISTS idx_stats_cache_ts ON stats_cache(ts)`, (err) => {
-        if (err) console.error('[db] Failed to create stats_cache index:', err.message);
-      });
+      dbInstance.run(
+        `CREATE INDEX IF NOT EXISTS idx_stats_cache_ts ON stats_cache(ts)`,
+        (err) => {
+          if (err)
+            console.error(
+              "[db] Failed to create stats_cache index:",
+              err.message,
+            );
+        },
+      );
 
       setDb(dbInstance);
       resolve();
@@ -152,12 +181,12 @@ function initDatabase() {
 }
 
 async function cleanAllCache() {
-  console.info('[init] Wiping persistent cache for fresh start...');
+  console.info("[init] Wiping persistent cache for fresh start...");
   try {
     await new Promise((resolve, reject) => {
       dbInstance.run("DELETE FROM stats_cache", (err) => {
         if (err) return reject(err);
-        console.info('✨ Persistent cache (stats_cache) cleared.');
+        console.info("✨ Persistent cache (stats_cache) cleared.");
         resolve();
       });
     });
@@ -169,16 +198,18 @@ async function cleanAllCache() {
 function loadStats() {
   return new Promise((resolve) => {
     if (!dbInstance) {
-      console.log('[db] Database not initialized, skipping stats load.');
+      console.log("[db] Database not initialized, skipping stats load.");
       return resolve();
     }
     dbInstance.all(`SELECT key, data, ts FROM stats_cache`, [], (err, rows) => {
       if (err) {
-        console.log('[db] No existing stats database found or failed to read, starting fresh.');
+        console.log(
+          "[db] No existing stats database found or failed to read, starting fresh.",
+        );
         return resolve();
       }
       if (rows && rows.length > 0) {
-        rows.forEach(row => {
+        rows.forEach((row) => {
           try {
             // Just log the count, don't store in memory to save RAM
             JSON.parse(row.data);
@@ -186,7 +217,9 @@ function loadStats() {
             console.error(`[db] Failed to parse row ${row.key}:`, e.message);
           }
         });
-        console.log(`[db] Loaded ${rows.length} cached stats from SQLite database`);
+        console.log(
+          `[db] Loaded ${rows.length} cached stats from SQLite database`,
+        );
       }
       resolve();
     });
@@ -198,51 +231,56 @@ function loadStats() {
 // ============================================================
 async function startServer() {
   try {
-    console.log('[init] Initializing database...');
+    console.log("[init] Initializing database...");
     await initDatabase();
 
     // ✅ RUN DATABASE MERGE AFTER DB IS OPEN
-    console.log('[init] Merging databases into stats.db...');
+    console.log("[init] Merging databases into stats.db...");
     try {
       await mergeDatabases();
-      console.log('[init] Database merge completed.');
+      console.log("[init] Database merge completed.");
     } catch (mergeErr) {
-      console.warn('[init] Database merge skipped/warning:', mergeErr.message);
+      console.warn("[init] Database merge skipped/warning:", mergeErr.message);
       // Continue anyway – the app might still work with just stats.db
     }
 
-    console.log('[init] Cleaning cache...');
+    console.log("[init] Cleaning cache...");
     await cleanAllCache();
 
-    console.log('[init] Initializing mining training DB...');
+    console.log("[init] Initializing mining training DB...");
     await initMiningTrainingDb();
 
-    console.log('[init] Loading stats...');
+    console.log("[init] Loading stats...");
     await loadStats();
 
-    console.log('[init] Migrating old CSV files...');
+    console.log("[init] Migrating old CSV files...");
     await migrateOldCsvToDb();
 
-    console.log('[init] Initializing MRR configs...');
+    console.log("[init] Initializing MRR configs...");
     await initMrrConfigs(process.env);
 
-    console.log('[init] Repairing stored client tags...');
+    console.log("[init] Repairing stored client tags...");
     await cleanupStoredClientTags();
 
-    console.log('[init] Initializing app...');
+    console.log("[init] Initializing app...");
     await initializeApp(process.env);
 
-    console.log('[init] Registering routes...');
+    console.log("[init] Registering routes...");
     registerRoutes(app);
-    console.log('[Routes] All routes registered');
+    console.log("[Routes] All routes registered");
 
     // ✅ Serve static files from the 'dist/client' directory
     app.use(express.static(distPath));
 
-    // ✅ SPA Fallback: For any request that doesn't match an API route, send the index.html.
-    app.get('/*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
+    // ✅ SPA Fallback: For any GET request that doesn't match an API route or a static file, send the index.html.
+    // Use a simple catch-all that Express handles properly
+    app.use('/api/*splat', (req, res) => {
+  res.status(404).json({ 
+    success: false, 
+    error: 'API endpoint not found',
+    path: req.path 
+  });
+});
 
     // Create HTTP server
     const server = http.createServer(app);
@@ -251,19 +289,24 @@ async function startServer() {
     setupWebSocket(server);
 
     // Start the server
-    server.listen(PORT, '0.0.0.0', () => {
-      console.log('--- NiceHash API Toolbox Server Started ---');
-      console.log('Environment: ' + (process.env.NICEHASH_ENVIRONMENT ? process.env.NICEHASH_ENVIRONMENT.toUpperCase() : 'production'));
+    server.listen(PORT, "0.0.0.0", () => {
+      console.log("--- NiceHash API Toolbox Server Started ---");
+      console.log(
+        "Environment: " +
+          (process.env.NICEHASH_ENVIRONMENT
+            ? process.env.NICEHASH_ENVIRONMENT.toUpperCase()
+            : "production"),
+      );
       console.log(`Listening on: http://localhost:${PORT}`);
       console.log(`WebSocket on: ws://localhost:${PORT}/api/v2/prices/ws`);
 
       // Start mining scanner after a delay
       setTimeout(() => {
-        console.log('[Mining Scanner] Initializing...');
+        console.log("[Mining Scanner] Initializing...");
         try {
           startMiningOpportunityScanner();
         } catch (err) {
-          console.error('[Mining Scanner] Failed to start:', err.message);
+          console.error("[Mining Scanner] Failed to start:", err.message);
         }
       }, 5000);
     });
@@ -272,15 +315,14 @@ async function startServer() {
     function shutdown(signal) {
       console.log(`[api] Received ${signal}, shutting down...`);
       server.close(() => {
-        console.log('[api] Server closed');
+        console.log("[api] Server closed");
         process.exit(0);
       });
     }
-    process.on('SIGINT', () => shutdown('SIGINT'));
-    process.on('SIGTERM', () => shutdown('SIGTERM'));
-
+    process.on("SIGINT", () => shutdown("SIGINT"));
+    process.on("SIGTERM", () => shutdown("SIGTERM"));
   } catch (err) {
-    console.error('❌ Critical Initialization Failure:', err.message);
+    console.error("❌ Critical Initialization Failure:", err.message);
     console.error(err.stack);
     process.exit(1);
   }
@@ -289,9 +331,9 @@ async function startServer() {
 // ============================================================
 // START THE SERVER
 // ============================================================
-if (process.env.RUN_MAIN !== 'false') {
+if (process.env.RUN_MAIN !== "false") {
   startServer().catch((err) => {
-    console.error('❌ Failed to start server:', err);
+    console.error("❌ Failed to start server:", err);
     process.exit(1);
   });
 }
@@ -300,11 +342,17 @@ if (process.env.RUN_MAIN !== 'false') {
 // HELPER FUNCTIONS
 // ============================================================
 function normalizeStoredClientTag(value, fallback, allowedTags) {
-  const candidate = String(value || '').trim().toUpperCase();
+  const candidate = String(value || "")
+    .trim()
+    .toUpperCase();
   if (allowedTags.has(candidate)) return candidate;
-  const safeFallback = String(fallback || '').trim().toUpperCase();
+  const safeFallback = String(fallback || "")
+    .trim()
+    .toUpperCase();
   if (allowedTags.has(safeFallback)) return safeFallback;
-  return allowedTags.has('BT') ? 'BT' : (allowedTags.values().next().value || 'BT');
+  return allowedTags.has("BT")
+    ? "BT"
+    : allowedTags.values().next().value || "BT";
 }
 
 function dbRun(sql, params = []) {
@@ -329,8 +377,9 @@ async function cleanupStoredClientTags() {
   if (!dbInstance) return;
 
   const tables = new Set(
-    (await dbAll(`SELECT name FROM sqlite_master WHERE type='table'`))
-      .map((row) => row.name),
+    (await dbAll(`SELECT name FROM sqlite_master WHERE type='table'`)).map(
+      (row) => row.name,
+    ),
   );
 
   const configuredNhClients = new Set([
@@ -343,26 +392,26 @@ async function cleanupStoredClientTags() {
   ]);
   const fallbackMrrClient = normalizeStoredClientTag(
     defaultMrrClient,
-    'BT',
+    "BT",
     configuredMrrClients,
   );
 
   const tablePlans = [
     {
-      table: 'nh_pools',
-      column: 'nhClient',
-      fallback: 'BT',
+      table: "nh_pools",
+      column: "nhClient",
+      fallback: "BT",
       allowed: configuredNhClients,
     },
     {
-      table: 'mrr_pools',
-      column: 'mrrClient',
+      table: "mrr_pools",
+      column: "mrrClient",
       fallback: fallbackMrrClient,
       allowed: configuredMrrClients,
     },
     {
-      table: 'mrr_rigs',
-      column: 'mrrClient',
+      table: "mrr_rigs",
+      column: "mrrClient",
       fallback: fallbackMrrClient,
       allowed: configuredMrrClients,
     },
@@ -375,7 +424,7 @@ async function cleanupStoredClientTags() {
     if (!columns.some((column) => column.name === plan.column)) continue;
 
     const allowedList = Array.from(plan.allowed);
-    const placeholders = allowedList.map(() => '?').join(', ');
+    const placeholders = allowedList.map(() => "?").join(", ");
     const result = await dbRun(
       `UPDATE ${plan.table}
        SET ${plan.column} = ?

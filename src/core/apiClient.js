@@ -1,6 +1,8 @@
 // core/apiClient.js - FIXED
 
 const API_BASE = '/api'; // ✅ Use relative path for proxy
+const API_URL = import.meta.env.VITE_API_URL || '/api';
+const WS_URL = import.meta.env.VITE_WS_URL || '/api/v2/prices/ws';
 
 export function createApiClient({ onAuthError, onState }) {
   return async function callApi(path, options = {}) {

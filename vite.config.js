@@ -47,7 +47,7 @@ export default defineConfig(({ command }) => ({
       
       // ✅ Main API proxy - YOUR BACKEND
       '/api': {
-        target: 'http://localhost:3003',
+        target: 'http://localhost:3000',
         changeOrigin: true,
         ws: true, // ✅ Enable WebSocket proxying
         configure: (proxy) => {

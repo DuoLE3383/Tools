@@ -1,5 +1,3 @@
-// components/WebSocketContext.jsx - FIXED
-
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 
 const WebSocketContext = createContext(null);
@@ -16,8 +14,9 @@ export function WebSocketProvider({ children, token, autoConnect = true }) {
   const MAX_RECONNECT_ATTEMPTS = 5;
 
   const connect = useCallback(() => {
+    // ✅ Don't connect if no token
     if (!token) {
-      console.warn('[WS] No token provided');
+      console.log('[WS] No token available, skipping connection');
       return;
     }
 
@@ -35,8 +34,9 @@ export function WebSocketProvider({ children, token, autoConnect = true }) {
     setError(null);
 
     try {
-      // ✅ Use relative path - works with Vite proxy
-      const wsUrl = `/api/v2/prices/ws?token=${encodeURIComponent(token)}`;
+      // ✅ Use relative path with token
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const wsUrl = `${protocol}//${window.location.host}/api/v2/prices/ws?token=${encodeURIComponent(token)}`;
       console.log('[WS] Connecting...');
 
       const ws = new WebSocket(wsUrl);
@@ -80,8 +80,8 @@ export function WebSocketProvider({ children, token, autoConnect = true }) {
         setIsConnecting(false);
         wsRef.current = null;
 
-        // ✅ Auto-reconnect
-        if (reconnectAttempts.current < MAX_RECONNECT_ATTEMPTS) {
+        // ✅ Only reconnect if we have a token
+        if (token && reconnectAttempts.current < MAX_RECONNECT_ATTEMPTS) {
           const delay = 3000 * Math.pow(2, reconnectAttempts.current);
           console.log(`[WS] Reconnecting in ${delay}ms...`);
           
@@ -126,15 +126,18 @@ export function WebSocketProvider({ children, token, autoConnect = true }) {
     return false;
   }, []);
 
-  // Auto-connect
+  // ✅ Auto-connect only when token is available
   useEffect(() => {
     if (autoConnect && token) {
       connect();
+    } else if (!token && wsRef.current) {
+      // ✅ Disconnect if token is removed
+      disconnect();
     }
     return () => {
       disconnect();
     };
-  }, [token, autoConnect]);
+  }, [token, autoConnect, connect, disconnect]);
 
   const value = {
     isConnected,
@@ -145,7 +148,7 @@ export function WebSocketProvider({ children, token, autoConnect = true }) {
     connect,
     disconnect,
     sendMessage,
-    isReady: isConnected && !error,
+    isReady: isConnected && !error && !!token,
   };
 
   return (
