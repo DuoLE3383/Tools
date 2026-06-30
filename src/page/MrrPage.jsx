@@ -1,4 +1,3 @@
-// pages/MrrPage.jsx
 import MiningRigSection from "../components/mrr/MiningRigSection";
 import DashboardHeader from "../components/Dashboard/DashboardHeader.jsx";
 import { useCallback } from "react";
@@ -29,7 +28,7 @@ export default function MrrPage({
   );
 
   return (
-    <div className="app-shell" style={{ padding: "20px 20px 40px", maxWidth: "1600px", margin: "0 auto" }}>
+    <div className="page-full">
       <DashboardHeader
         state={state}
         currentUser={currentUser}

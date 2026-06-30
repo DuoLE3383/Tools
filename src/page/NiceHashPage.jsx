@@ -1,4 +1,3 @@
-// pages/NiceHashPage.jsx - Remove duplicate NiceHashOrderProvider
 import NiceHash from "../components/nicehash/NiceHash";
 import DashboardHeader from "../components/Dashboard/DashboardHeader.jsx";
 import { useCallback } from "react";
@@ -28,7 +27,7 @@ export default function NiceHashPage({
   );
 
   return (
-    <div className="app-shell" style={{ padding: "20px 20px 40px", minWidth: "800px", maxWidth: "1600px", margin: "0 auto" }}>
+    <div className="page-full">
       <DashboardHeader
         state={state}
         currentUser={currentUser}
@@ -44,7 +43,6 @@ export default function NiceHashPage({
 
       <main className="dashboard">
         <div className="column-stack" style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-          {/* ✅ Remove NiceHashOrderProvider - it's now at the app level */}
           <article className="panel">
             <NiceHash
               key={state.nhOrderClient}

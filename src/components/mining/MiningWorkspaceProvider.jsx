@@ -1,4 +1,4 @@
-// MiningWorkspaceProvider.jsx - FIXED price fetching
+// MiningWorkspaceProvider.jsx - ADDED MORE PROVIDERS
 
 import {
   createContext,
@@ -16,6 +16,9 @@ import {
   normalizeHeroRows,
   normalizeMrrMarketRows,
   normalizeMiningDutchRows,
+  normalizeMinerstatRows, // Assuming these will be in miningWorkspaceData.js
+  normalizeWtmRows,
+  normalizeHashrateNoRows,
 } from "./miningWorkspaceData";
 import { getNiceHashPriceValue } from "../../core/mrrUtils";
 
@@ -25,15 +28,25 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "VN" }) {
   const [heroStats, setHeroStats] = useState(null);
   const [dutchStats, setDutchStats] = useState(null);
   const [mrrMarketStats, setMrrMarketStats] = useState(null);
+  const [minerstatStats, setMinerstatStats] = useState(null);
+  const [wtmStats, setWtmStats] = useState(null);
+  const [hashrateNoStats, setHashrateNoStats] = useState(null);
   const [niceHashPrices, setNiceHashPrices] = useState({});
 
-  // ✅ Separate loading/error states for each data source
+  // Loading/error states for each data source
   const [heroLoading, setHeroLoading] = useState(false);
   const [dutchLoading, setDutchLoading] = useState(false);
   const [mrrLoading, setMrrLoading] = useState(false);
+  const [minerstatLoading, setMinerstatLoading] = useState(false);
+  const [wtmLoading, setWtmLoading] = useState(false);
+  const [hashrateNoLoading, setHashrateNoLoading] = useState(false);
+
   const [heroError, setHeroError] = useState("");
   const [dutchError, setDutchError] = useState("");
   const [mrrError, setMrrError] = useState("");
+  const [minerstatError, setMinerstatError] = useState("");
+  const [wtmError, setWtmError] = useState("");
+  const [hashrateNoError, setHashrateNoError] = useState("");
 
   const [lastUpdated, setLastUpdated] = useState("");
   const [priceFetchStatus, setPriceFetchStatus] = useState({});
@@ -41,12 +54,20 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "VN" }) {
   const refresh = useCallback(
     async (force = false) => {
       // ✅ Reset errors and set loading states individually
-      setHeroLoading(true);
-      setDutchLoading(true);
-      setMrrLoading(true);
-      setHeroError("");
-      setDutchError("");
-      setMrrError("");
+      const sources = [
+        { name: 'HeroMiners', setLoading: setHeroLoading, setError: setHeroError },
+        { name: 'Mining-Dutch', setLoading: setDutchLoading, setError: setDutchError },
+        { name: 'MRR', setLoading: setMrrLoading, setError: setMrrError },
+        { name: 'Minerstat', setLoading: setMinerstatLoading, setError: setMinerstatError },
+        { name: 'WhatToMine', setLoading: setWtmLoading, setError: setWtmError },
+        { name: 'Hashrate.no', setLoading: setHashrateNoLoading, setError: setHashrateNoError },
+      ];
+
+      sources.forEach(source => {
+        source.setLoading(true);
+        source.setError('');
+      });
+
       setPriceFetchStatus({});
 
       try {
@@ -99,13 +120,49 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "VN" }) {
         }
         setMrrLoading(false);
 
+        // 4. FETCH MINERSTAT DATA
+        setMinerstatLoading(true);
+        const minerstatResult = await fetchMiningStats(
+          "minerstat", "VN", null, null, 20000, force
+        ).catch(err => {
+          console.warn("Minerstat fetch failed:", err);
+          setMinerstatError(err.message || "Failed to fetch");
+          return null;
+        });
+        setMinerstatLoading(false);
+
+        // 5. FETCH WHAT-TO-MINE DATA
+        setWtmLoading(true);
+        const wtmResult = await fetchMiningStats(
+          "whattomine", "VN", null, null, 20000, force
+        ).catch(err => {
+          console.warn("WhatToMine fetch failed:", err);
+          setWtmError(err.message || "Failed to fetch");
+          return null;
+        });
+        setWtmLoading(false);
+
+        // 6. FETCH HASHRATE.NO DATA
+        setHashrateNoLoading(true);
+        const hashrateNoResult = await fetchMiningStats(
+          "hashrate.no", "VN", null, null, 20000, force
+        ).catch(err => {
+          console.warn("Hashrate.no fetch failed:", err);
+          setHashrateNoError(err.message || "Failed to fetch");
+          return null;
+        });
+        setHashrateNoLoading(false);
+
         // Set states
         if (heroResult) setHeroStats(heroResult);
         if (dutchResult) setDutchStats(dutchResult);
         if (mrrResult) setMrrMarketStats(mrrResult);
+        if (minerstatResult) setMinerstatStats(minerstatResult);
+        if (wtmResult) setWtmStats(wtmResult);
+        if (hashrateNoResult) setHashrateNoStats(hashrateNoResult);
 
         // ✅ Throw error only if ALL sources fail
-        if (!heroResult && !dutchResult) {
+        if (!heroResult && !dutchResult && !minerstatResult && !wtmResult && !hashrateNoResult) {
           throw new Error("Failed to load mining workspace data");
         }
 
@@ -113,14 +170,20 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "VN" }) {
         const nextHeroRows = normalizeHeroRows(heroResult);
         const nextDutchRows = normalizeMiningDutchRows(dutchResult);
         const nextMrrMarketRows = normalizeMrrMarketRows(mrrResult);
+        const nextMinerstatRows = normalizeMinerstatRows(minerstatResult);
+        const nextWtmRows = normalizeWtmRows(wtmResult);
+        const nextHashrateNoRows = normalizeHashrateNoRows(hashrateNoResult);
 
-        console.log(`📊 Data counts: Hero=${nextHeroRows.length}, Dutch=${nextDutchRows.length}, MRR=${nextMrrMarketRows.length}`);
+        console.log(`📊 Data counts: Hero=${nextHeroRows.length}, Dutch=${nextDutchRows.length}, MRR=${nextMrrMarketRows.length}, MS=${nextMinerstatRows.length}, WTM=${nextWtmRows.length}, HN=${nextHashrateNoRows.length}`);
 
         // ✅ Get all unique algos from both sources
         const algos = Array.from(
           new Set([
             ...nextHeroRows.map((row) => row.nicehashAlgo),
             ...nextDutchRows.map((row) => row.nicehashAlgo),
+            ...nextMinerstatRows.map((row) => row.nicehashAlgo),
+            ...nextWtmRows.map((row) => row.nicehashAlgo),
+            ...nextHashrateNoRows.map((row) => row.nicehashAlgo),
           ])
         ).filter((algo) => algo && algo !== "UNKNOWN");
 
@@ -243,7 +306,14 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "VN" }) {
         }
 
         // Merge and build opportunities
-        const nextRoutes = mergeMiningRoutes(nextDutchRows, nextHeroRows, nextNiceHashPrices);
+        const nextRoutes = mergeMiningRoutes(
+          nextDutchRows, 
+          nextHeroRows, 
+          nextMinerstatRows,
+          nextWtmRows,
+          nextHashrateNoRows,
+          nextNiceHashPrices
+        );
         const nextOpportunities = buildOpportunityRows(nextRoutes, nextNiceHashPrices, nextMrrMarketRows);
 
         console.log(`📊 Opportunities: ${nextOpportunities.length}`);
@@ -259,6 +329,9 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "VN" }) {
                 nhClient,
                 heroRows: nextHeroRows,
                 miningDutchRows: nextDutchRows,
+                minerstatRows: nextMinerstatRows,
+                wtmRows: nextWtmRows,
+                hashrateNoRows: nextHashrateNoRows,
                 mrrMarketRows: nextMrrMarketRows,
                 routes: nextRoutes,
                 opportunities: nextOpportunities,
@@ -296,13 +369,23 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "VN" }) {
     () => normalizeMiningDutchRows(dutchStats),
     [dutchStats],
   );
+  const minerstatRows = useMemo(() => normalizeMinerstatRows(minerstatStats), [minerstatStats]);
+  const wtmRows = useMemo(() => normalizeWtmRows(wtmStats), [wtmStats]);
+  const hashrateNoRows = useMemo(() => normalizeHashrateNoRows(hashrateNoStats), [hashrateNoStats]);
   const mrrMarketRows = useMemo(
     () => normalizeMrrMarketRows(mrrMarketStats),
     [mrrMarketStats],
   );
   const routes = useMemo(
-    () => mergeMiningRoutes(miningDutchRows, heroRows, niceHashPrices),
-    [heroRows, miningDutchRows, niceHashPrices],
+    () => mergeMiningRoutes(
+      miningDutchRows, 
+      heroRows, 
+      minerstatRows,
+      wtmRows,
+      hashrateNoRows,
+      niceHashPrices
+    ),
+    [miningDutchRows, heroRows, minerstatRows, wtmRows, hashrateNoRows, niceHashPrices],
   );
   const opportunities = useMemo(
     () => buildOpportunityRows(routes, niceHashPrices, mrrMarketRows),
@@ -313,6 +396,9 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "VN" }) {
     () => ({
       heroStats,
       dutchStats,
+      minerstatStats,
+      wtmStats,
+      hashrateNoStats,
       mrrMarketStats,
       routes,
       opportunities,
@@ -324,14 +410,23 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "VN" }) {
       heroLoading,
       dutchLoading,
       mrrLoading,
-      loading: heroLoading || dutchLoading || mrrLoading, // Combined loading state
+      minerstatLoading,
+      wtmLoading,
+      hashrateNoLoading,
+      loading: heroLoading || dutchLoading || mrrLoading || minerstatLoading || wtmLoading || hashrateNoLoading, // Combined loading state
       heroError,
       dutchError,
       mrrError,
-      error: heroError || dutchError || mrrError, // Combined error state
+      minerstatError,
+      wtmError,
+      hashrateNoError,
+      error: heroError || dutchError || mrrError || minerstatError || wtmError || hashrateNoError, // Combined error state
       // ✅ Expose boolean flags for data presence
       hasHeroData: !!heroStats?.coinStats?.length,
       hasDutchData: !!dutchStats?.coinStats?.length,
+      hasMinerstatData: !!minerstatStats?.length,
+      hasWtmData: !!wtmStats?.length,
+      hasHashrateNoData: !!hashrateNoStats?.length,
     }),
     [
       dutchStats,
@@ -346,9 +441,18 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "VN" }) {
       heroLoading,
       dutchLoading,
       mrrLoading,
+      minerstatLoading,
+      wtmLoading,
+      hashrateNoLoading,
       heroError,
       dutchError,
       mrrError,
+      minerstatError,
+      wtmError,
+      hashrateNoError,
+      minerstatStats,
+      wtmStats,
+      hashrateNoStats,
     ],
   );
 

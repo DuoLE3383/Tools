@@ -1,6 +1,8 @@
 // rentalProcessor.js - Complete upgraded version
-import { dbRunAsync, dbGetAsync } from "./dbHelpers.js";
-import { logger } from "../logger.js";
+import { dbRunAsync } from "../mrr/db-utils.js";
+import { dbGetAsync } from "../mrr/db-utils.js";
+// Use console for logging (logger.js module not available)
+const logger = console;
 import { TELEGRAM_CONFIG, TelegramTemplates } from "../../src/core/telegram.js";
 import {
   getMrrAlgorithmUnit,
@@ -9,7 +11,7 @@ import {
   getAlgoMapping,
 } from "../../src/core/mapping.js";
 import { getBtcPriceData } from "../../src/core/priceUtils.js";
-import { getMonitorNhActiveOrders, sendTelegramInternal } from "../monitor/helpers.js";
+import { getMonitorNhActiveOrders, sendTelegramInternal } from "../monitor.js";
 import { extractRentalInfo } from "../utils.js";
 import { getNiceHashPriceValue } from "../../src/core/mrrUtils.js";
 
@@ -331,7 +333,7 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
                 acct,
                 orderDiff, // This is ROI
                 remStr,
-                ALGO_MAPPING(info.algo),
+                getAlgoMapping(info.algo).niceHash,
                 advDisplay
             )
             : TelegramTemplates.newRental(
@@ -340,7 +342,7 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
                 info.price?.paid || "0.00",
                 info.startTime,
                 info.endTime,
-                ALGO_MAPPING(info.algo),
+                getAlgoMapping(info.algo).niceHash,
                 advDisplay
             );
 

@@ -347,7 +347,7 @@ export default function MiningCoin({ onCall, nhClient = "VN" }) {
                         {row.miningDutchMiners ? `${compactNumber(row.miningDutchMiners, 0)} MD miners` : row.miningDutchHashrate}
                       </div>
                     </BodyCell>
-                    <BodyCell align="left">{btcValue(row.niceHashPrice)}</BodyCell>
+                    <BodyCell align="left" alt="nicehash-price">{btcValue(row.niceHashPrice)}</BodyCell>
                     <BodyCell align="left">
                       <span style={{ color: row.spread > 0 ? "#34d399" : row.spread < 0 ? "#f87171" : "#94a3b8", fontWeight: 700 }}>
                         {row.spread === null ? "N/A" : percentValue(row.spread)}

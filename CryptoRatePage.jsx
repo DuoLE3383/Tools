@@ -3,8 +3,18 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useWebSocket } from "./src/components/WebSocketContext";
 
+const COINS = [
+  { id: "bitcoin", symbol: "BTC", name: "Bitcoin" },
+  { id: "ethereum", symbol: "ETH", name: "Ethereum" },
+  { id: "litecoin", symbol: "LTC", name: "Litecoin" },
+  { id: "dogecoin", symbol: "DOGE", name: "Dogecoin" },
+  { id: "bitcoin-cash", symbol: "BCH", name: "Bitcoin Cash" },
+  { id: "kaspa", symbol: "KAS", name: "Kaspa" },
+  { id: "ravencoin", symbol: "RVN", name: "Ravencoin" },
+];
+
 export default function CryptoRatePage({ onCall, onNavigateHome, coinPrices: initialCoinPrices, onPriceUpdate }) {
-  const [coins, setCoins] = useState([]);
+  const [coins] = useState(COINS);
   const [prices, setPrices] = useState(initialCoinPrices || null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -14,20 +24,6 @@ export default function CryptoRatePage({ onCall, onNavigateHome, coinPrices: ini
   const { prices: wsPrices, isConnected: wsIsConnected } = useWebSocket();
 
   const allCoinIds = useMemo(() => coins.map(c => c.id), [coins]);
-
-  useEffect(() => {
-    const fetchCoinList = async () => {
-      try {
-        const result = await onCall("/api/v2/coins/list", { silent: true });
-        if (result?.success && Array.isArray(result.data)) {
-          setCoins(result.data);
-        }
-      } catch (err) {
-        setError("Failed to load coin list from database.");
-      }
-    };
-    fetchCoinList();
-  }, [onCall]);
 
   const formatPricesForRigCard = useCallback((data) => {
     if (!data) return {};

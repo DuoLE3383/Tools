@@ -179,9 +179,7 @@ export default function Pools({
           <option value="NHATLINH">NiceHash Client: NHATLINH</option>
           <option value="VN">NiceHash Client: VN (all NH Pools)</option>
         </select>
-      </div>
-
-      {/* Automation Controls */}
+        {/* Automation Controls */}
       <AutomationControls
         running={running}
         playing={playing}
@@ -212,8 +210,7 @@ export default function Pools({
         onOpenConnectionManager={() => setConnectionModalOpen(true)}
         disabled={poolsLoading || verificationLoading}
       />
-
-      {/* Verification Results */}
+        {/* Verification Results */}
       <VerificationResults
         verifyResults={verifyResults}
         completedResults={completedResults}
@@ -226,7 +223,7 @@ export default function Pools({
         poolCount={activePoolSource.length}
         verifyFromFile={verifyFromFile}
       />
-
+      </div>
       {/* Main Layout */}
       <div
         className="pools-dashboard-layout"

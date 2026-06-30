@@ -62,7 +62,7 @@ export function calculatePriceROI(rental, info, acct, nhPriceCache, nhPriceError
       ? mrrBtcData.value / (durationHours / 24) / advertisedInMrrUnit
       : mrrBtcData.value;
 
-    if (nhP.price > 0 && mrrPriceNorm > 0) {
+    if (mrrPriceNorm > 0 && nhP.price > 0) {
       priceRoi = calculatePriceComparison(mrrPriceNorm, mrrUnit, nhP.price, nhP.unit);
     }
   } catch (err) {

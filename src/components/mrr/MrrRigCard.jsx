@@ -1,4 +1,4 @@
-// MrrRigCard.jsx - FIXED VERSION
+// MrrRigCard.jsx - REFACTORED WITH HOOK
 
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { CountdownTimer } from "./MiningRigRental";

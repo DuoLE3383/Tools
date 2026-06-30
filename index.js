@@ -25,8 +25,26 @@ import { migrateOldCsvToDb } from "./server/migrate.js";
 import { initMiningTrainingDb } from "./server/miningTrainingDb.js";
 import { setDb } from "./server/db.js";
 import { fetchAndSaveCoinPrices } from "./server/coinGecko/coinGeckoClient.js";
+import { scrapeMinerstat } from "./server/miners/minerstat.js";
+import { scrapeWhatToMine } from "./server/miners/whatToMine.js";
+import { scrapeHeroMinersGlobal } from "./server/miners/heroMiners.js";
 
-// ✅ Handle mergeDatabases import with fallback
+// ============================================================
+// GLOBAL ERROR HANDLERS - MUST BE FIRST
+// ============================================================
+process.on('unhandledRejection', (err) => {
+  console.error('Unhandled Rejection:', err);
+  // Don't exit on unhandled rejections
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+  // Log but don't exit
+});
+
+// ============================================================
+// IMPORT MERGE DATABASES WITH FALLBACK
+// ============================================================
 let mergeDatabases;
 try {
   const mergeModule = await import("./data/merge.js");
@@ -47,7 +65,7 @@ const distPath = path.join(__dirname, "dist", "client");
 const DATA_DIR = path.join(__dirname, "data");
 const STATS_DB_PATH = path.join(DATA_DIR, "stats.db");
 
-// ✅ Client tags - consolidated
+// Client tags - consolidated
 const VALID_NH_CLIENT_TAGS = new Set([
   "BT",
   "PH",
@@ -72,10 +90,37 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // ============================================================
-// HEALTH CHECK ROUTES
+// HEALTH CHECK ROUTES (BEFORE ANYTHING ELSE)
 // ============================================================
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
+app.get("/api/heartbeat", (req, res) => {
+  res.json({
+    status: "ok",
+    timestamp: Date.now(),
+    uptime: process.uptime(),
+  });
+});
+
+app.get("/ping", (req, res) => {
+  res.send("pong");
+});
+
+app.get("/", (req, res) => {
+  res.json({
+    service: 'NiceHash API Toolbox',
+    status: 'running',
+    version: '1.0.0',
+    endpoints: {
+      health: '/api/health',
+      heartbeat: '/api/heartbeat',
+      ping: '/ping',
+      time: '/api/v2/time',
+      mining: '/api/v2/mining-stats'
+    }
+  });
 });
 
 // ============================================================
@@ -227,118 +272,6 @@ function loadStats() {
 }
 
 // ============================================================
-// START SERVER
-// ============================================================
-async function startServer() {
-  try {
-    console.log("[init] Initializing database...");
-    await initDatabase();
-
-    // ✅ RUN DATABASE MERGE AFTER DB IS OPEN
-    console.log("[init] Merging databases into stats.db...");
-    try {
-      await mergeDatabases();
-      console.log("[init] Database merge completed.");
-    } catch (mergeErr) {
-      console.warn("[init] Database merge skipped/warning:", mergeErr.message);
-      // Continue anyway – the app might still work with just stats.db
-    }
-
-    console.log("[init] Cleaning cache...");
-    await cleanAllCache();
-
-    console.log("[init] Initializing mining training DB...");
-    await initMiningTrainingDb();
-
-    console.log("[init] Loading stats...");
-    await loadStats();
-
-    console.log("[init] Migrating old CSV files...");
-    await migrateOldCsvToDb();
-
-    console.log("[init] Initializing MRR configs...");
-    await initMrrConfigs(process.env);
-
-    console.log("[init] Repairing stored client tags...");
-    await cleanupStoredClientTags();
-
-    console.log("[init] Initializing app...");
-    await initializeApp(process.env);
-
-    console.log("[init] Registering routes...");
-    registerRoutes(app);
-    console.log("[Routes] All routes registered");
-
-    // ✅ Serve static files from the 'dist/client' directory
-    app.use(express.static(distPath));
-
-    // ✅ SPA Fallback: For any GET request that doesn't match an API route or a static file, send the index.html.
-    // Use a simple catch-all that Express handles properly
-    app.use('/api/*splat', (req, res) => {
-  res.status(404).json({ 
-    success: false, 
-    error: 'API endpoint not found',
-    path: req.path 
-  });
-});
-
-    // Create HTTP server
-    const server = http.createServer(app);
-
-    // Setup WebSocket
-    setupWebSocket(server);
-
-    // Start the server
-    server.listen(PORT, "0.0.0.0", () => {
-      console.log("--- NiceHash API Toolbox Server Started ---");
-      console.log(
-        "Environment: " +
-          (process.env.NICEHASH_ENVIRONMENT
-            ? process.env.NICEHASH_ENVIRONMENT.toUpperCase()
-            : "production"),
-      );
-      console.log(`Listening on: http://localhost:${PORT}`);
-      console.log(`WebSocket on: ws://localhost:${PORT}/api/v2/prices/ws`);
-
-      // Start mining scanner after a delay
-      setTimeout(() => {
-        console.log("[Mining Scanner] Initializing...");
-        try {
-          startMiningOpportunityScanner();
-        } catch (err) {
-          console.error("[Mining Scanner] Failed to start:", err.message);
-        }
-      }, 5000);
-    });
-
-    // Graceful shutdown
-    function shutdown(signal) {
-      console.log(`[api] Received ${signal}, shutting down...`);
-      server.close(() => {
-        console.log("[api] Server closed");
-        process.exit(0);
-      });
-    }
-    process.on("SIGINT", () => shutdown("SIGINT"));
-    process.on("SIGTERM", () => shutdown("SIGTERM"));
-  } catch (err) {
-    console.error("❌ Critical Initialization Failure:", err.message);
-    console.error(err.stack);
-    process.exit(1);
-  }
-}
-
-// ============================================================
-// START THE SERVER
-// ============================================================
-if (process.env.RUN_MAIN !== "false") {
-  startServer().catch((err) => {
-    console.error("❌ Failed to start server:", err);
-    process.exit(1);
-  });
-}
-
-// ============================================================
 // HELPER FUNCTIONS
 // ============================================================
 function normalizeStoredClientTag(value, fallback, allowedTags) {
@@ -439,6 +372,174 @@ async function cleanupStoredClientTags() {
       );
     }
   }
+}
+
+// ============================================================
+// START SERVER
+// ============================================================
+async function startServer() {
+  try {
+    console.log("[init] Initializing database...");
+    await initDatabase();
+
+    console.log("[init] Merging databases into stats.db...");
+    try {
+      await mergeDatabases();
+      console.log("[init] Database merge completed.");
+    } catch (mergeErr) {
+      console.warn("[init] Database merge skipped/warning:", mergeErr.message);
+    }
+
+    console.log("[init] Cleaning cache...");
+    await cleanAllCache();
+
+    console.log("[init] Initializing mining training DB...");
+    await initMiningTrainingDb();
+
+    console.log("[init] Loading stats...");
+    await loadStats();
+
+    console.log("[init] Migrating old CSV files...");
+    await migrateOldCsvToDb();
+
+    console.log("[init] Initializing MRR configs...");
+    await initMrrConfigs(process.env);
+
+    console.log("[init] Repairing stored client tags...");
+    await cleanupStoredClientTags();
+
+    console.log("[init] Initializing app...");
+    await initializeApp(process.env);
+
+    console.log("[init] Registering routes...");
+    registerRoutes(app);
+    console.log("[Routes] All routes registered");
+
+    // Add mining stats routes
+    app.get("/api/v2/mining-stats/minerstat", async (req, res) => {
+      try {
+        const data = await scrapeMinerstat();
+        res.json(data);
+      } catch (err) {
+        res.status(500).json({ error: err.message });
+      }
+    });
+
+    app.get("/api/v2/mining-stats/whattomine", async (req, res) => {
+      try {
+        const data = await scrapeWhatToMine();
+        res.json(data);
+      } catch (err) {
+        res.status(500).json({ error: err.message });
+      }
+    });
+
+    app.get("/api/v2/mining-stats/herominers/global", async (req, res) => {
+      try {
+        const data = await scrapeHeroMinersGlobal();
+        res.json(data);
+      } catch (err) {
+        res.status(500).json({ error: err.message });
+      }
+    });
+
+    // Serve static files
+    app.use(express.static(distPath));
+
+    // API 404 handler - using regex pattern to avoid path-to-regexp issues
+    app.use("/api", (req, res) => {
+      res.status(404).json({
+        success: false,
+        error: "API endpoint not found",
+        path: req.path,
+      });
+    });
+    
+    // SPA fallback - serve index.html for non-API routes
+    app.get("/*", (req, res) => {
+      const indexPath = path.join(distPath, "index.html");
+      if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+      } else {
+        res.status(404).send("Frontend not built. Run `npm run build` first.");
+      }
+    });
+
+    // ============================================================
+    // CREATE AND START HTTP SERVER
+    // ============================================================
+    const server = http.createServer(app);
+
+    // Handle server errors
+    server.on('error', (err) => {
+      if (err.code === 'EADDRINUSE') {
+        console.error(`❌ Port ${PORT} is already in use!`);
+        console.error(`Please free the port and restart.`);
+        process.exit(1);
+      } else {
+        console.error('❌ Server error:', err);
+      }
+    });
+
+    // Setup WebSocket with error handling
+    try {
+      setupWebSocket(server);
+      console.log("[WS] WebSocket server initialized");
+    } catch (wsErr) {
+      console.error("[WS] Failed to setup WebSocket:", wsErr.message);
+    }
+
+    // Start the server
+    server.listen(PORT, "0.0.0.0", () => {
+      console.log("--- NiceHash API Toolbox Server Started ---");
+      console.log(
+        "Environment: " +
+          (process.env.NICEHASH_ENVIRONMENT
+            ? process.env.NICEHASH_ENVIRONMENT.toUpperCase()
+            : "production"),
+      );
+      console.log(`Listening on: http://localhost:${PORT}`);
+      console.log(`WebSocket on: ws://localhost:${PORT}/api/v2/prices/ws`);
+      console.log(`Heartbeat: http://localhost:${PORT}/api/heartbeat`);
+      console.log(`Ping: http://localhost:${PORT}/ping`);
+
+      // Start mining scanner after a delay
+      setTimeout(() => {
+        console.log("[Mining Scanner] Initializing...");
+        try {
+          startMiningOpportunityScanner();
+        } catch (err) {
+          console.error("[Mining Scanner] Failed to start:", err.message);
+        }
+      }, 5000);
+    });
+
+    // Graceful shutdown
+    function shutdown(signal) {
+      console.log(`[api] Received ${signal}, shutting down...`);
+      server.close(() => {
+        console.log("[api] Server closed");
+        process.exit(0);
+      });
+    }
+    process.on("SIGINT", () => shutdown("SIGINT"));
+    process.on("SIGTERM", () => shutdown("SIGTERM"));
+
+  } catch (err) {
+    console.error("❌ Critical Initialization Failure:", err.message);
+    console.error(err.stack);
+    process.exit(1);
+  }
+}
+
+// ============================================================
+// START THE SERVER
+// ============================================================
+if (process.env.RUN_MAIN !== "false") {
+  startServer().catch((err) => {
+    console.error("❌ Failed to start server:", err);
+    process.exit(1);
+  });
 }
 
 // ============================================================

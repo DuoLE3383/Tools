@@ -1,6 +1,6 @@
-import React from 'react';
-import { poolHelpers as ph } from './src/core/poolUtils';
-import { ALGO_MAPPING } from './src/core/mapping';
+import React from "react";
+import { poolHelpers as ph } from "./src/core/poolUtils";
+import { ALGO_MAPPING } from "./src/core/mapping";
 
 export default function VerificationResults({
   verifyResults,
@@ -9,95 +9,173 @@ export default function VerificationResults({
   poolsCount,
   lastRunSummary,
   setInspectData,
-  openPoolEditor
+  openPoolEditor,
 }) {
   const getAlgoCountsSummary = (results) => {
     const counts = results.reduce((acc, item) => {
-      const algorithm = ph.getVerifyAlgo(item.result)
-      acc[algorithm] = (acc[algorithm] || 0) + 1
-      return acc
-    }, {})
+      const algorithm = ph.getVerifyAlgo(item.result);
+      acc[algorithm] = (acc[algorithm] || 0) + 1;
+      return acc;
+    }, {});
     return Object.entries(counts)
       .map(([algo, count]) => `${ALGO_MAPPING(algo)}: ${count}`)
-      .join(', ')
-  }
+      .join(", ");
+  };
 
   if (verifyResults.length === 0) {
     return (
-      <div style={{ textAlign: 'center', padding: '40px', opacity: 0.5 }}>
-        No verification results yet. Start a manual "Verify All" or "Auto Run" to begin monitoring.
+      <div style={{ textAlign: "center", padding: "20px", opacity: 0.5 }}>
+        No verification results yet. Start a manual "Verify All" or "Auto Run"
+        to begin monitoring.
       </div>
     );
   }
 
-  const completedResults = verifyResults.filter(item => !item.result?.pending)
-  const skippedResults = completedResults.filter(item => item.result?.data?.message?.includes('Skipped'))
-  const successResults = completedResults.filter(item => ph.isVerifySuccess(item.result) && !item.result?.data?.message?.includes('Skipped'))
-  const failResults = completedResults.filter(item => !ph.isVerifySuccess(item.result) && !item.result?.data?.message?.includes('Skipped'))
+  const completedResults = verifyResults.filter(
+    (item) => !item.result?.pending,
+  );
+  const skippedResults = completedResults.filter((item) =>
+    item.result?.data?.message?.includes("Skipped"),
+  );
+  const successResults = completedResults.filter(
+    (item) =>
+      ph.isVerifySuccess(item.result) &&
+      !item.result?.data?.message?.includes("Skipped"),
+  );
+  const failResults = completedResults.filter(
+    (item) =>
+      !ph.isVerifySuccess(item.result) &&
+      !item.result?.data?.message?.includes("Skipped"),
+  );
 
-  const verifiedSummary = getAlgoCountsSummary(completedResults)
-  const successSummary = getAlgoCountsSummary(successResults)
-  const failSummary = getAlgoCountsSummary(failResults)
-  const skippedSummary = getAlgoCountsSummary(skippedResults)
+  const verifiedSummary = getAlgoCountsSummary(completedResults);
+  const successSummary = getAlgoCountsSummary(successResults);
+  const failSummary = getAlgoCountsSummary(failResults);
+  const skippedSummary = getAlgoCountsSummary(skippedResults);
 
-  const lastRunVerified = lastRunSummary ? ` (Last: ${lastRunSummary.verified})` : ''
-  const lastRunSuccess = lastRunSummary ? ` (Last: ${lastRunSaummary.success})` : ''
-  const lastRunFailed = lastRunSummary ? ` (Last: ${lastRunSummary.failed})` : ''
-  const lastRunSkipped = lastRunSummary ? ` (Last: ${lastRunSummary.skipped})` : ''
+  const lastRunVerified = lastRunSummary
+    ? ` (Last: ${lastRunSummary.verified})`
+    : "";
+  const lastRunSuccess = lastRunSummary
+    ? ` (Last: ${lastRunSaummary.success})`
+    : "";
+  const lastRunFailed = lastRunSummary
+    ? ` (Last: ${lastRunSummary.failed})`
+    : "";
+  const lastRunSkipped = lastRunSummary
+    ? ` (Last: ${lastRunSummary.skipped})`
+    : "";
 
   return (
-    <div className="results-wrapper" style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, overflow: 'hidden', gap: '15px' }}>
-      <div className="verify-summary" style={{ flexShrink: 0, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: '10px', paddingBottom: '10px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-        <div>
-          <span style={{ fontSize: '10px', opacity: 0.6 }}>Total:</span>{' '}
-          <strong>{verifyFromFile ? filePoolsCount : poolsCount}</strong>
+    <div className="horizon-algorithm-panel" style={{ marginTop: 0 }}>
+      {/* Header */}
+      <div className="horizon-panel-header">
+        <div className="horizon-header-left">
+          <div className="horizon-header-icon">
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path d="M4 7L12 3L20 7L12 11L4 7Z" />
+              <path d="M4 12L12 16L20 12" />
+              <path d="M4 17L12 21L20 17" />
+            </svg>
+          </div>
+          <div>
+            <h3 className="horizon-panel-title">Algorithm Summary</h3>
+            <span className="horizon-panel-subtitle">
+              {algorithmGroups.length} types ·{" "}
+              {algorithmGroups.reduce((sum, [_, count]) => sum + count, 0)}{" "}
+              pools
+            </span>
+          </div>
         </div>
-        <div>
-          <span style={{ fontSize: '10px', opacity: 0.6 }}>Verified:</span>{' '}
-          <strong>{completedResults.length}</strong>
-          <span style={{ fontSize: '10px', opacity: 0.6 }}> ({verifiedSummary}){lastRunVerified}</span>
-        </div>
-        <div>
-          <span style={{ fontSize: '10px', color: '#34d399' }}>Success:</span>{' '}
-          <strong>{successResults.length}</strong>
-          <span style={{ fontSize: '10px', opacity: 0.6 }}> ({successSummary}){lastRunSuccess}</span>
-        </div>
-        <div>
-          <span style={{ fontSize: '10px', color: '#f87171' }}>Error:</span>{' '}
-          <strong>{failResults.length}</strong>
-          <span style={{ fontSize: '10px', opacity: 0.6 }}> ({failSummary}){lastRunFailed}</span>
-        </div>
-        <div>
-          <span style={{ fontSize: '10px', color: '#f87171' }}>Skipped:</span>{' '}
-          <strong>{skippedResults.length}</strong>
-          <span style={{ fontSize: '10px', opacity: 0.6 }}> ({skippedSummary}){lastRunSkipped}</span>
+        <div className="horizon-header-badge">
+          <span className="horizon-badge-dot"></span>
+          Live
         </div>
       </div>
 
-      <div className="verify-list" style={{ flex: 1, minHeight: '240px', overflowY: 'auto', overflowX: 'hidden', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '8px', background: 'rgba(255,255,255,0.015)', scrollbarWidth: 'thin', scrollbarColor: 'rgba(255,255,255,0.15) transparent' }}>
-        {verifyResults.map(item => {
-          const pending = item.result?.pending;
-          const success = !pending && ph.isVerifySuccess(item.result);
-          const algorithm = ph.getVerifyAlgo(item.result);
+      {/* Content */}
+      {algorithmGroups.length > 0 ? (
+        <div className="horizon-algorithm-list">
+          {algorithmGroups.map(([algorithm, count], index) => (
+            <div
+              className="horizon-algorithm-item"
+              key={algorithm}
+              style={{ animationDelay: `${index * 30}ms` }}
+            >
+              <div className="horizon-item-left">
+                <div className="horizon-algorithm-icon">
+                  <span className="horizon-icon-emoji">
+                    {getAlgorithmEmoji(algorithm)}
+                  </span>
+                </div>
+                <div className="horizon-algorithm-info">
+                  <span className="horizon-algorithm-name">
+                    {getAlgoDisplayName(algorithm)}
+                  </span>
+                  <div className="horizon-algorithm-meta">
+                    <span className="horizon-pool-count">
+                      <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      >
+                        <rect
+                          x="2"
+                          y="7"
+                          width="20"
+                          height="14"
+                          rx="2"
+                          ry="2"
+                        />
+                        <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
+                      </svg>
+                      {count} pool{count !== 1 ? "s" : ""}
+                    </span>
+                  </div>
+                </div>
+              </div>
 
-          return (
-            <div key={item.key} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 5px', borderBottom: '2px solid rgba(102, 86, 104, 0.07)', fontSize: '10px' }}>
-              <div style={{ width: '80px', textAlign: 'center', padding: '4px 0', borderRadius: '4px', fontWeight: 700, fontSize: '10px', flexShrink: 0, background: pending ? 'rgba(59,130,246,.1)' : success ? 'rgba(52,211,153,.1)' : 'rgba(248,113,113,.1)', color: pending ? '#3b82f6' : success ? '#34d399' : '#f87171', border: `1px solid ${pending ? '#3b82f644' : success ? '#34d39944' : '#f8717144'}` }}>
-                {pending ? 'PENDING' : success ? 'SUCCESS' : 'ERROR'}
-              </div>
-              <div style={{ flex: 1, minWidth: 0, fontWeight: 600 }}>{item.label}</div>
-              <div style={{ width: '120px', flexShrink: 0, opacity: 0.6, fontFamily: 'monospace' }}>{ALGO_MAPPING(algorithm)}</div>
-              <div style={{ flex: 2, minWidth: 0, opacity: 0.8, fontSize: '11px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {pending ? 'Waiting...' : ph.getVerifyMessage(item.result)}
-              </div>
-              <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
-                <button className="btn-pro secondary" style={{ fontSize: '11px' }} onClick={() => setInspectData(item.result)}>Inspect</button>
-                <button className="btn-pro secondary" style={{ fontSize: '11px' }} onClick={() => openPoolEditor(item)}>Edit</button>
-              </div>
+              <button
+                type="button"
+                className="horizon-verify-btn"
+                onClick={() => onVerifyAlgorithm(algorithm)}
+                disabled={disabled}
+              >
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                  <polyline points="22 4 12 14.01 9 11.01" />
+                </svg>
+                Verify
+              </button>
             </div>
-          );
-        })}
-      </div>
+          ))}
+        </div>
+      ) : (
+        <div className="horizon-empty-state">
+          <div className="horizon-empty-icon">📊</div>
+          <p className="horizon-empty-text">No pools available</p>
+          <span className="horizon-empty-subtext">
+            Add a pool to get started
+          </span>
+        </div>
+      )}
     </div>
   );
 }

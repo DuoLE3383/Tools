@@ -3,7 +3,7 @@
 const MAX_ATTEMPTS = 3;           // Reduced from 5
 const REQUEST_TIMEOUT = 10000;    // Reduced from 20000
 const BASE_DELAY = 500;
-const CACHE_TTL = 10000;
+const CACHE_TTL = 20000; // Increased to 20 seconds
 
 const pendingRequestsMap = new Map();
 const requestCache = new Map();
@@ -140,23 +140,11 @@ async function fetchMiningStatsInternal(
       if (err.name === "AbortError") {
         throw new Error(`Failed to fetch ${type}. Last error: Request timeout`);
       }
-      if (i === MAX_ATTEMPTS - 1) {
-        try {
-          const wsData = await fetchMiningStatsViaWS(type, client, rigId, coin, customTimeout, force);
-          return normalizeMiningStatsResponse(wsData, type);
-        } catch (wsErr) {
-          throw new Error(`Failed to fetch ${type}. Last error: ${wsErr.message}`);
-        }
-      }
+      // If all retries fail, throw the last known error.
+      if (i === MAX_ATTEMPTS - 1) throw err;
     }
   }
-
-  try {
-    const wsData = await fetchMiningStatsViaWS(type, client, rigId, coin, customTimeout, force);
-    return normalizeMiningStatsResponse(wsData, type);
-  } catch (wsErr) {
-    throw new Error(`Failed to fetch ${type}. Last error: ${wsErr.message}`);
-  }
+  throw new Error(`Failed to fetch ${type} after ${MAX_ATTEMPTS} attempts.`);
 }
 
 async function fetchMiningStatsViaWS(type, client, rigId, coin, customTimeout, force) {

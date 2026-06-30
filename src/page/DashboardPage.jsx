@@ -1,4 +1,3 @@
-// pages/DashboardPage.jsx — Pools as homepage
 import { useCallback } from "react";
 import Pools from "../components/pools/Pools";
 import DashboardHeader from "../components/Dashboard/DashboardHeader.jsx";
@@ -34,7 +33,7 @@ export default function DashboardPage({
     }, [dispatch]);
 
   return (
-    <div className="app-shell" style={{ padding: "20px 20px 40px", maxWidth: "1600px", margin: "0 auto" }}>
+    <div className="page-full">
       <DashboardHeader
         state={state}
         currentUser={currentUser}
@@ -49,19 +48,7 @@ export default function DashboardPage({
       />
 
       {/* POOLS SECTION — MAIN CONTENT */}
-      <section
-        className="pools-section"
-        style={{
-          marginBottom: "15px",
-          marginTop: "0px",
-          background: "rgba(255, 255, 255, 0.02)",
-          border: "1px solid rgba(255, 255, 255, 0.05)",
-          borderRadius: "16px",
-          padding: "24px",
-          minHeight: "600px",
-          overflow: "auto",
-        }}
-      >
+      <section className="dashboard-pools-section">
         <Pools
           onCall={callApi}
           poolData={state.output?.poolData}
@@ -72,12 +59,6 @@ export default function DashboardPage({
           setNhPoolClient={setNhPoolClient}
         />
       </section>
-
-      {/* QUICK ACTIONS */}
-      {/* <QuickActions
-        onCalculator={() => dispatch({ type: "SET_CALCULATOR_MODAL", payload: true })}
-        onNavigate={handleNavClick}
-      /> */}
 
       {/* MODALS */}
       <UserManagement

@@ -129,12 +129,48 @@ export function normalizeHeroRows(payload) {
     .filter((row) => row.nicehashAlgo && row.nicehashAlgo !== "UNKNOWN");
 }
 
+export function normalizeMinerstatRows(payload) {
+  const rows = Array.isArray(payload) ? payload : [];
+  return rows.map(row => ({
+    provider: "Minerstat",
+    coin: row.coin,
+    algorithm: row.algorithm,
+    nicehashAlgo: normalizeKey(row.algorithm),
+    mrrAlgo: mapNiceHashToMRR(normalizeKey(row.algorithm)),
+    btcPerDay: numberValue(row.btc_revenue),
+    usdPerDay: numberValue(row.usd_revenue),
+    raw: row,
+  })).filter(row => row.nicehashAlgo && row.nicehashAlgo !== "UNKNOWN");
+}
+
+export function normalizeWtmRows(payload) {
+  const rows = Array.isArray(payload) ? payload : [];
+  return rows.map(row => ({
+    provider: "WhatToMine",
+    coin: row.tag,
+    algorithm: row.algorithm,
+    nicehashAlgo: normalizeKey(row.algorithm),
+    mrrAlgo: mapNiceHashToMRR(normalizeKey(row.algorithm)),
+    btcPerDay: numberValue(row.btc_revenue),
+    usdPerDay: numberValue(row.revenue),
+    raw: row,
+  })).filter(row => row.nicehashAlgo && row.nicehashAlgo !== "UNKNOWN");
+}
+
+export function normalizeHashrateNoRows(payload) {
+  // Assuming a similar structure to other providers
+  return []; // Placeholder
+}
+
 // ============================================
 // MERGE MINING ROUTES
 // ============================================
 export function mergeMiningRoutes(
   miningDutchRows,
   heroRows,
+  minerstatRows,
+  wtmRows,
+  hashrateNoRows,
   niceHashPrices = {},
 ) {
   // Build hero by algorithm with proper coin collection
@@ -215,7 +251,13 @@ export function mergeMiningRoutes(
   }
 
   // ✅ FIX: Combine algorithms from all sources to ensure none are missed.
-  const algos = new Set([...heroByAlgo.keys(), ...dutchByAlgo.keys()]);
+  const algos = new Set([
+    ...heroByAlgo.keys(), 
+    ...dutchByAlgo.keys(),
+    ...minerstatRows.map(r => r.nicehashAlgo),
+    ...wtmRows.map(r => r.nicehashAlgo),
+    ...hashrateNoRows.map(r => r.nicehashAlgo),
+  ]);
 
   return Array.from(algos)
     .map((nicehashAlgo) => {
@@ -223,6 +265,9 @@ export function mergeMiningRoutes(
       const hero = heroByAlgo.get(nicehashAlgo);
       const nhPrice = numberValue(niceHashPrices[nicehashAlgo] || 0);
       const poolBtc = dutch?.btcPerDay || 0;
+      const msBtc = minerstatRows.find(r => r.nicehashAlgo === nicehashAlgo)?.btcPerDay || 0;
+      const wtmBtc = wtmRows.find(r => r.nicehashAlgo === nicehashAlgo)?.btcPerDay || 0;
+      const hnBtc = hashrateNoRows.find(r => r.nicehashAlgo === nicehashAlgo)?.btcPerDay || 0;
       const heroBtc = hero?.btcPerDay || 0;
       
       const spread =
@@ -235,7 +280,7 @@ export function mergeMiningRoutes(
           ? ((heroBtc - nhPrice) / nhPrice) * 100
           : null;
       
-      const activityScore = (hero?.miners || 0) + (hero?.workers || 0) * 0.25;
+      const activityScore = (hero?.miners || 0) + (hero?.workers || 0) * 0.25 + (dutch?.miners || 0);
       const profitScore = Math.max(poolBtc, heroBtc) * 100000000;
 
       // Get all coins from hero data
@@ -256,10 +301,14 @@ export function mergeMiningRoutes(
       const unit = getAlgorithmUnit(nicehashAlgo);
 
       // Determine best source
-      const sources = [
+      const sources = [ // Now includes all providers
         { key: "Mining-Dutch", value: poolBtc },
         { key: "HeroMiners", value: heroBtc },
+        { key: "Minerstat", value: msBtc },
+        { key: "WhatToMine", value: wtmBtc },
+        { key: "Hashrate.no", value: hnBtc },
       ];
+
       const bestSource = sources.sort((a, b) => b.value - a.value)[0];
 
       return {
@@ -271,6 +320,9 @@ export function mergeMiningRoutes(
         miningDutchUsdPerDay: dutch?.usdPerDay || 0,
         miningDutchMiners: dutch?.miners || 0,
         miningDutchHashrate: dutch?.hashrate || "N/A",
+        minerstatBtcPerDay: msBtc,
+        wtmBtcPerDay: wtmBtc,
+        hashrateNoBtcPerDay: hnBtc,
         heroBtcPerDay: heroBtc,
         heroUsdPerDay: hero?.usdPerDay || 0,
         heroCoins: heroCoins,
