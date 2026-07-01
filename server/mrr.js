@@ -222,17 +222,21 @@ export function nextMrrNonce(apiKey, clientLabel) {
   
   const lastNonce = BigInt(mrrLastNonceByClient.get(apiKey) || 0n);
 
-  // Safety: Only reset if we hit the actual 64-bit unsigned limit (18.4 quintillion).
-  // Your logs show nonces around 1.8 quintillion, which is perfectly safe for Uint64.
-  // We REMOVE the future-drift reset to allow the "Nuclear Jump" to actually catch up to MRR.
-  if (lastNonce > 19446744073709551615n) {
-    console.warn(`[mrr:${clientLabel}] Nonce overflow (Uint64). Resetting baseline.`);
+  // Node.js BigInt supports arbitrarily large integers — no real Uint64 overflow.
+  // The old check `lastNonce > 19446744073709551615n` always triggered because
+  // generated nonces are Date.now() * 1,000,000 ≈ 1.78e21, which is ~100x larger
+  // than the Uint64 max (1.84e19). Remove the bogus overflow reset.
+  // If nonce exceeds 10^25, something is truly wrong — reset then.
+  if (lastNonce > 10000000000000000000000000n) {
+    console.warn(`[mrr:${clientLabel}] Nonce unreasonably large (${lastNonce}). Resetting.`);
     mrrLastNonceByClient.set(apiKey, 1n);
   }
 
   const nowMs = BigInt(Date.now()) + mrrClockOffset;
-  // Add a small buffer (e.g., 100ms) to 'now' to avoid race conditions with the server clock
-  const now19 = (nowMs + 100n) * 1000000n;
+  // Use a smaller multiplier (1000 instead of 1,000,000) to keep nonces
+  // well within a reasonable range while still guaranteeing uniqueness.
+  // The old * 1000000n produced ~1.78e21 which broke the overflow check.
+  const now19 = (nowMs + 100n) * 1000n;
 
   // Đảm bảo nonce luôn tăng và cộng thêm biến đếm toàn cục để tránh va chạm mili giây
   mrrGlobalCounter = (mrrGlobalCounter + 1) % 10000; // Increase range for more entropy

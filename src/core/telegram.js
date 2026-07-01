@@ -228,7 +228,7 @@ export const TelegramTemplates = {
     const rentedCount =
       typeof rented === "number" ? rented : parseInt(rented) || 0;
 
-    let summary = `📊 <b>SUMMARY</b> [${time || new Date().toLocaleTimeString()}]\n`;
+    let summary = `📊 <b>SUMMARY Main Local</b> [${time || new Date().toLocaleTimeString()}]\n`;
     summary += `${divider}\n`;
     summary += `🟢 Online: <b>${online || 0}</b> / Renting: <b>${rentedCount}</b>\n`;
     summary += `🔴 Offline: <b>${offline || 0}</b> / Disabled: <b>${disabled || 0}</b>\n`;
