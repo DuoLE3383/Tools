@@ -448,7 +448,7 @@ function startFrontend() {
   }
   
   // Remove any existing frontend from processes list
-  processes = processes.filter(p => p !== frontendProcess);
+  processeses = processes.filter(p => p !== frontendProcess);
   
   frontendProcess = spawn(npmCmd, ['run', 'dev', '--', '--port', '5173'], {
     stdio: 'inherit',
@@ -457,7 +457,7 @@ function startFrontend() {
     windowsHide: true
   });
   
-  processes.push(frontendProcess);
+  processeses.push(frontendProcess);
   
   frontendProcess.on('error', (err) => {
     console.error('❌ Frontend error:', err.message);

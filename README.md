@@ -54,7 +54,7 @@ npm run dev
 6. Open the app in your browser:
 
 ```text
-http://localhost:5173
+http://localhost:1757
 ```
 
 ## Notes

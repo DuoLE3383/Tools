@@ -49,7 +49,7 @@ let mergeDatabases;
 try {
   const mergeModule = await import("./data/merge.js");
   mergeDatabases =
-    mergeModule.mergeDatabases || mergeModule.default || (() => {});
+    mergeModule.mergeDatabases || mergeModule.default || (() => { });
   console.log("[init] ✅ mergeDatabases loaded successfully");
 } catch (err) {
   console.warn("[init] ⚠️ mergeDatabases not found, skipping database merge");
@@ -325,7 +325,7 @@ async function cleanupStoredClientTags() {
   ]);
   const fallbackMrrClient = normalizeStoredClientTag(
     defaultMrrClient,
-    "BT",
+    "VN",
     configuredMrrClients,
   );
 
@@ -333,7 +333,7 @@ async function cleanupStoredClientTags() {
     {
       table: "nh_pools",
       column: "nhClient",
-      fallback: "BT",
+      fallback: "VN",
       allowed: configuredNhClients,
     },
     {
@@ -434,14 +434,8 @@ async function startServer() {
       }
     });
 
-    app.get("/api/v2/mining-stats/herominers/global", async (req, res) => {
-      try {
-        const data = await scrapeHeroMinersGlobal();
-        res.json(data);
-      } catch (err) {
-        res.status(500).json({ error: err.message });
-      }
-    });
+    // The `/api/v2/mining-stats/herominers/global` route is registered
+    // by `server/miners/herominers-routes.js` and should no longer be duplicated here.
 
     // Serve static files
     app.use(express.static(distPath));
@@ -454,9 +448,8 @@ async function startServer() {
         path: req.path,
       });
     });
-    
-    // SPA fallback - serve index.html for non-API routes
-    app.get("/*", (req, res) => {
+
+    app.use((req, res) => {
       const indexPath = path.join(distPath, "index.html");
       if (fs.existsSync(indexPath)) {
         res.sendFile(indexPath);
@@ -494,9 +487,9 @@ async function startServer() {
       console.log("--- NiceHash API Toolbox Server Started ---");
       console.log(
         "Environment: " +
-          (process.env.NICEHASH_ENVIRONMENT
-            ? process.env.NICEHASH_ENVIRONMENT.toUpperCase()
-            : "production"),
+        (process.env.NICEHASH_ENVIRONMENT
+          ? process.env.NICEHASH_ENVIRONMENT.toUpperCase()
+          : "production"),
       );
       console.log(`Listening on: http://localhost:${PORT}`);
       console.log(`WebSocket on: ws://localhost:${PORT}/api/v2/prices/ws`);

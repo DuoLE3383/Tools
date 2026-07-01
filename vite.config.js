@@ -5,9 +5,10 @@ import { cloudflare } from '@cloudflare/vite-plugin'
 export default defineConfig(({ command }) => ({
   plugins: [react(), command === 'build' ? cloudflare() : undefined].filter(Boolean),
   server: {
-    port: 5173,
+    port: 1757,
     host: true,
     watch: { usePolling: true },
+    allowedHosts: ['localhost', 'huyenbao.com', 'api.huyenbao.com', 'api.herominers.com', 'api.mining-dutch.nl', 'api.nicehash.com', 'api.miningrigrentals.com', 'api2.miningrigrentals.com', 'www.huyenbao.com', 'www.herominers.com', 'www.mining-dutch.nl', 'www.nicehash.com', 'www.miningrigrentals.com', 'www2.miningrigrentals.com'],
     proxy: {
       // ✅ HeroMiners proxy - external site
       '/api/hm': {
@@ -47,7 +48,7 @@ export default defineConfig(({ command }) => ({
       
       // ✅ Main API proxy - YOUR BACKEND
       '/api': {
-        target: 'http://localhost:3000',
+        target: 'http://localhost:3003',
         changeOrigin: true,
         ws: true, // ✅ Enable WebSocket proxying
         configure: (proxy) => {

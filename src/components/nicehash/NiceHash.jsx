@@ -382,12 +382,12 @@ function NiceHashOrderManager({ onCall, nhClient, setNhClient }) {
       </div>
 
       {/* Accounting Section */}
-      <div style={{ marginTop: "20px", borderTop: "1px solid rgba(255,255,255,0.1)", paddingTop: "16px" }}>
+      {/* <div style={{ marginTop: "20px", borderTop: "1px solid rgba(255,255,255,0.1)", paddingTop: "16px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
           <h3 style={{ margin: 0, fontSize: "clamp(13px, 1.2vw, 16px)" }}>💰 Accounting & Wallet</h3>
         </div>
         <Accounting onCall={onCall} />
-      </div>
+      </div> */}
     </div>
   );
 }

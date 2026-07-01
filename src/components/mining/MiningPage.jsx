@@ -656,7 +656,7 @@ export default function MiningPage({
 }) {
   return (
     <RentedRigProvider callApi={onCall}>
-      <MiningWorkspaceProvider onCall={onCall} nhClient={nhClient}>
+      <MiningWorkspaceProvider onCall={onCall} nhClient={nhClient} mrrClient={state?.mrrClient || "BT"}>
         <CoinPriceProvider onCall={onCall}>
           <div className="page-full">
             <MiningWorkspaceShell {...{ onNavigateHome, onCall, nhClient, state, dispatch, currentUser, isAdmin, forceCheckStatus, handleLogout, onNavigate }} />

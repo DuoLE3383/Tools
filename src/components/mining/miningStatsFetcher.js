@@ -102,8 +102,11 @@ async function fetchMiningStatsInternal(
 ) {
   const restPathMap = {
     herominers: "herominers/global",
-    miningDutch: "miningdutch", // Corrected to match route definition
-    herominers_address: "herominers/address", // This is the correct endpoint for address lookups
+    miningDutch: "miningdutch",
+    minerstat: "minerstat",
+    whattomine: "whattomine",
+    "hashrate.no": "hashrate.no",
+    herominers_address: "herominers/address",
     all: "all",
   };
 

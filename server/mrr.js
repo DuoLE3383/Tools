@@ -1,3 +1,6 @@
+// server/mrr.js - COMPLETE UPGRADED VERSION
+// Fixes: Ghost rental spam, batch processing, reduced logging, better performance, caching
+
 import fs from 'fs/promises';
 import path from 'path';
 import express from 'express';
@@ -6,6 +9,9 @@ import { db } from './db.js';
 import { normalizeCredential, sanitizeMrrEndpoint } from './utils.js';
 import { isAggregate, resolveNhClient, getNiceHashApp } from './nh.js';
 
+// ============================================
+// STATE MANAGEMENT
+// ============================================
 const mrrLastNonceByClient = new Map();
 const mrrInitTracker = new Set();
 let mrrClockOffset = 0n;
@@ -15,30 +21,119 @@ let mrrSyncPromise = null;
 export let mrrConfigs = {}; // Declare as mutable
 export let defaultMrrClient = 'BT'; // Declare as mutable
 
-async function saveRigEndpointToDb(endpoint, client) {
-  const ts = new Date().toISOString();
-  db.serialize(() => {
-    db.run(`CREATE TABLE IF NOT EXISTS mrr_rig_logs (timestamp TEXT, client TEXT, endpoint TEXT)`);
-    db.run(`INSERT INTO mrr_rig_logs (timestamp, client, endpoint) VALUES (?, ?, ?)`, [ts, client, endpoint], (err) => {
-      if (err) console.error(`[mrr:db] Error saving to mrr_rig_logs: ${err.message}`);
-    });
-  });
+const mrrQueueByClient = new Map(); // Serialized queue storage to prevent parallel nonce usage
+const MRR_GLOBAL_COUNTER_KEY = '__mrrGlobalCounter';
+let mrrGlobalCounter = 0n; // Global monotonic counter for nonce generation fallback
+if (typeof globalThis !== 'undefined' && typeof globalThis[MRR_GLOBAL_COUNTER_KEY] === 'undefined') {
+  globalThis[MRR_GLOBAL_COUNTER_KEY] = 0n;
 }
 
-const mrrQueueByClient = new Map(); // Serialized queue storage to prevent parallel nonce usage
+function getGlobalMrrCounter() {
+  if (typeof globalThis !== 'undefined') {
+    const value = globalThis[MRR_GLOBAL_COUNTER_KEY];
+    return typeof value === 'bigint' ? value : 0n;
+  }
+  return mrrGlobalCounter;
+}
 
-// --- Cache and In-flight request tracking to reduce API hammering ---
+function bumpGlobalMrrCounter() {
+  if (typeof globalThis !== 'undefined') {
+    const nextValue = (getGlobalMrrCounter() + 1n) % 10000n;
+    globalThis[MRR_GLOBAL_COUNTER_KEY] = nextValue;
+    return nextValue;
+  }
+  mrrGlobalCounter = (mrrGlobalCounter + 1n) % 10000n;
+  return mrrGlobalCounter;
+}
+
+// Cache and In-flight request tracking
 const mrrRequestCache = new Map();
 const mrrInflight = new Map();
 const MRR_CACHE_TTL_DEFAULT = 10000; // 10 seconds cache
 const MRR_CACHE_TTL_STABLE = 300000; // 5 minutes for stable info/algos
+const MRR_GET_CACHE_TTL = 60000; // 60 seconds for GET requests
+
+// ✅ FIX: Add mrrGetCache declaration and export it for monitor consumers
+export const mrrGetCache = new Map();
+
 const MRR_NONCE_RECOVERY_JUMP_SMALL = 60000000000n; // 1 minute
 const MRR_NONCE_RECOVERY_JUMP_LARGE = 3600000000000n; // 1 hour
 
 const USER_AGENT = 'Ben Tre Mining Tool/2.0';
 
-const mrrInstances = new Map(); // This map will store resolved client configs
+const mrrInstances = new Map();
 
+// ============================================
+// LOGGING WITH RATE LIMITING
+// ============================================
+const logCooldown = new Map();
+const LOG_COOLDOWN_MS = 5000; // 5 seconds cooldown for repeated logs
+
+function shouldLog(key, message) {
+  const now = Date.now();
+  const lastLog = logCooldown.get(key);
+  if (!lastLog || (now - lastLog) > LOG_COOLDOWN_MS) {
+    logCooldown.set(key, now);
+    return true;
+  }
+  return false;
+}
+
+function logOnce(level, key, message, ...args) {
+  if (shouldLog(key, message)) {
+    const logger = level === 'warn' ? console.warn : 
+                   level === 'error' ? console.error : 
+                   console.log;
+    logger(message, ...args);
+  }
+}
+
+const ghostRentalIds = new Set(); // Track ghost rental IDs
+const GHOST_RENTAL_CACHE_TTL = 3600000; // 1 hour
+
+// Function to check if a rental is a ghost
+function isGhostRental(rental) {
+  if (!rental) return true;
+  
+  const id = String(rental.id || '');
+  // Check for invalid IDs
+  if (!id || id === 'false' || id === 'null' || id === 'undefined' || id === '0') {
+    return true;
+  }
+  
+  // Check if already marked as ghost
+  if (ghostRentalIds.has(id)) {
+    return true;
+  }
+  
+  // Check for missing essential data
+  if (!rental.rigid && !rental.rig && !rental.status && !rental.rented) {
+    return true;
+  }
+  
+  return false;
+}
+
+// Function to mark a rental as ghost
+export function markGhostRental(rentalId) {
+  const id = String(rentalId);
+  if (id && id !== 'false' && id !== 'null' && id !== 'undefined') {
+    ghostRentalIds.add(id);
+    // Auto-cleanup after TTL
+    setTimeout(() => {
+      ghostRentalIds.delete(id);
+    }, GHOST_RENTAL_CACHE_TTL);
+  }
+}
+
+// Function to clear ghost rentals
+function clearGhostRentals() {
+  ghostRentalIds.clear();
+}
+
+// ============================================
+// CONFIGURATION
+// ============================================
 export function initMrrConfigs(env) {
   mrrConfigs = {
     BT: {
@@ -63,7 +158,7 @@ export function initMrrConfigs(env) {
     },
   };
 
-  // Discover and register additional accounts from environment variables
+  // Discover additional accounts from environment variables
   Object.keys(env).forEach(key => {
     if (key.startsWith('MRR_KEY_RIG_')) {
       const acct = key.replace('MRR_KEY_RIG_', '').toUpperCase();
@@ -73,7 +168,7 @@ export function initMrrConfigs(env) {
           apiSecret: normalizeCredential(env[`MRR_SECRET_RIG_${acct}`] || env[`MRR_API_SECRET_${acct}`]),
           nonceOverride: env[`MRR_NONCE_OVERRIDE_${acct}`] ? BigInt(env[`MRR_NONCE_OVERRIDE_${acct}`]) : null,
         };
-      };
+      }
     }
   });
 
@@ -87,14 +182,15 @@ export function initMrrConfigs(env) {
   })();
 }
 
+// ============================================
+// NONCE MANAGEMENT
+// ============================================
 export async function initNonces() {
   return new Promise((resolve) => {
     db.all('SELECT client, last_nonce FROM mrr_nonces', [], (err, rows) => {
       if (!err && rows) {
         rows.forEach(row => {
           try {
-            // Nonce state is tracked by API Key. If the row key looks like a label (e.g., 'BT'),
-            // it's likely from an older version of the tool and should be ignored to prevent conflicts.
             if (row.client.length > 10) {
               mrrLastNonceByClient.set(row.client, BigInt(row.last_nonce));
               console.log(`[mrr:init] Loaded nonce baseline for Key ${row.client.slice(0, 8)}...: ${row.last_nonce}`);
@@ -103,7 +199,6 @@ export async function initNonces() {
         });
       }
 
-      // Apply manual overrides from environment variables if provided
       Object.values(mrrConfigs).forEach(cfg => {
         if (cfg.nonceOverride && cfg.apiKey) {
           const current = mrrLastNonceByClient.get(cfg.apiKey) || 0n;
@@ -119,6 +214,40 @@ export async function initNonces() {
   });
 }
 
+export function nextMrrNonce(apiKey, clientLabel) {
+  if (!apiKey) return (BigInt(Date.now()) * 1000000n).toString();
+  
+  const lastNonce = BigInt(mrrLastNonceByClient.get(apiKey) || 0n);
+
+  if (lastNonce > 19446744073709551615n) {
+    console.warn(`[mrr:${clientLabel}] Nonce overflow (Uint64). Resetting baseline.`);
+    mrrLastNonceByClient.set(apiKey, 1n);
+  }
+
+  const nowMs = BigInt(Date.now()) + mrrClockOffset;
+  const now19 = (nowMs + 100n) * 1000000n;
+
+  const counter = bumpGlobalMrrCounter();
+  const baseNonce = (now19 > lastNonce) ? now19 : (lastNonce + 1n);
+  const nonce = baseNonce + counter;
+
+  mrrLastNonceByClient.set(apiKey, nonce);
+  
+  new Promise((resolve) => {
+    db.run(
+      `INSERT INTO mrr_nonces (client, last_nonce) VALUES (?, ?)
+       ON CONFLICT(client) DO UPDATE SET last_nonce=excluded.last_nonce`,
+      [apiKey, nonce.toString()],
+      () => resolve(),
+    );
+  });
+
+  return nonce.toString();
+}
+
+// ============================================
+// CLOCK SYNC
+// ============================================
 function extractEpochMs(payload) {
   const candidates = [
     payload?.data,
@@ -134,25 +263,21 @@ function extractEpochMs(payload) {
 
   for (const candidate of candidates) {
     if (candidate === undefined || candidate === null || candidate === '') continue;
-
-    if (typeof candidate === 'object') {
-      continue;
-    }
+    if (typeof candidate === 'object') continue;
 
     const parsed = Number(candidate);
     if (!Number.isFinite(parsed) || parsed <= 0) continue;
 
-    // API values are usually Unix seconds; tolerate millisecond payloads too.
     return parsed >= 1e12 ? BigInt(Math.trunc(parsed)) : BigInt(Math.trunc(parsed * 1000));
   }
 
   return null;
 }
 
-/** Synchronizes local clock with MRR server time. */
 export async function syncMrrClock(force = false) {
   if (mrrClockSynced && !force) return;
   if (mrrSyncPromise) return mrrSyncPromise;
+  
   console.log('[mrr:clock] Synchronizing with MiningRigRentals server time...');
   mrrSyncPromise = (async () => {
     const startSync = Date.now();
@@ -164,7 +289,6 @@ export async function syncMrrClock(force = false) {
         });
         if (!res.ok) return null;
 
-        // Robust fallback: use the Date header from the HTTP response
         const dateHeader = res.headers.get('Date');
         let headerTimeMs = null;
         if (dateHeader) {
@@ -184,7 +308,6 @@ export async function syncMrrClock(force = false) {
     };
 
     try {
-      // Try API time first, then fallback to landing page for headers (bypasses most rate limits)
       let serverTimeMs = await trySync('https://www.miningrigrentals.com/api/v2/info/time');
       if (!serverTimeMs) {
         serverTimeMs = await trySync('https://www.miningrigrentals.com/');
@@ -192,8 +315,6 @@ export async function syncMrrClock(force = false) {
 
       const endSync = Date.now();
       const rtt = BigInt(endSync - startSync);
-      // NTP-style: Estimate server time at the moment of 'endSync'
-      // by adding half the round-trip time to the server's reported time.
       const estimatedServerTimeAtEnd = (serverTimeMs ?? BigInt(endSync)) + (rtt / 2n);
       mrrClockOffset = estimatedServerTimeAtEnd - BigInt(endSync);
       mrrClockSynced = true;
@@ -219,43 +340,6 @@ export async function syncMrrClock(force = false) {
  * Generates a strictly increasing nonce for a specific API Key.
  * Keying by API Key prevents collisions if multiple client names share the same credentials.
  */
-export function nextMrrNonce(apiKey, clientLabel) {
-  // Use high-resolution time as the primary source for the nonce.
-  // process.hrtime.bigint() provides nanoseconds since an arbitrary time, and is guaranteed to be monotonic.
-  const nowNano = process.hrtime.bigint();
-  
-  if (!apiKey) return nowNano.toString();
-
-  const lastNonce = BigInt(mrrLastNonceByClient.get(apiKey) || 0n);
-
-  // Ensure the nonce is always strictly increasing. If the high-resolution clock provides a value
-  // less than or equal to the last one (e.g., after a restart), we increment the last one.
-  const nonce = (nowNano > lastNonce) ? nowNano : (lastNonce + 1n);
-
-  // Safety: Check for nonce overflow against the 64-bit unsigned integer limit.
-  if (nonce > 18446744073709551615n) {
-    console.warn(`[mrr:${clientLabel}] Nonce overflow (Uint64). Resetting baseline.`);
-    mrrLastNonceByClient.set(apiKey, nowNano); // Reset to current high-resolution time
-  } else {
-    mrrLastNonceByClient.set(apiKey, nonce); // Update synchronously to block concurrent reads
-  }
-
-  // Async DB update - don't block the API thread
-  new Promise((resolve) => {
-    db.run(
-      `INSERT INTO mrr_nonces (client, last_nonce) VALUES (?, ?)
-       ON CONFLICT(client) DO UPDATE SET last_nonce=excluded.last_nonce`,
-      [apiKey, nonce.toString()], // Use apiKey as the unique ID for DB storage
-      (err) => {
-        if (err) console.error(`[mrr:db] Failed to persist nonce for key ${apiKey.slice(0, 6)}...: ${err.message}`);
-        resolve();
-      },
-    );
-  });
-
-  return nonce.toString();
-}
-
 function getFallbackRealAccount() {
   return Object.keys(mrrConfigs).find(k => !isAggregate(k) && mrrConfigs[k].apiKey && mrrConfigs[k].apiSecret) || 'BT';
 }
@@ -263,7 +347,6 @@ function getFallbackRealAccount() {
 export function resolveMrrClient(clientNameRaw) {
   let clientName = String(clientNameRaw || defaultMrrClient).trim().toUpperCase();
 
-  // Single-client operations cannot use aggregate handles; resolve to a real account
   if (isAggregate(clientName)) {
     clientName = isAggregate(defaultMrrClient) ? getFallbackRealAccount() : defaultMrrClient;
   }
@@ -306,6 +389,22 @@ export async function runMrrCallInOrder(clientName, task) {
   }
 }
 
+// ============================================
+// DATABASE HELPERS
+// ============================================
+async function saveRigEndpointToDb(endpoint, client) {
+  const ts = new Date().toISOString();
+  db.serialize(() => {
+    db.run(`CREATE TABLE IF NOT EXISTS mrr_rig_logs (timestamp TEXT, client TEXT, endpoint TEXT)`);
+    db.run(`INSERT INTO mrr_rig_logs (timestamp, client, endpoint) VALUES (?, ?, ?)`, [ts, client, endpoint], (err) => {
+      if (err) console.error(`[mrr:db] Error saving to mrr_rig_logs: ${err.message}`);
+    });
+  });
+}
+
+// ============================================
+// MRR API CALL
+// ============================================
 export async function mrrApiCall({ endpoint, method = 'GET', query, body, clientNameRaw }) {
   const requestMethod = String(method || 'GET').toUpperCase();
   const isCacheable = requestMethod === 'GET';
@@ -313,12 +412,20 @@ export async function mrrApiCall({ endpoint, method = 'GET', query, body, client
   const { clientName, clientConfig } = resolveMrrClient(clientNameRaw);
   const apiKey = clientConfig?.apiKey;
 
-  // 1. Loại bỏ các tham số nhiễu (ts, client) để tạo Cache Key ổn định
   const { client: _c, ts: _t, endpoint: _e, ...cleanQuery } = query || {};
   const cacheKey = `${apiKey || clientName}:${requestMethod}:${endpoint}:${JSON.stringify(cleanQuery)}:${JSON.stringify(body || {})}`;
 
-  // 2. CATCH LOADING: Nếu đang có request tương tự, đợi nó thay vì bắn request mới
-  if (isCacheable && !endpoint.includes('/rental/')) { // Đừng cache chi tiết rental quá lâu
+  // ✅ Check simple GET cache
+  if (isCacheable && !endpoint.includes('/rental/')) {
+    const simpleCacheKey = `${apiKey || clientName}:${endpoint}:${JSON.stringify(cleanQuery)}`;
+    const cached = mrrGetCache.get(simpleCacheKey);
+    if (cached && Date.now() - cached.ts < MRR_GET_CACHE_TTL) {
+      return cached.data;
+    }
+  }
+
+  // Existing inflight / request cache
+  if (isCacheable && !endpoint.includes('/rental/')) {
     const cached = mrrRequestCache.get(cacheKey);
     if (cached && Date.now() < cached.expires) return cached.data;
 
@@ -327,47 +434,41 @@ export async function mrrApiCall({ endpoint, method = 'GET', query, body, client
   }
 
   const task = (async () => {
-    // Throttle: Chỉ delay 1s cho lần đầu tiên gọi endpoint cụ thể
-  const trackingBase = endpoint.split('\n')[0].trim(); // In case endpoint has extra whitespace or newlines
-  const trackingEndpoint = trackingBase
-    .replace(/\/(rig|rental)\/[^/]+\/pool/, '/$1/:id/pool')
-    .replace(/\/(rig|rental)\/[0-9;]+$/, '/$1/:id')
-    .replace(/\/(rig|rental)\/[0-9;]+\/info$/, '/$1/:id/info');
+    const trackingBase = endpoint.split('\n')[0].trim();
+    const trackingEndpoint = trackingBase
+      .replace(/\/(rig|rental)\/[^/]+\/pool/, '/$1/:id/pool')
+      .replace(/\/(rig|rental)\/[0-9;]+$/, '/$1/:id')
+      .replace(/\/(rig|rental)\/[0-9;]+\/info$/, '/$1/:id/info');
 
-  if (!mrrInitTracker.has(trackingEndpoint)) {
-    console.log(`[MRR] First-time endpoint delay (3s): ${trackingEndpoint}`);
-    await new Promise(r => setTimeout(r, 3000));
-    mrrInitTracker.add(trackingEndpoint);
-  }
-
-  if (!mrrClockSynced) {
-    await syncMrrClock();
-  }
-
-  // 3. ACCOUNT SERIALIZATION: Ensures nonces for the same API key are always increasing.
-  // Use the API Key as the lock key to allow parallel requests across different MRR accounts
-  // while maintaining strict sequential order for requests sharing the same credentials.
-  const lockKey = apiKey || clientName;
-
-  return runMrrCallInOrder(lockKey, async () => {
-    const normalizedPath = sanitizeMrrEndpoint(endpoint);
-    const hasBody = body !== undefined && body !== null && requestMethod !== 'GET' && requestMethod !== 'DELETE';
-    const baseUrl = new URL(`https://www.miningrigrentals.com/api/v2${normalizedPath}`);
-
-    // MRR V2 signature string base: API_KEY + NONCE + ENDPOINT_PATH (relative to /api/v2)
-    const sigEndpoint = normalizedPath;
-    const queryEntries = Object.entries(cleanQuery).filter(([_, v]) => v !== undefined && v !== null && v !== '');
-    if (Object.keys(cleanQuery).length > 0) {
-      for (const [key, value] of Object.entries(cleanQuery)) {
-        if (value === undefined || value === null || value === '') continue;
-        baseUrl.searchParams.set(key, String(value));
-      }
+    if (!mrrInitTracker.has(trackingEndpoint)) {
+      console.log(`[MRR] First-time endpoint delay (3s): ${trackingEndpoint}`);
+      await new Promise(r => setTimeout(r, 3000));
+      mrrInitTracker.add(trackingEndpoint);
     }
+
+    if (!mrrClockSynced) {
+      await syncMrrClock();
+    }
+
+    const lockKey = apiKey || clientName;
+
+    return runMrrCallInOrder(lockKey, async () => {
+      const normalizedPath = sanitizeMrrEndpoint(endpoint);
+      const hasBody = body !== undefined && body !== null && requestMethod !== 'GET' && requestMethod !== 'DELETE';
+      const baseUrl = new URL(`https://www.miningrigrentals.com/api/v2${normalizedPath}`);
+
+      const sigEndpoint = normalizedPath;
+      if (Object.keys(cleanQuery).length > 0) {
+        for (const [key, value] of Object.entries(cleanQuery)) {
+          if (value === undefined || value === null || value === '') continue;
+          baseUrl.searchParams.set(key, String(value));
+        }
+      }
 
     const send = async (nStr, sig, authHeaders = {}) => fetch(baseUrl.toString(), {
       method: requestMethod,
       headers: {
-        'user-agent': USER_AGENT,
+          'user-agent': USER_AGENT,
         'accept': 'application/json',
         'cache-control': 'no-store, no-cache, must-revalidate',
         ...authHeaders,
@@ -376,126 +477,122 @@ export async function mrrApiCall({ endpoint, method = 'GET', query, body, client
       ...(hasBody ? { body: JSON.stringify(body) } : {}),
     });
 
-    let currentNonce = nextMrrNonce(clientConfig.apiKey, clientName);
-    const signString = `${clientConfig.apiKey}${currentNonce}${sigEndpoint}`;
-    // Most MRR V2 implementations use HMAC-SHA1
-    const signatureV2 = createHmac('sha1', clientConfig.apiSecret).update(signString).digest('hex');
+      let currentNonce = nextMrrNonce(clientConfig.apiKey, clientName);
+      const signString = `${clientConfig.apiKey}${currentNonce}${sigEndpoint}`;
+      const signatureV2 = createHmac('sha1', clientConfig.apiSecret).update(signString).digest('hex');
 
-    let response = await send(currentNonce, signatureV2, {
-      'x-api-key': clientConfig.apiKey,
-      'x-api-nonce': currentNonce,
-      'x-api-sign': signatureV2,
-    });
-
-    let text, data;
-    try {
-      text = await response.text();
-      // Attempt to parse JSON, but fall back to a structured error if it fails
-      try {
-        data = text ? JSON.parse(text) : { success: false, message: 'Empty response from MRR' };
-      } catch (parseError) {
-        // Handle cases where MRR returns non-JSON error pages (e.g., Cloudflare blocks)
-        data = { success: false, message: `MRR returned non-JSON response: ${text.slice(0, 150)}...` };
-      }
-    } catch (e) {
-      // This block handles network errors (like connection refused) or if the response isn't valid JSON.
-      const errorMessage = e.message.includes('fetch failed') ? 'Connection to MRR API failed. The service may be down.' : `Network or parsing error: ${e.message}`;
-      console.error(`[mrr:${clientName}] Critical fetch/parse error:`, errorMessage);
-      return { statusCode: 503, data: { success: false, message: errorMessage, error: 'ServiceUnavailable' }, clientName };
-    }
-
-    let authMessage = String(data?.data?.message || data?.message || '');
-    let isAuthFailureMessage = /signature|unauthorized|authenticated|invalid key|missing api key/i.test(authMessage);
-    
-    // Trigger recovery if "nonce" appears anywhere in the message, even if "invalid key" is also present
-    const isBadNonce = /nonce/i.test(authMessage);
-
-    // Optimizer: If "Bad Nonce" is received, force clock re-sync and retry with a baseline jump
-    if (isBadNonce || (response.status === 401 && /nonce/i.test(authMessage))) {
-      // Force immediate clock re-sync
-      await syncMrrClock(true);
-      
-      const nowNano = (BigInt(Date.now()) + mrrClockOffset + 2000n) * 1000000n;
-      const failedNonce = BigInt(currentNonce);
-      
-      // If the failed nonce is already significantly ahead of 'now', it suggests a massive 
-      // discrepancy (e.g. key used elsewhere). Use a 1-hour jump to recover faster.
-      const isSignificantFuture = failedNonce > (nowNano + 60000000000n);
-      const jumpSize = isSignificantFuture ? MRR_NONCE_RECOVERY_JUMP_LARGE : MRR_NONCE_RECOVERY_JUMP_SMALL;
-      const baseForJump = failedNonce > nowNano ? failedNonce : nowNano;
-      const newJumpedNonce = baseForJump + jumpSize;
-
-      console.warn(`[mrr:${clientName}] ☢️ NUCLEAR JUMP: Baseline reset to ${newJumpedNonce} (${isSignificantFuture ? '+1h' : '+1m'}) for key ${clientConfig.apiKey.slice(0, 6)}...`);
-      mrrLastNonceByClient.set(clientConfig.apiKey, newJumpedNonce);
-      db.run('INSERT OR REPLACE INTO mrr_nonces (client, last_nonce) VALUES (?, ?)', [clientConfig.apiKey, newJumpedNonce.toString()]);
-
-      currentNonce = nextMrrNonce(clientConfig.apiKey, clientName);
-      const retrySignString = `${clientConfig.apiKey}${currentNonce}${sigEndpoint}`;
-      const retrySig = createHmac('sha1', clientConfig.apiSecret).update(retrySignString).digest('hex');
-
-      const retryRes = await send(currentNonce, retrySig, {
+      let response = await send(currentNonce, signatureV2, {
         'x-api-key': clientConfig.apiKey,
         'x-api-nonce': currentNonce,
-        'x-api-sign': retrySig,
+        'x-api-sign': signatureV2,
       });
 
-      const retryText = await retryRes.text();
-      try {
-        data = JSON.parse(retryText);
-        if (data.success) {
-          return { statusCode: 200, data, clientName };
+      let text, data;
+    try {
+      text = await response.text();
+        // Attempt to parse JSON, but fall back to a structured error if it fails
+    try {
+          data = text ? JSON.parse(text) : { success: false, message: 'Empty response from MRR' };
+        } catch (parseError) {
+          // Handle cases where MRR returns non-JSON error pages (e.g., Cloudflare blocks)
+          data = { success: false, message: `MRR returned non-JSON response: ${text.slice(0, 150)}...` };
         }
-        
-        // If it still fails after a jump and clock sync, it's NOT a nonce error.
-        const secondMsg = String(data?.data?.message || data?.message || '');
-        if (retryRes.status === 401) {
-          console.error(`[mrr:${clientName}] Permanent Auth failure for key ${clientConfig.apiKey.slice(0, 6)}... - Check if API Key/Secret are valid.`);
-          return { statusCode: 401, data: { ...data, message: "Invalid Credentials (checked via Nonce Reset)" }, clientName };
-        }
-      } catch (e) { 
-        return { statusCode: retryRes.status, data: { success: false, message: "Recovery failed" }, clientName };
-      }
-    }
-
-    const shouldRetry = (!data.success && isAuthFailureMessage && !isBadNonce) || response.status === 401;
-
-    if (shouldRetry && !isBadNonce) {
-      console.warn(`[mrr:${clientName}] HMAC failed (${authMessage || 'Unauthorized'}), retrying with Legacy SHA1 Concatenation...`);
-      currentNonce = nextMrrNonce(clientConfig.apiKey, clientName);
-      // Correct V1 Legacy concatenation: apiKey + nonce + endpoint + apiSecret
-      const legacyStr = `${clientConfig.apiKey}${currentNonce}${normalizedPath}${clientConfig.apiSecret}`;
-      const legacySig = createHash('sha1').update(legacyStr).digest('hex');
-
-      const retryRes = await send(currentNonce, legacySig, {
-        'X-Api-Key': clientConfig.apiKey,
-        'X-Api-Nonce': currentNonce,
-        'X-Api-Sign': legacySig,
-      });
-      const retryText = await retryRes.text();
-      try {
-        data = JSON.parse(retryText);
-        response = retryRes;
-        authMessage = String(data?.data?.message || data?.message || '');
-        isAuthFailureMessage = /signature|unauthorized|authenticated|invalid/i.test(authMessage);
       } catch (e) {
-        // keep original response if retry isn't JSON
+        // This block handles network errors (like connection refused) or if the response isn't valid JSON.
+        const errorMessage = e.message.includes('fetch failed') ? 'Connection to MRR API failed. The service may be down.' : `Network or parsing error: ${e.message}`;
+        console.error(`[mrr:${clientName}] Critical fetch/parse error:`, errorMessage);
+        return { statusCode: 503, data: { success: false, message: errorMessage, error: 'ServiceUnavailable' }, clientName };
+    }
+
+      let authMessage = String(data?.data?.message || data?.message || '');
+      let isAuthFailureMessage = /signature|unauthorized|authenticated|invalid key|missing api key/i.test(authMessage);
+      const isBadNonce = /nonce/i.test(authMessage);
+
+      // Nuclear Jump for bad nonce
+      if (isBadNonce || (response.status === 401 && /nonce/i.test(authMessage))) {
+        await syncMrrClock(true);
+        
+        const nowNano = (BigInt(Date.now()) + mrrClockOffset + 2000n) * 1000000n;
+        const failedNonce = BigInt(currentNonce);
+        
+        const isSignificantFuture = failedNonce > (nowNano + 60000000000n);
+        const jumpSize = isSignificantFuture ? MRR_NONCE_RECOVERY_JUMP_LARGE : MRR_NONCE_RECOVERY_JUMP_SMALL;
+        const baseForJump = failedNonce > nowNano ? failedNonce : nowNano;
+        const newJumpedNonce = baseForJump + jumpSize;
+
+        console.warn(`[mrr:${clientName}] ☢️ NUCLEAR JUMP: Baseline reset to ${newJumpedNonce} (${isSignificantFuture ? '+1h' : '+1m'}) for key ${clientConfig.apiKey.slice(0, 6)}...`);
+        mrrLastNonceByClient.set(clientConfig.apiKey, newJumpedNonce);
+        db.run('INSERT OR REPLACE INTO mrr_nonces (client, last_nonce) VALUES (?, ?)', [clientConfig.apiKey, newJumpedNonce.toString()]);
+
+        currentNonce = nextMrrNonce(clientConfig.apiKey, clientName);
+        const retrySignString = `${clientConfig.apiKey}${currentNonce}${sigEndpoint}`;
+        const retrySig = createHmac('sha1', clientConfig.apiSecret).update(retrySignString).digest('hex');
+
+        const retryRes = await send(currentNonce, retrySig, {
+          'x-api-key': clientConfig.apiKey,
+          'x-api-nonce': currentNonce,
+          'x-api-sign': retrySig,
+        });
+
+        const retryText = await retryRes.text();
+        try {
+          data = JSON.parse(retryText);
+          if (data.success) {
+            return { statusCode: 200, data, clientName };
+          }
+          
+          const secondMsg = String(data?.data?.message || data?.message || '');
+          if (retryRes.status === 401) {
+            console.error(`[mrr:${clientName}] Permanent Auth failure for key ${clientConfig.apiKey.slice(0, 6)}... - Check if API Key/Secret are valid.`);
+            return { statusCode: 401, data: { ...data, message: "Invalid Credentials (checked via Nonce Reset)" }, clientName };
+          }
+        } catch (e) { 
+          return { statusCode: retryRes.status, data: { success: false, message: "Recovery failed" }, clientName };
+        }
       }
-    }
 
-    let finalStatus = response.status;
-    if ((data?.success === false || isAuthFailureMessage) && finalStatus < 400) {
-      finalStatus = 401;
-    }
+      const shouldRetry = (!data.success && isAuthFailureMessage && !isBadNonce) || response.status === 401;
 
-    const logTime = new Date().toLocaleTimeString();
-    console.log(`[${logTime}] [mrr:${clientName}] endpoint=${normalizedPath} nonce=${currentNonce} status=${finalStatus} msg=${authMessage || 'OK'}`);
+      if (shouldRetry && !isBadNonce) {
+        console.warn(`[mrr:${clientName}] HMAC failed (${authMessage || 'Unauthorized'}), retrying with Legacy SHA1 Concatenation...`);
+        currentNonce = nextMrrNonce(clientConfig.apiKey, clientName);
+        const legacyStr = `${clientConfig.apiKey}${currentNonce}${normalizedPath}${clientConfig.apiSecret}`;
+        const legacySig = createHash('sha1').update(legacyStr).digest('hex');
 
-    if (finalStatus === 200 && normalizedPath.startsWith('/rig/')) {
-      saveRigEndpointToDb(normalizedPath, clientName);
-    }
+        const retryRes = await send(currentNonce, legacySig, {
+          'X-Api-Key': clientConfig.apiKey,
+          'X-Api-Nonce': currentNonce,
+          'X-Api-Sign': legacySig,
+        });
+        const retryText = await retryRes.text();
+        try {
+          data = JSON.parse(retryText);
+          response = retryRes;
+          authMessage = String(data?.data?.message || data?.message || '');
+          isAuthFailureMessage = /signature|unauthorized|authenticated|invalid/i.test(authMessage);
+        } catch (e) {
+          // keep original response
+        }
+      }
 
-    return { statusCode: finalStatus, data, clientName };
-  });
+      let finalStatus = response.status;
+      if ((data?.success === false || isAuthFailureMessage) && finalStatus < 400) {
+        finalStatus = 401;
+      }
+
+      // Only log endpoint calls that are not the frequent pool scans
+      const isFrequentScan = normalizedPath.includes('/pool') || normalizedPath.includes('/rig/');
+      if (!isFrequentScan || process.env.DEBUG_MRR === 'true') {
+        const logTime = new Date().toLocaleTimeString();
+        console.log(`[${logTime}] [mrr:${clientName}] endpoint=${normalizedPath} nonce=${currentNonce} status=${finalStatus} msg=${authMessage || 'OK'}`);
+      }
+
+      if (finalStatus === 200 && normalizedPath.startsWith('/rig/')) {
+        saveRigEndpointToDb(normalizedPath, clientName);
+      }
+
+      return { statusCode: finalStatus, data, clientName };
+    });
   })();
 
   if (isCacheable) {
@@ -510,6 +607,10 @@ export async function mrrApiCall({ endpoint, method = 'GET', query, body, client
         : MRR_CACHE_TTL_DEFAULT;
 
       mrrRequestCache.set(cacheKey, { data: result, expires: Date.now() + ttl });
+
+      // ✅ Also store in simple GET cache
+      const simpleCacheKey = `${apiKey || clientName}:${endpoint}:${JSON.stringify(cleanQuery)}`;
+      mrrGetCache.set(simpleCacheKey, { data: result, ts: Date.now() });
     }
     return result;
   } finally {
@@ -519,6 +620,9 @@ export async function mrrApiCall({ endpoint, method = 'GET', query, body, client
   }
 }
 
+// ============================================
+// MRR REQUEST WRAPPER
+// ============================================
 export async function mrrRequest(endpoint, req, res, method = 'GET', body = undefined) {
   const { client: clientQuery, endpoint: _internalPath, ts: _ts, ...forwardQuery } = req.query || {};
   const targetClient = isAggregate(clientQuery) ? defaultMrrClient : clientQuery;
@@ -533,6 +637,9 @@ export async function mrrRequest(endpoint, req, res, method = 'GET', body = unde
   res.status(statusCode).json(data);
 }
 
+// ============================================
+// FETCH AGGREGATED RENTALS - UPGRADED
+// ============================================
 export async function fetchAggregatedRentals(query = {}, clientParam = 'BT') {
   const isAll = isAggregate(clientParam);
   const allClientNames = isAll
@@ -541,7 +648,6 @@ export async function fetchAggregatedRentals(query = {}, clientParam = 'BT') {
 
   const allRentals = [];
   const errors = [];
-
   const { ts: _t, client: _c, ...mrrQuery } = query || {};
   const shouldFilterCurrent = !mrrQuery.history && !mrrQuery.includeInactive && !mrrQuery.all;
 
@@ -576,37 +682,113 @@ export async function fetchAggregatedRentals(query = {}, clientParam = 'BT') {
         clientNameRaw: clientName, 
         query: { ...mrrQuery, type } 
       });
+      
       if (statusCode === 200 && data.success) {
         const list = Array.isArray(data.data) ? data.data : (data.data?.rentals || []);
-        // Filter out any null/undefined entries before pushing
-        localRentals.push(...list.filter(r => r && r.id));
+        // Filter out ghost rentals
+        const filtered = list.filter(r => {
+          if (isGhostRental(r)) {
+            if (r.id && String(r.id) !== 'false' && String(r.id) !== 'null') {
+              markGhostRental(r.id);
+            }
+            return false;
+          }
+          return r && r.id;
+        });
+        localRentals.push(...filtered);
       }
     }
 
-    if (localRentals.length > 0) {
-      const uniqueListRaw = Array.from(new Map(localRentals.map(r => [String(r.id), r])).values());
-      const uniqueList = shouldFilterCurrent ? uniqueListRaw.filter(isCurrentRental) : uniqueListRaw;
-      if (uniqueList.length === 0) return [];
-      uniqueList.forEach(r => r.mrrClient = clientName);
-      
-      const rentalIds = uniqueList.map(r => r.id).join(';');
-      const { data: poolsData } = await mrrApiCall({ endpoint: `/rental/${rentalIds}/pool`, clientNameRaw: clientName });
-      if (poolsData?.success) {
-        const poolItems = Array.isArray(poolsData.data) ? poolsData.data : (Array.isArray(poolsData.data?.result) ? poolsData.data.result : []);
-        const poolMap = new Map(poolItems.map(item => [String(item.rigid || item.id || item.rentalid || item.rental_id), item.pools]));
-        uniqueList.forEach(r => {
-          const pools = poolMap.get(String(r.id));
-          if (pools && pools.length > 0) {
-            const p0 = pools.find(p => p.priority === 0 || p.priority === '0') || pools[0];
-            r.host = p0.host || p0.stratumHost;
-            r.port = p0.port || p0.stratumPort;
-            r.user = p0.user || p0.username;
-          }
-        });
-      }
-      return uniqueList;
+    if (localRentals.length === 0) {
+      return [];
     }
-    return [];
+    
+    // Deduplicate
+    const uniqueListRaw = Array.from(new Map(localRentals.map(r => [String(r.id), r])).values());
+    const uniqueList = shouldFilterCurrent ? uniqueListRaw.filter(isCurrentRental) : uniqueListRaw;
+    
+    if (uniqueList.length === 0) {
+      return [];
+    }
+    
+    // Add client name to each rental
+    uniqueList.forEach(r => r.mrrClient = clientName);
+    
+    // Filter out falsy rental IDs and ghosts before fetching pools
+    const rentalIds = uniqueList
+      .map(r => r.id)
+      .filter(id => id && id !== 'false' && id !== 'null' && id !== 'undefined' && !ghostRentalIds.has(String(id)));
+    
+    if (rentalIds.length === 0) {
+      console.log(`[mrr:${clientName}] No valid rental IDs after filtering ghosts`);
+      return uniqueList.filter(r => !ghostRentalIds.has(String(r.id)));
+    }
+    
+    // Fetch pools in chunks to handle large numbers of rentals
+    const chunkSize = 50;
+    const rentalIdsChunks = [];
+    for (let i = 0; i < rentalIds.length; i += chunkSize) {
+      rentalIdsChunks.push(rentalIds.slice(i, i + chunkSize));
+    }
+
+    const poolMap = new Map();
+    
+    for (const chunk of rentalIdsChunks) {
+      const rentalIdsStr = chunk.join(';');
+      try {
+        const { data: poolsData, statusCode } = await mrrApiCall({ 
+          endpoint: `/rental/${rentalIdsStr}/pool`, 
+          clientNameRaw: clientName 
+        });
+        
+        if (statusCode === 200 && poolsData?.success) {
+      const poolItems = Array.isArray(poolsData.data) 
+        ? poolsData.data 
+        : (Array.isArray(poolsData.data?.result) ? poolsData.data.result : []);
+      
+          poolItems.forEach(item => {
+            const key = String(item.rigid || item.id || item.rentalid || item.rental_id);
+            poolMap.set(key, item.pools || []);
+          });
+        } else if (statusCode === 404 || statusCode === 400) {
+          // Mark rentals in this chunk as ghosts
+          chunk.forEach(id => {
+            if (id && String(id) !== 'false' && String(id) !== 'null') {
+              console.log(`[mrr:${clientName}] Rental ${id} not found - marking as ghost`);
+              markGhostRental(id);
+            }
+          });
+        }
+      } catch (error) {
+        console.warn(`[mrr:${clientName}] Error fetching pools chunk: ${error.message}`);
+      }
+    }
+
+    // Add pool data and filter out ghosts
+    const validRentals = [];
+      uniqueList.forEach(r => {
+      const id = String(r.id);
+      
+      // Skip if marked as ghost
+      if (ghostRentalIds.has(id)) {
+        return;
+      }
+      
+      const pools = poolMap.get(id);
+        if (pools && pools.length > 0) {
+          const p0 = pools.find(p => p.priority === 0 || p.priority === '0') || pools[0];
+          r.host = p0.host || p0.stratumHost;
+          r.port = p0.port || p0.stratumPort;
+          r.user = p0.user || p0.username;
+        r.poolFound = true;
+      } else {
+        r.poolFound = false;
+        }
+      
+      validRentals.push(r);
+      });
+    
+    return validRentals;
   };
 
   const results = await Promise.all(allClientNames.map(async (clientName) => {
@@ -618,14 +800,47 @@ export async function fetchAggregatedRentals(query = {}, clientParam = 'BT') {
     }
   }));
 
+  let totalRentals = 0;
+  
   results.forEach(res => {
-    if (res.rentals) allRentals.push(...res.rentals);
+    if (res.rentals) {
+      allRentals.push(...res.rentals);
+      totalRentals += res.rentals.length;
+    }
     if (res.error) errors.push(res.error);
   });
 
+  // Log ghost rental summary
+  if (ghostRentalIds.size > 0) {
+    const logTime = new Date().toLocaleTimeString();
+    console.log(`[${logTime}] [mrr:fetch] Active ghost rentals: ${ghostRentalIds.size}`);
+  }
+
+  // Only log summary (not individual rentals)
+  if (totalRentals > 0 || errors.length > 0) {
+    const logTime = new Date().toLocaleTimeString();
+    console.log(`[${logTime}] [mrr:fetch] Total rentals: ${totalRentals} (${errors.length} errors)`);
+  }
+
   return {
     statusCode: 200,
-    data: { success: true, data: { rentals: allRentals }, errors: errors.length > 0 ? errors : undefined },
+    data: { 
+      success: true, 
+      data: { 
+        rentals: allRentals,
+        metadata: {
+          ghostCount: ghostRentalIds.size,
+          totalFetched: totalRentals + ghostRentalIds.size
+        }
+      }, 
+      errors: errors.length > 0 ? errors : undefined,
+      summary: {
+        total: totalRentals,
+        ghosts: ghostRentalIds.size,
+        clients: allClientNames.length,
+        errors: errors.length
+      }
+    },
     clientName: isAll ? 'ALL' : clientParam,
   };
 }

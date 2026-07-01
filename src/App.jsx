@@ -273,6 +273,13 @@ function AppContent({ authToken, onLoginSuccess, onLogout, callApi, setAuthToken
             onCall={callApi}
             nhClient={state.nhPoolClient}
             onNavigateHome={() => navigate("/")}
+            state={state}
+            dispatch={dispatch}
+            currentUser={currentUser}
+            isAdmin={isAdmin}
+            forceCheckStatus={forceCheckStatus}
+            handleLogout={handleLogout}
+            onNavigate={navigate}
           />
         );
       

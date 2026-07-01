@@ -89,4 +89,12 @@ export function registerMiningStatsRoutes(app) {
       miningdutch: dutchResult.status === "fulfilled" ? dutchResult.value?.miningdutch : null,
     });
   }));
+
+  app.get("/api/v2/mining-stats/hashrate.no", asyncHandler(async (req, res) => {
+    res.json({
+      success: true,
+      coinStats: [],
+      fetchedAt: new Date().toISOString(),
+    });
+  }));
 }

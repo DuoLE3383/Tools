@@ -12,11 +12,9 @@ export default function MiningCoin({ onCall, nhClient = "VN" }) {
     error,
     lastUpdated,
     refresh,
-    // ✅ New: HeroMiners data from provider
     heroStats,
     heroLoading,
     heroError,
-    refreshHero,
   } = useMiningWorkspace();
   const { openCoinModal } = useCoinPrice();
   
@@ -140,8 +138,7 @@ export default function MiningCoin({ onCall, nhClient = "VN" }) {
   // Combined refresh
   const handleRefresh = useCallback(async () => {
     await refresh(true);
-    await refreshHero(true);
-  }, [refresh, refreshHero]);
+  }, [refresh]);
 
   return (
     <section className="mining-coin-page" style={{ display: "grid", gap: "14px" }}>

@@ -5,10 +5,11 @@ import path from 'path';
 import { createServer } from 'net';
 import fs from 'fs';
 
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-console.log('🚀 Starting NiceHash Tool...');
+console.log('🚀 Starting Tool...');
 console.log('📁 Working directory:', __dirname);
 
 // Configuration
@@ -17,7 +18,7 @@ const CONFIG = {
   heartbeatTimeout: 15000,
   maxRestarts: 5,
   restartDelay: 5000,
-  port: 3000,
+  port: 3003,
   maxPortAttempts: 10,
   startupTimeout: 45000,
 };
@@ -146,16 +147,21 @@ function killProcessOnPort(port) {
   });
 }
 
-// Function to find an available port
-async function findAvailablePort(startPort) {
-  for (let port = startPort; port < startPort + CONFIG.maxPortAttempts; port++) {
-    const inUse = await isPortInUse(port);
-    if (!inUse) {
-      return port;
-    }
+function checkFrozen() {
+  const now = Date.now();
+  const timeSinceHeartbeat = now - lastHeartbeat;
+  if (backendReady && timeSinceHeartbeat > CONFIG.heartbeatTimeout) {
+    console.error(`❌ Backend frozen! No heartbeat for ${timeSinceHeartbeat}ms`);
+    restartBackend();
   }
-  return null;
 }
+
+// Check for frozen state every 3 minutes
+setInterval(checkFrozen, 180000); // 3 minutes
+
+// ============================================
+// CLEANUP FUNCTION
+// ============================================
 
 // Cleanup function
 function cleanup() {

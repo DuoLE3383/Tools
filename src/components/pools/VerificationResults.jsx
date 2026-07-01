@@ -12,7 +12,6 @@ export function VerificationResults({
   onInspect,
   onOpenErrorModal,
   poolCount,
-  verifyFromFile,
 }) {
   const successCount = successResults.length;
   const failCount = failResults.length;

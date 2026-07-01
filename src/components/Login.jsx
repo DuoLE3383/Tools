@@ -52,8 +52,8 @@ export default function Login({ onLoginSuccess, onCall }) {
         }}
       >
         <h2 style={{ marginBottom: "8px", color: "#f8fafc" }}>Login</h2>
-        <p style={{ color: "#94a3b8", marginBottom: "24px", fontSize: "14px" }}>
-          Sign in to manage your rigs
+        <p style={{ color: "#94b899", marginBottom: "24px", fontSize: "12px", fontFamily: "monospace" }}>
+          (if don't have an account, contact administrator)
         </p>
 
         <form

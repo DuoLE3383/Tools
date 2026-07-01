@@ -24,7 +24,7 @@ import { getNiceHashPriceValue } from "../../core/mrrUtils";
 
 const MiningWorkspaceContext = createContext(null);
 
-export function MiningWorkspaceProvider({ children, onCall, nhClient = "VN" }) {
+export function MiningWorkspaceProvider({ children, onCall, nhClient = "VN", mrrClient = "BT" }) {
   const [heroStats, setHeroStats] = useState(null);
   const [dutchStats, setDutchStats] = useState(null);
   const [mrrMarketStats, setMrrMarketStats] = useState(null);
@@ -109,7 +109,7 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "VN" }) {
         if (typeof onCall === "function") {
           try {
             mrrResult = await onCall("/api/v2/mrr/rentals", {
-              query: { client: nhClient, type: "sold", limit: 100 },
+              query: { client: mrrClient, type: "sold", limit: 100 },
               silent: true,
             });
             console.log("✅ MRR API Response:", mrrResult);
@@ -388,9 +388,11 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "VN" }) {
     [miningDutchRows, heroRows, minerstatRows, wtmRows, hashrateNoRows, niceHashPrices],
   );
   const opportunities = useMemo(
-    () => buildOpportunityRows(routes, niceHashPrices, mrrMarketRows),
-    [mrrMarketRows, niceHashPrices, routes],
+    () => buildOpportunityRows(routes, niceHashPrices, mrrMarketRows, heroRows),
+    [mrrMarketRows, niceHashPrices, routes, heroRows],
   );
+
+  const refreshHero = useCallback(() => refresh(true), [refresh]);
 
   const value = useMemo(
     () => ({
@@ -406,6 +408,7 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "VN" }) {
       lastUpdated,
       priceFetchStatus,
       refresh,
+      refreshHero,
       // ✅ Expose individual loading/error states
       heroLoading,
       dutchLoading,
@@ -424,9 +427,9 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "VN" }) {
       // ✅ Expose boolean flags for data presence
       hasHeroData: !!heroStats?.coinStats?.length,
       hasDutchData: !!dutchStats?.coinStats?.length,
-      hasMinerstatData: !!minerstatStats?.length,
-      hasWtmData: !!wtmStats?.length,
-      hasHashrateNoData: !!hashrateNoStats?.length,
+      hasMinerstatData: !!minerstatStats?.coinStats?.length || Array.isArray(minerstatStats) && minerstatStats.length > 0,
+      hasWtmData: !!wtmStats?.coinStats?.length || Array.isArray(wtmStats) && wtmStats.length > 0,
+      hasHashrateNoData: !!hashrateNoStats?.coinStats?.length || Array.isArray(hashrateNoStats) && hashrateNoStats.length > 0,
     }),
     [
       dutchStats,

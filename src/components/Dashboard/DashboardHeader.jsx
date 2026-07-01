@@ -22,6 +22,9 @@ export default function DashboardHeader({
     { path: '/cryptorate', label: 'Live Rates', view: 'cryptorate' },
   ];
 
+  const loading = state?.loading ?? false;
+  const error = state?.error ?? "";
+
   return (
     <header
       className="app-header"
@@ -37,9 +40,9 @@ export default function DashboardHeader({
           <div className="status-item">
             <span style={{ opacity: 0.5, marginRight: "10px" }}>SYSTEM:</span>
             <span
-              className={`status-value ${state.loading ? "status-ready" : state.error ? "status-error" : "status-success"}`}
+              className={`status-value ${loading ? "status-ready" : error ? "status-error" : "status-success"}`}
             >
-              {state.loading ? "Loading..." : state.error ? "Error" : "Ready"}
+              {loading ? "Loading..." : error ? "Error" : "Ready"}
             </span>
           </div>
         </div>
@@ -62,7 +65,10 @@ export default function DashboardHeader({
               <a
                 key={item.path}
                 href={item.path}
-                onClick={onNavigate(item.path)}
+                onClick={(event) => {
+                  event.preventDefault();
+                  onNavigate(item.path);
+                }}
                 className="btn-pro secondary"
                 style={{
                   fontSize: "10px",

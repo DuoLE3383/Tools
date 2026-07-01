@@ -130,36 +130,67 @@ export function normalizeHeroRows(payload) {
 }
 
 export function normalizeMinerstatRows(payload) {
-  const rows = Array.isArray(payload) ? payload : [];
-  return rows.map(row => ({
+  const rows = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payload?.coinStats)
+      ? payload.coinStats
+      : [];
+  return rows.map((row) => ({
     provider: "Minerstat",
-    coin: row.coin,
-    algorithm: row.algorithm,
-    nicehashAlgo: normalizeKey(row.algorithm),
-    mrrAlgo: mapNiceHashToMRR(normalizeKey(row.algorithm)),
-    btcPerDay: numberValue(row.btc_revenue),
-    usdPerDay: numberValue(row.usd_revenue),
+    coin: row.coin || row.symbol || row.tag || "Unknown",
+    algorithm: row.algorithm || row.algo || row.tag || "N/A",
+    nicehashAlgo: normalizeKey(row.algorithm || row.algo || row.tag),
+    mrrAlgo: mapNiceHashToMRR(normalizeKey(row.algorithm || row.algo || row.tag)),
+    btcPerDay: numberValue(row.btc_revenue || row.btcPerDay || row.revenue || row.profit),
+    usdPerDay: numberValue(row.usd_revenue || row.usdPerDay || row.revenue),
     raw: row,
-  })).filter(row => row.nicehashAlgo && row.nicehashAlgo !== "UNKNOWN");
+  })).filter((row) => row.nicehashAlgo && row.nicehashAlgo !== "UNKNOWN");
 }
 
 export function normalizeWtmRows(payload) {
-  const rows = Array.isArray(payload) ? payload : [];
-  return rows.map(row => ({
+  const rows = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payload?.coinStats)
+      ? payload.coinStats
+      : [];
+  return rows.map((row) => ({
     provider: "WhatToMine",
-    coin: row.tag,
-    algorithm: row.algorithm,
-    nicehashAlgo: normalizeKey(row.algorithm),
-    mrrAlgo: mapNiceHashToMRR(normalizeKey(row.algorithm)),
-    btcPerDay: numberValue(row.btc_revenue),
-    usdPerDay: numberValue(row.revenue),
+    coin: row.tag || row.coin || row.symbol || "Unknown",
+    algorithm: row.algorithm || row.algo || row.tag || "N/A",
+    nicehashAlgo: normalizeKey(row.algorithm || row.algo || row.tag),
+    mrrAlgo: mapNiceHashToMRR(normalizeKey(row.algorithm || row.algo || row.tag)),
+    btcPerDay: numberValue(row.btc_revenue || row.btcPerDay || row.profit),
+    usdPerDay: numberValue(row.revenue || row.usdPerDay || row.usd_revenue),
     raw: row,
-  })).filter(row => row.nicehashAlgo && row.nicehashAlgo !== "UNKNOWN");
+  })).filter((row) => row.nicehashAlgo && row.nicehashAlgo !== "UNKNOWN");
 }
 
 export function normalizeHashrateNoRows(payload) {
-  // Assuming a similar structure to other providers
-  return []; // Placeholder
+  const rows = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payload?.coinStats)
+      ? payload.coinStats
+      : Array.isArray(payload?.hashrateNo?.coinStats)
+        ? payload.hashrateNo.coinStats
+        : [];
+
+  return rows
+    .map((row) => {
+      const nicehashAlgo = normalizeKey(row.algorithm || row.algo || row.name || row.coin || row.symbol);
+      return {
+        provider: "Hashrate.no",
+        coin: row.coin || row.symbol || row.name || "Unknown",
+        algorithm: row.algorithm || row.algo || row.name || "N/A",
+        nicehashAlgo,
+        mrrAlgo: mapNiceHashToMRR(nicehashAlgo) || NICEHASH_ALGO_MAP?.[nicehashAlgo] || nicehashAlgo,
+        btcPerDay: numberValue(row.btcPerDay || row.revenue || row.btc_revenue || row.profit || 0),
+        usdPerDay: numberValue(row.usdPerDay || row.revenue_usd || row.usd_revenue || 0),
+        miners: numberValue(row.miners || row.workers || 0),
+        hashrate: row.hashrate || row.poolHashrate || "N/A",
+        raw: row,
+      };
+    })
+    .filter((row) => row.nicehashAlgo && row.nicehashAlgo !== "UNKNOWN");
 }
 
 // ============================================

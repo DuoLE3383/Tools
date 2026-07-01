@@ -57,7 +57,7 @@ export default function VerificationResults({
     ? ` (Last: ${lastRunSummary.verified})`
     : "";
   const lastRunSuccess = lastRunSummary
-    ? ` (Last: ${lastRunSaummary.success})`
+    ? ` (Last: ${lastRunSummary.success})`
     : "";
   const lastRunFailed = lastRunSummary
     ? ` (Last: ${lastRunSummary.failed})`

@@ -1,3 +1,4 @@
+// server/auth.js
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 import express from 'express';
@@ -9,7 +10,6 @@ const BCRYPT_ROUNDS = parseInt(process.env.BCRYPT_ROUNDS, 10) || 10;
 
 /**
  * Validates that all required authentication environment variables are set.
- * This should be called once at application startup.
  */
 export function validateAuthConfig() {
   const required = ['ADMIN_USER', 'ADMIN_PASS'];
@@ -29,7 +29,7 @@ export function validateAuthConfig() {
   console.log(`   - JWT_SECRET: ${process.env.JWT_SECRET ? '******** (Set)' : 'TEMPORARY'}`);
   console.log(`   - ADMIN_PASS: ${process.env.ADMIN_PASS ? '******** (Set)' : 'MISSING'}`);
   return true;
-};
+}
 
 // ---------- Utility exports ----------
 export const generateToken = (payload) => {
@@ -61,7 +61,6 @@ export const authMiddleware = (req, res, next) => {
   if (!token && req.query?.token) {
     token = String(req.query.token);
   } else if (!token && req.url && req.url.includes('token=')) {
-    // Robust manual extraction if req.query isn't populated yet during upgrade
     const match = req.url.match(/[?&]token=([^&]+)/);
     if (match) token = match[1];
   }
@@ -69,10 +68,12 @@ export const authMiddleware = (req, res, next) => {
   if (!token) {
     return res.status(401).json({ success: false, error: 'No token provided.' });
   }
+  
   const decoded = verifyToken(token);
   if (!decoded) {
     return res.status(403).json({ success: false, error: 'Invalid or expired token.' });
   }
+  
   req.user = decoded;
   next();
 };
@@ -80,15 +81,13 @@ export const authMiddleware = (req, res, next) => {
 export const hashPassword = async (plain) => bcrypt.hash(plain, BCRYPT_ROUNDS);
 export const verifyPassword = async (plain, hash) => bcrypt.compare(plain, hash);
 
-// ---------- Default Router (mountable) ----------
+// ---------- Default Router ----------
 const router = express.Router();
 
-// Login route (using the utilities above)
 router.post('/login', async (req, res) => {
   try {
     const { username, password } = req.body;
 
-    // Basic validation
     if (!username || !password) {
       return res.status(400).json({ success: false, error: 'Username and password required.' });
     }
@@ -105,7 +104,6 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ success: false, error: 'Invalid credentials.' });
     }
 
-    // Support both plain text and bcrypt hashes for convenience
     let isValid = false;
     if (adminPass.startsWith('$2')) {
       isValid = await verifyPassword(password, adminPass);
@@ -125,10 +123,8 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// Example protected route – you can also mount it separately
-router.get('/profile', (req, res) => {
+router.get('/profile', authMiddleware, (req, res) => {
   res.json({ user: req.user });
 });
 
-// Export the router as default
 export default router;
