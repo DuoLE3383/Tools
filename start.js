@@ -456,7 +456,7 @@ function startFrontend() {
   // Remove any existing frontend from processes list
   processes = processes.filter(p => p !== frontendProcess);
   
-  frontendProcess = spawn(npmCmd, ['run', 'dev', '--', '--port', '5173'], {
+  frontendProcess = spawn(npmCmd, ['run', 'dev', '--', '--port', '1757'], {
     stdio: 'inherit',
     shell: true,
     env: env,
