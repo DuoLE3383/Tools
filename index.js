@@ -402,8 +402,8 @@ async function startServer() {
     console.log("[init] Migrating old CSV files...");
     await migrateOldCsvToDb();
 
-    console.log("[init] Initializing MRR configs...");
-    await initMrrConfigs(process.env);
+    // console.log("[init] Initializing MRR configs...");
+    // await initMrrConfigs(process.env);
 
     console.log("[init] Repairing stored client tags...");
     await cleanupStoredClientTags();
@@ -496,15 +496,15 @@ async function startServer() {
       console.log(`Heartbeat: http://localhost:${PORT}/api/heartbeat`);
       console.log(`Ping: http://localhost:${PORT}/ping`);
 
-      // Start mining scanner after a delay
-      setTimeout(() => {
-        console.log("[Mining Scanner] Initializing...");
-        try {
-          startMiningOpportunityScanner();
-        } catch (err) {
-          console.error("[Mining Scanner] Failed to start:", err.message);
-        }
-      }, 5000);
+      // // Start mining scanner after a delay
+      // setTimeout(() => {
+      //   console.log("[Mining Scanner] Initializing...");
+      //   try {
+      //     startMiningOpportunityScanner();
+      //   } catch (err) {
+      //     console.error("[Mining Scanner] Failed to start:", err.message);
+      //   }
+      // }, 5000);
     });
 
     // Graceful shutdown
