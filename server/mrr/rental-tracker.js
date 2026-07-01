@@ -7,7 +7,7 @@ import { db } from '../db.js';
 import { isRealRental, validateRentals } from './rental-validator.js';
 
 // Database helpers
-function dbGetAsync(sql, params = []) {
+function dbGetAsync(db, sql, params = []) {
   return new Promise((resolve, reject) => {
     db.get(sql, params, (err, row) => {
       if (err) reject(err);
@@ -16,7 +16,7 @@ function dbGetAsync(sql, params = []) {
   });
 }
 
-function dbRunAsync(sql, params = []) {
+function dbRunAsync(db, sql, params = []) {
   return new Promise((resolve, reject) => {
     db.run(sql, params, function (err) {
       if (err) reject(err);
@@ -25,7 +25,7 @@ function dbRunAsync(sql, params = []) {
   });
 }
 
-function dbAllAsync(sql, params = []) {
+function dbAllAsync(db, sql, params = []) {
   return new Promise((resolve, reject) => {
     db.all(sql, params, (err, rows) => {
       if (err) reject(err);
@@ -153,7 +153,7 @@ export async function saveRental(rental, client, info, metrics, isValid) {
  */
 export async function getRental(rentalId) {
   try {
-    return await dbGetAsync(`SELECT * FROM rentals WHERE id = ?`, [String(rentalId)]);
+    return await dbGetAsync(db, `SELECT * FROM rentals WHERE id = ?`, [String(rentalId)]);
   } catch (err) {
     console.error(`[rental-tracker] Failed to fetch rental ${rentalId}: ${err.message}`);
     return null;
@@ -165,7 +165,7 @@ export async function getRental(rentalId) {
  */
 export async function getRealRentals(client) {
   try {
-    return await dbAllAsync(
+    return await dbAllAsync(db,
       `SELECT * FROM rentals WHERE client = ? AND is_real = 1`,
       [client]
     );
@@ -180,7 +180,7 @@ export async function getRealRentals(client) {
  */
 export async function getGhostRentals(client) {
   try {
-    return await dbAllAsync(
+    return await dbAllAsync(db,
       `SELECT * FROM rentals WHERE client = ? AND is_real = 0`,
       [client]
     );
@@ -197,12 +197,12 @@ export async function cleanupStaleRentals(client, activeRealIds) {
   try {
     if (activeRealIds.length > 0) {
       const placeholders = activeRealIds.map(() => '?').join(',');
-      await dbRunAsync(
+      await dbRunAsync(db,
         `DELETE FROM rentals WHERE client = ? AND id NOT IN (${placeholders}) AND is_real = 1`,
         [client, ...activeRealIds]
       );
     } else {
-      await dbRunAsync(
+      await dbRunAsync(db,
         `DELETE FROM rentals WHERE client = ? AND is_real = 1`,
         [client]
       );
@@ -220,20 +220,20 @@ export async function cleanupStaleRentals(client, activeRealIds) {
 export async function cleanupGhostRentals(client) {
   try {
     // Move to ghost_rentals table before deleting
-    const ghostRentals = await dbAllAsync(
+    const ghostRentals = await dbAllAsync(db,
       `SELECT * FROM rentals WHERE client = ? AND is_real = 0`,
       [client]
     );
     
     for (const ghost of ghostRentals) {
-      await dbRunAsync(
+      await dbRunAsync(db,
         `INSERT OR IGNORE INTO ghost_rentals (id, name, client, detected_at, reason) 
          VALUES (?, ?, ?, ?, ?)`,
         [ghost.id, ghost.name, ghost.client, Date.now(), ghost.ghost_reason || 'Unknown']
       );
     }
     
-    await dbRunAsync(
+    await dbRunAsync(db,
       `DELETE FROM rentals WHERE client = ? AND is_real = 0`,
       [client]
     );
@@ -249,7 +249,7 @@ export async function cleanupGhostRentals(client) {
  */
 export async function markRentalNotified(rentalId, timestamp) {
   try {
-    await dbRunAsync(
+    await dbRunAsync(db,
       `UPDATE rentals SET last_notified = ? WHERE id = ?`,
       [timestamp, String(rentalId)]
     );
@@ -268,7 +268,7 @@ export async function getTodayRentalCount() {
   todayStart.setUTCHours(0, 0, 0, 0);
   
   try {
-    const row = await dbGetAsync(
+    const row = await dbGetAsync(db,
       "SELECT COUNT(*) as count FROM rental_history WHERE start_time >= ?",
       [todayStart.getTime()]
     );

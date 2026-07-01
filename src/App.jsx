@@ -1,26 +1,17 @@
 // App.jsx — centralized state + per-page routing
 
-import { WebSocketProvider } from './components/WebSocketContext';
+import { AuthProvider, useAuth } from './components/AuthProvider';
+import { WebSocketProvider } from './components/WebSocketContext.jsx';
 import { NiceHashOrderProvider } from './components/nicehash/NiceHashContext.jsx';
 import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 import Modal from "./components/Modal";
-import HashCompletionCalculator from "./components/ProfitCompletion.jsx";
-import CryptoRatePage from "../CryptoRatePage.jsx";
-import MiningPage from "./components/mining/MiningPage.jsx";
 import { createApiClient } from "./core/apiClient";
 import Login from './components/Login.jsx';
 import DashboardPage from './page/DashboardPage.jsx';
-import NiceHashPage from './page/NiceHashPage.jsx';
-import MrrPage from './page/MrrPage.jsx';
 import "./App.css";
 
 // ── Reducer ──────────────────────────────────
 const initialView = (() => {
-  const p = window.location.pathname;
-  if (p === '/mining') return 'mining';
-  if (p === '/nicehash') return 'nicehash';
-  if (p === '/mrr') return 'mrr';
-  if (p === '/cryptorate') return 'cryptorate';
   return 'dashboard';
 })();
 
@@ -31,10 +22,7 @@ const initialState = {
   lastCall: null,
   responseModalOpen: false,
   responseModalContent: null,
-  debugModalOpen: false,
-  completionModalOpen: false,
-  completionCalculatorContext: null,
-  calculatorModalOpen: false,
+  debugModalOpen: false, // Keep for debugging if needed
   usersModalOpen: false,
   algorithm: "",
   market: "",
@@ -60,16 +48,8 @@ function reducer(state, action) {
       return { ...state, lastCall: action.payload };
     case "SET_RESPONSE_MODAL":
       return { ...state, responseModalOpen: action.payload, responseModalContent: action.payload ? state.responseModalContent : null };
-    case "SET_RESPONSE_MODAL_CONTENT":
-      return { ...state, responseModalContent: action.payload };
     case "SET_DEBUG_MODAL":
       return { ...state, debugModalOpen: action.payload };
-    case "SET_COMPLETION_MODAL":
-      return { ...state, completionModalOpen: action.payload };
-    case "SET_COMPLETION_CONTEXT":
-      return { ...state, completionCalculatorContext: action.payload };
-    case "SET_CALCULATOR_MODAL":
-      return { ...state, calculatorModalOpen: action.payload };
     case "SET_USERS_MODAL":
       return { ...state, usersModalOpen: action.payload };
     case "SET_ALGORITHM":
@@ -92,7 +72,8 @@ function reducer(state, action) {
 }
 
 // ── AppContent ───────────────────────────────
-function AppContent({ authToken, onLoginSuccess, onLogout, callApi, setAuthToken }) {
+function AppContent() {
+  const { authToken, callApi, logout } = useAuth();
   const [state, dispatch] = useReducer(reducer, initialState);
 
   // Lift current user from token if available
@@ -111,81 +92,6 @@ function AppContent({ authToken, onLoginSuccess, onLogout, callApi, setAuthToken
 
   const currentUser = state.currentUser || { username: "Unknown", role: "user" };
   const isAdmin = String(currentUser?.role || "").toLowerCase() === "admin";
-
-  // ── Helpers ──
-  const toDateTimeLocal = (value) => {
-    if (!value) return "";
-    const date = new Date(String(value));
-    if (Number.isNaN(date.getTime())) return "";
-    const offsetMs = date.getTimezoneOffset() * 60000;
-    return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
-  };
-
-  const parseHashrateValue = (value) => {
-    if (value === undefined || value === null) return "";
-    if (typeof value === "number") return String(value);
-    if (typeof value === "string") {
-      const parsed = parseFloat(value.replace(/,/g, ""));
-      return Number.isFinite(parsed) ? String(parsed) : "";
-    }
-    if (typeof value === "object") {
-      return parseHashrateValue(
-        value.hash || value.advertised || value.nice || value.value || Object.values(value)[0]
-      );
-    }
-    return "";
-  };
-
-  const inferUnitValue = (source) => {
-    const unitMap = { EH: 1e18, PH: 1e15, TH: 1e12, GH: 1e9, MH: 1e6, KH: 1e3, H: 1 };
-    if (source === undefined || source === null) return 1e12;
-    if (typeof source === "number" && Number.isFinite(source)) return source;
-    const normalized = String(source).toUpperCase().replace(/\s+/g, "");
-    const match = normalized.match(/(EH|PH|TH|GH|MH|KH|H)(?:\/S)?$/) || normalized.match(/(EH|PH|TH|GH|MH|KH|H)/);
-    if (match && match[1]) return unitMap[match[1]] || 1e12;
-    return 1e12;
-  };
-
-  const openCompletionCalculator = useCallback((rig, info = {}) => {
-    const algo = info?.algo || rig?.algo || rig?.algorithm || rig?.type || "";
-    const start = toDateTimeLocal(
-      info?.startTime || rig?.start || (typeof rig?.status === "object" ? rig.status.start : "") || ""
-    );
-    const end = toDateTimeLocal(
-      info?.endTime || rig?.end || (typeof rig?.status === "object" ? rig.status.end : "") || ""
-    );
-    const adsHashrate = parseHashrateValue(
-      info?.advertised || rig?.hashrate?.advertised || rig?.advertised || rig?.hashrate?.hash || rig?.hash || ""
-    );
-    const avgHashrate = parseHashrateValue(
-      info?.average || rig?.hashrate?.average || rig?.average || rig?.hash || ""
-    );
-    const unit = inferUnitValue(
-      info?.advertised || info?.average || rig?.hashrate?.advertised || rig?.hashrate?.average || 
-      rig?.hashrate?.suffix || rig?.hashrate_unit || rig?.hashrate?.type || ""
-    );
-    const nhPriceData = info?.nicehashPrice || rig?.nicehashPrice;
-    const rawPrice = info?.price || rig?.price || rig?.min_price || null;
-    const priceSource = rawPrice?.paid !== undefined
-      ? { paid: rawPrice.paid, currency: rawPrice.currency || rawPrice.price_unit || "BTC" }
-      : rawPrice;
-    const btcPriceSource = info?.price_converted || rig?.price_converted || info?.price?.BTC || rig?.price?.BTC || priceSource;
-    const priceUnit = rig?.hashrate_unit || rig?.hashrate?.advertised?.type || rig?.hashrate?.suffix || rig?.hashrate?.type || "TH";
-
-    dispatch({ type: "SET_COMPLETION_CONTEXT", payload: {
-      initialAlgo: algo,
-      initialStartTime: start,
-      initialEndTime: end,
-      initialAdsHashrate: adsHashrate,
-      initialAvgHashrate: avgHashrate,
-      initialUnit: unit,
-      initialPriceSource: priceSource,
-      initialBtcPriceSource: btcPriceSource,
-      initialPriceUnit: priceUnit,
-      initialNhPriceData: nhPriceData,
-    }});
-    dispatch({ type: "SET_COMPLETION_MODAL", payload: true });
-  }, []);
 
   // ── API wrappers ──
   const handleMiningCall = useCallback((path, opts = {}) => {
@@ -215,28 +121,15 @@ function AppContent({ authToken, onLoginSuccess, onLogout, callApi, setAuthToken
   // ── Navigation ──
   const navigate = useCallback((to) => {
     const nextPath = String(to || "/").startsWith("/") ? String(to || "/") : `/${String(to || "")}`;
-    if (window.location.pathname !== nextPath) {
-      window.history.pushState({}, "", nextPath);
-      window.dispatchEvent(new PopStateEvent("popstate"));
-    }
-    let view = 'dashboard';
-    if (nextPath === '/mining') view = 'mining';
-    else if (nextPath === '/nicehash') view = 'nicehash';
-    else if (nextPath === '/mrr') view = 'mrr';
-    else if (nextPath === '/cryptorate') view = 'cryptorate';
-    dispatch({ type: "SET_VIEW", payload: view });
+    window.history.pushState({}, "", "/");
+    dispatch({ type: "SET_VIEW", payload: 'dashboard' });
   }, []);
 
   // ── Route handling ──
   useEffect(() => {
     const onPopState = () => {
-      const path = window.location.pathname;
-      let view = 'dashboard';
-      if (path === '/mining') view = 'mining';
-      else if (path === '/nicehash') view = 'nicehash';
-      else if (path === '/mrr') view = 'mrr';
-      else if (path === '/cryptorate') view = 'cryptorate';
-      dispatch({ type: "SET_VIEW", payload: view });
+      // Always force dashboard view
+      dispatch({ type: "SET_VIEW", payload: 'dashboard' });
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
@@ -254,10 +147,8 @@ function AppContent({ authToken, onLoginSuccess, onLogout, callApi, setAuthToken
 
   // ── Logout handler ──
   const handleLogout = useCallback(() => {
-    localStorage.removeItem("token");
-    setAuthToken(null);
-    if (onLogout) onLogout();
-  }, [onLogout, setAuthToken]);
+    logout();
+  }, [logout]);
 
   // ── Handle Open MRR Pools ──
   const handleOpenMrrPools = useCallback(() => {
@@ -265,61 +156,11 @@ function AppContent({ authToken, onLoginSuccess, onLogout, callApi, setAuthToken
   }, []);
 
   // ── Render page ──
-  const renderPage = () => {
+  const PageComponent = useMemo(() => {
     switch (state.view) {
-      case 'mining':
-        return (
-          <MiningPage
-            onCall={callApi}
-            nhClient={state.nhPoolClient}
-            onNavigateHome={() => navigate("/")}
-            state={state}
-            dispatch={dispatch}
-            currentUser={currentUser}
-            isAdmin={isAdmin}
-            forceCheckStatus={forceCheckStatus}
-            handleLogout={handleLogout}
-            onNavigate={navigate}
-          />
-        );
-      
-      case 'nicehash':
-        return (
-          <NiceHashPage
-            state={state}
-            dispatch={dispatch}
-            callApi={callApi}
-            handleLogout={handleLogout}
-            currentUser={currentUser}
-            isAdmin={isAdmin}
-            forceCheckStatus={forceCheckStatus}
-            handleMiningCall={handleMiningCall}
-            setNhOrderClient={(v) => dispatch({ type: "SET_NH_ORDER_CLIENT", payload: v })}
-          />
-        );
-      
-      case 'mrr':
-        return (
-          <MrrPage
-            state={state}
-            dispatch={dispatch}
-            callApi={callApi}
-            handleLogout={handleLogout}
-            currentUser={currentUser}
-            isAdmin={isAdmin}
-            forceCheckStatus={forceCheckStatus}
-            handleMiningCall={handleMiningCall}
-            handleOpenMrrPools={handleOpenMrrPools}
-            setMrrClient={(v) => dispatch({ type: "SET_MRR_CLIENT", payload: v })}
-          />
-        );
-      
-      case 'cryptorate':
-        return <CryptoRatePage onCall={callApi} onNavigateHome={() => navigate("/")} coinPrices={state.coinPrices} />;
-      
       case 'dashboard':
       default:
-        return (
+        return () => (
           <DashboardPage
             state={state}
             dispatch={dispatch}
@@ -333,11 +174,7 @@ function AppContent({ authToken, onLoginSuccess, onLogout, callApi, setAuthToken
           />
         );
     }
-  };
-
-  if (!authToken) {
-    return <Login onLoginSuccess={onLoginSuccess} onCall={callApi} />;
-  }
+  }, [state, callApi, handleLogout, currentUser, isAdmin, forceCheckStatus]);
 
   // ✅ Wrap the ENTIRE app with providers
   // ✅ WebSocketProvider needs a valid token to connect
@@ -345,7 +182,7 @@ function AppContent({ authToken, onLoginSuccess, onLogout, callApi, setAuthToken
     <WebSocketProvider token={authToken}>
       <NiceHashOrderProvider nhClient={state.nhOrderClient} callApi={callApi}>
         <div className="app-shell">
-          {renderPage()}
+          <PageComponent />
 
           {/* ─── GLOBAL MODALS ─── */}
           <Modal
@@ -364,48 +201,27 @@ function AppContent({ authToken, onLoginSuccess, onLogout, callApi, setAuthToken
               {JSON.stringify(state.responseModalContent || state.output, null, 2)}
             </pre>
           </Modal>
-
-          <Modal
-            isOpen={state.completionModalOpen}
-            onClose={() => dispatch({ type: "SET_COMPLETION_MODAL", payload: false })}
-            title="Rental Completion Calculator"
-            maxWidth="1280px"
-            minWidth="800px"          >
-            <HashCompletionCalculator {...state.completionCalculatorContext} />
-          </Modal>
         </div>
       </NiceHashOrderProvider>
     </WebSocketProvider>
   );
 }
 
-// ── App wrapper ──────────────────────────────
-export default function App() {
-  const [authToken, setAuthToken] = useState(() => localStorage.getItem('token'));
+function AppContainer() {
+  const { isAuthenticated, login, callApi } = useAuth();
 
-  const callApi = useCallback(createApiClient({
-      onAuthError: () => {
-        console.log("[Auth] Auth error detected, logging out.");
-        localStorage.removeItem('token');
-        setAuthToken(null);
-      },
-    }),
-    [setAuthToken]
-  );
-
-  const handleLoginSuccess = (token) => {
-    localStorage.setItem('token', token);
-    setAuthToken(token);
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    setAuthToken(null);
-  };
-
-  if (!authToken) {
-    return <Login onLoginSuccess={handleLoginSuccess} onCall={callApi} />;
+  if (!isAuthenticated) {
+    return <Login onLoginSuccess={login} onCall={callApi} />;
   }
 
-  return <AppContent authToken={authToken} onLoginSuccess={handleLoginSuccess} onLogout={handleLogout} callApi={callApi} setAuthToken={setAuthToken} />;
+  return <AppContent />;
+}
+
+// ─── Root App Component ────────────────────────────────────────────────
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppContainer />
+    </AuthProvider>
+  );
 }

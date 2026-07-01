@@ -50,19 +50,11 @@ export const verifyToken = (token) => {
 
 export const authMiddleware = (req, res, next) => {
   let token = '';
-  const authHeader = req.headers?.authorization;
+  const authHeader = req.headers.authorization;
 
   // 1. Check Authorization Header (Bearer Token)
-  if (typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
+  if (authHeader && authHeader.startsWith('Bearer ')) {
     token = authHeader.substring(7).trim();
-  }
-
-  // 2. Fallback to Query Parameter (essential for WebSocket handshakes)
-  if (!token && req.query?.token) {
-    token = String(req.query.token);
-  } else if (!token && req.url && req.url.includes('token=')) {
-    const match = req.url.match(/[?&]token=([^&]+)/);
-    if (match) token = match[1];
   }
 
   if (!token) {

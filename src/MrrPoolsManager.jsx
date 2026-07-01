@@ -133,11 +133,7 @@ const MrrPoolsManager = ({ defaultClient = 'ALL' }) => {
       )}
 
       {/* Modal / Inline Editor for Single Rig Pool */}
-      {editingRig && (
-        <div className="modal-overlay" style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center'
-        }}>
+      {editingRig && <div className="modal-overlay">
           <div className="modal-content" style={{ background: 'white', padding: '2rem', borderRadius: '8px', minWidth: '400px' }}>
             <h3>Edit Pool for: {editingRig.name}</h3>
             <form onSubmit={handleUpdatePool} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -174,8 +170,7 @@ const MrrPoolsManager = ({ defaultClient = 'ALL' }) => {
               </div>
             </form>
           </div>
-        </div>
-      )}
+        </div>}
     </div>
   );
 };

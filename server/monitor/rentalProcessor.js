@@ -266,7 +266,7 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
     const priceRoi = await getPriceRoi(info, acct, now);
     const orderDiff = priceRoi !== null && !isNaN(priceRoi) ? priceRoi : (100 - efficiency).toFixed(1);
 
-    const row = await dbGetAsync(`SELECT last_notified, low_hashrate_start, zero_hashrate_start FROM rentals WHERE id = ?`, [String(rental.id)]).catch(() => null);
+    const row = await dbGetAsync(db, `SELECT last_notified, low_hashrate_start, zero_hashrate_start FROM rentals WHERE id = ?`, [String(rental.id)]).catch(() => null);
 
     let lowHashStart = row?.low_hashrate_start || 0;
     let zeroHashStart = row?.zero_hashrate_start || 0;
@@ -277,11 +277,11 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET 
            name=excluded.name, client=excluded.client, algo=excluded.algo, order_diff=excluded.order_diff, start_time=excluded.start_time, end_time=excluded.end_time, target_100=excluded.target_100, last_updated=excluded.last_updated, low_hashrate_start=excluded.low_hashrate_start, zero_hashrate_start=excluded.zero_hashrate_start, current_hashrate=excluded.current_hashrate, average_hashrate=excluded.average_hashrate, advertised_hashrate=excluded.advertised_hashrate, price_paid=excluded.price_paid`,
-        [String(rental.id), liveRig?.name || rental.name || rental.id, acct, startT, endT, info.algo, displayTarget, orderDiff, now, lowHashStart, zeroHashStart, current, average, advertised, info.price.paid, lastNotified]
+        [String(rental.id), liveRig?.name || rental.name || rental.id, acct, startT, endT, info.algo, displayTarget, orderDiff, now, lowHashStart, zeroHashStart, current, average, advertised, info.price.paid, lastNotified],
     ).catch(err => logger.error(`[monitor:db] Upsert error for ${rental.id}: ${err.message}`));
 
     if (startT > 0) {
-        await dbRunAsync("INSERT OR IGNORE INTO rental_history (id, start_time) VALUES (?, ?)", [String(rental.id), startT]);
+        await dbRunAsync(db, "INSERT OR IGNORE INTO rental_history (id, start_time) VALUES (?, ?)", [String(rental.id), startT]);
     }
 
     // --- Alerts ---
@@ -349,7 +349,7 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
         sendTelegramNotification(msg, {
           type: hbType,
             label: `${hbType} ${acct} ${rental.id}`,
-            onSuccess: async () => {
+            onSuccess: async () => { // eslint-disable-line
                 await dbRunAsync(`UPDATE rentals SET last_notified = ? WHERE id = ?`, [now, String(rental.id)]);
                 notifications.push({ id: rental.id, client: acct, status: "Sent", telegram: "ok" });
             },

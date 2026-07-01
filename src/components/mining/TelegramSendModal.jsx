@@ -110,44 +110,24 @@ ${emoji} <b>Mining Heartbeat - ${forceLabel}</b>
         return;
       }
 
-      setIsSending(true);
-      setSendStatus(
-        isForce ? "🚀 Sending force heartbeat..." : "🔄 Sending heartbeat...",
-      );
+      setIsSending(true); // Lock UI
+      setSendStatus(isForce ? "🚀 Triggering force heartbeat..." : "🔄 Triggering heartbeat...");
 
       try {
-        // Send initial notification
-        const messageText = buildHeartbeatMessage(stats, coin, isForce);
-        const result = await notify(messageText);
-
-        if (!result?.ok) {
-          throw new Error(
-            result?.error || "Failed to send heartbeat notification.",
-          );
-        }
-
-        // ✅ Trigger monitor run if onCall is provided
+        // The monitor run is the main action. It will send its own summary.
         if (onCall) {
-          try {
-            const monitorResult = await onCall("/api/v2/mrr/monitor/run", {
-              method: "POST",
-              body: { client: "ALL" },
-              silent: true,
-            });
+          const monitorResult = await onCall("/api/v2/mrr/monitor/run", {
+            method: "POST",
+            body: { client: "ALL", force: isForce }, // Pass force flag
+            silent: true,
+          });
 
-            const summary = monitorResult?.summary?.totals || {};
-            const monitorMessage = `
-📊 <b>Monitor Run Complete</b>
-• Rented: <b>${summary.rented || 0}</b>
-• Ghosts: <b>${summary.ghost || 0}</b>
-• Total: <b>${summary.rigs || 0}</b>
-            `.trim();
-
-            await notify(monitorMessage);
-          } catch (monitorErr) {
-            console.error("Monitor run failed:", monitorErr);
-            await notify(`⚠️ Monitor run failed: ${monitorErr.message}`);
+          if (!monitorResult?.summary) {
+            throw new Error("Monitor run did not return a summary.");
           }
+        } else {
+          // If no onCall, just send the local stats as a message
+          await notify(buildHeartbeatMessage(stats, coin, isForce));
         }
 
         setHeartbeatCount((prev) => prev + 1);
@@ -155,7 +135,7 @@ ${emoji} <b>Mining Heartbeat - ${forceLabel}</b>
         setSendStatus(
           isForce
             ? "✅ Force heartbeat sent successfully!"
-            : "✅ Heartbeat sent successfully!",
+            : "✅ Heartbeat triggered successfully!",
         );
         setTimeout(() => setSendStatus(""), 3000);
       } catch (err) {

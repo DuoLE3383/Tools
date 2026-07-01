@@ -3,7 +3,6 @@ import express from 'express';
 import http from 'http';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import { registerRoutes } from './routes.js';
 import { setupWebSocket } from './ws.js';
 import { startMiningOpportunityScanner } from './miningOpportunityNotifier.js';
 
@@ -28,7 +27,7 @@ app.use(cors({
 app.options('*', cors());
 
 // Register routes
-registerRoutes(app);
+// Routes are now registered in the main index.js (or wherever app is initialized)
 
 // ✅ Setup WebSocket
 setupWebSocket(server);

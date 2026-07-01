@@ -4,53 +4,42 @@ import { parse } from 'url';
 import { verifyToken } from './auth.js';
 
 export function setupWebSocket(server) {
-  const wss = new WebSocketServer({ 
+  const wss = new WebSocketServer({
     server,
-    path: /\/(ws|api\/v2\/prices\/ws)$/,
+    path: '/api/v2/prices/ws',
     verifyClient: (info, cb) => {
-      const { req } = info;
-      console.log('[WS] Handshake URL:', req.url);
-      const { query } = parse(req.url, true);
+      const { query } = parse(info.req.url, true);
       let token = query.token;
-      const sessionId = query.sessionId;
 
-      // Fallback to Authorization header
-      if (!token && req.headers.authorization) {
-        const authHeader = req.headers.authorization;
+      // Fallback to Authorization header for non-browser clients
+      if (!token && info.req.headers.authorization) {
+        const authHeader = info.req.headers.authorization;
         if (authHeader.startsWith('Bearer ')) {
           token = authHeader.substring(7).trim();
         }
       }
 
-      if (token) {
-        const decoded = verifyToken(token);
-        console.log(`[WS] Verifying client, token present: ${!!decoded}`);
-        if (!decoded) {
-          console.log('[WS] Connection rejected: Invalid token');
-          cb(false, 401, 'Invalid token');
-          return;
-        }
-        req.user = decoded;
-        console.log(`[WS] Connection verified for user: ${decoded.username || decoded.id || 'unknown'}`);
-        cb(true);
+      if (!token) {
+        console.log('[WS] Connection rejected: No token provided.');
+        cb(false, 401, 'Unauthorized');
         return;
       }
 
-      if (!sessionId) {
-        console.log('[WS] Connection rejected: No token or sessionId provided');
-        cb(false, 401, 'No token or sessionId provided');
+      const decoded = verifyToken(token);
+      if (!decoded) {
+        console.log('[WS] Connection rejected: Invalid token');
+        cb(false, 401, 'Invalid token');
         return;
       }
-
-      console.log(`[WS] Verifying client, sessionId present: ${!!sessionId}`);
-      req.sessionId = sessionId;
-      console.log(`[WS] Connection verified for session: ${sessionId}`);
+      info.req.user = decoded;
+      console.log(`[WS] Connection verified for user: ${decoded.username || decoded.id || 'unknown'}`);
       cb(true);
     }
   });
 
   wss.on('connection', (ws, req) => {
-    const sessionId = req.sessionId;
+    // The user object is attached during verifyClient
+    const sessionId = req.user?.username || req.user?.id || 'unknown-session';
     const user = req.user;
     const clientId = user?.username || sessionId || 'unknown';
     console.log(`[WS] Connection established for client: ${clientId}`);

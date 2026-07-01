@@ -10,6 +10,7 @@ import { useNiceHashOrders } from "./NiceHashContext";
 function NiceHashOrderManager({ onCall, nhClient, setNhClient }) {
   const {
     nicehashOrders,
+    summary,
     refresh: refreshSummary,
     showPriceLookupModal,
     setShowPriceLookupModal,
@@ -194,7 +195,7 @@ function NiceHashOrderManager({ onCall, nhClient, setNhClient }) {
         <div style={{ background: "rgba(255,255,255,0.03)", padding: "6px 10px", borderRadius: "6px", textAlign: "center" }}>
           <div style={{ fontSize: "9px", opacity: 0.5 }}>Total Paid</div>
           <div style={{ fontSize: "clamp(14px, 1.5vw, 18px)", fontWeight: "bold", color: "#fbbf24" }}>
-            {refreshSummary} BTC
+            {summary.totalPaid} BTC
           </div>
         </div>
         <div style={{ background: "rgba(255,255,255,0.03)", padding: "6px 10px", borderRadius: "6px", textAlign: "center" }}>

@@ -42,7 +42,7 @@ export function dbAllAsync(db, sql, params = []) {
 /**
  * Initialize rental tables
  */
-export function initRentalTables(db) {
+export function initRentalTables() {
   return new Promise((resolve) => {
     db.serialize(() => {
       db.run(`CREATE TABLE IF NOT EXISTS rentals (

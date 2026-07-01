@@ -1,26 +1,24 @@
 // server/monitor.js - SIMPLIFIED WORKING VERSION
 
 import { db } from './db.js';
-import fs from 'fs';
-import { mrrApiCall, mrrConfigs, markGhostRental, mrrGetCache } from './mrr.js';
+import { mrrApiCall, mrrConfigs } from './mrr.js';
 import { resolveNhClient, getNiceHashApp, isAggregate, nhConfigs } from './nh.js';
-import { extractRentalInfo, extractRigInfo } from './utils.js';
+import { extractRentalInfo } from './utils.js';
 import { TELEGRAM_CONFIG, TelegramTemplates } from '../src/core/telegram.js';
-import { ALGO_DISPLAY_NAMES } from '../src/core/mapping.js';
+import { getAlgoMapping, normalizeAlgoForNiceHash, getMrrAlgorithmUnit, calculatePriceComparison } from '../src/core/mapping.js';
+import { getBtcPriceData } from '../src/core/priceUtils.js';
+import { processRental } from './mrr/rentalProcessor.js';
 
 // Import utilities
 import { 
   getRentalIdFromRig, 
   getRigLookupKeys, 
   isRentalActive, 
-  isLiveRigCurrentlyRented,
-  resolveRentalAlgo,
-  parseUtcDate
+  isLiveRigCurrentlyRented
 } from './mrr/rental-utils.js';
 
 import { 
   isRealRental, 
-  splitRentals as validateRentals,
 } from './mrr/rental-validator.js';
 
 import { 
@@ -45,7 +43,6 @@ import {
   dbGetAsync, 
   dbRunAsync, 
   dbAllAsync, 
-  initRentalTables 
 } from './mrr/db-utils.js';
 
 import { Cache, TTLMap } from './mrr/cache-utils.js';
@@ -99,6 +96,24 @@ async function maybeDelay(key) {
     await new Promise(r => setTimeout(r, 1000));
     monitorInitTracker.add(key);
   }
+}
+
+/**
+ * Formats milliseconds into a human-readable time string (e.g., "1d 4h", "12h 30m").
+ * @param {number} ms - The duration in milliseconds.
+ * @returns {string} The formatted time string.
+ */
+function formatRemainingTime(ms) {
+  if (ms <= 0) return 'Finished';
+
+  const d = Math.floor(ms / 86400000);
+  const h = Math.floor((ms % 86400000) / 3600000);
+  const m = Math.floor((ms % 3600000) / 60000);
+
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m`;
+  return '<1m';
 }
 
 // ==========================
@@ -271,7 +286,7 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
 
   try {
     await maybeDelay('runRentalMonitor');
-    await initRentalTables(db);
+    await initRentalTables();
 
     const requestedScope = String(clientScope || 'ALL').trim().toUpperCase();
     const scopeList = requestedScope.split(',').map(s => s.trim());
@@ -297,7 +312,6 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
     const accountMetrics = [];
     const allRentedRigs = [];
     const successfulAccts = [];
-    const currentActiveRentalIds = new Set();
     const currentActiveRealRentalIds = new Set();
     const globalRentalsMap = new Map();
     const globalOnlineAlgos = new Map();
@@ -337,21 +351,6 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
       }
     };
 
-    // Initialize database
-    await new Promise((resolve) => {
-      db.serialize(() => {
-        db.run(`CREATE TABLE IF NOT EXISTS rentals (
-          id TEXT PRIMARY KEY, name TEXT, client TEXT, start_time INTEGER, end_time INTEGER, algo TEXT,
-          target_100 REAL, order_diff REAL, last_updated INTEGER, last_notified INTEGER,
-          low_hashrate_start INTEGER, zero_hashrate_start INTEGER, current_hashrate TEXT,
-          average_hashrate TEXT, advertised_hashrate TEXT, price_paid TEXT
-        )`, (err) => { if (err) console.error(`[monitor:db] Failed to create rentals table: ${err.message}`); });
-        db.run(`CREATE TABLE IF NOT EXISTS rental_history (id TEXT PRIMARY KEY, start_time INTEGER)`,
-          (err) => { if (err) console.error(`[monitor:db] Failed to create rental_history table: ${err.message}`); });
-        db.run("DELETE FROM rental_history WHERE start_time < ?", [Date.now() - 172800000], () => resolve());
-      });
-    });
-
     const todayStart = new Date();
     todayStart.setUTCHours(0, 0, 0, 0);
     const todayStartTs = todayStart.getTime();
@@ -367,6 +366,7 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
     let disabledAll = 0;
     let warningAll = 0;
     let onlineAll = 0;
+    const currentActiveRentalIds = new Set();
 
     // ✅ Ensure mrrAccts is an array before iterating
     const accountsToProcess = Array.isArray(mrrAccts) ? mrrAccts : [];
@@ -378,6 +378,7 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
       const metric = {
         name: acct,
         total: 0,
+        ghost: 0,
         online: 0,
         rented: 0,
         offline: 0,
@@ -510,184 +511,27 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
         // ============================================================
         // PROCESS RENTALS - SIMPLIFIED
         // ============================================================
-        let realRentalCount = 0;
+        const { real: realRentals, ghost: ghostRentals } = validateRentals(Array.from(rentalsMap.values()), now);
 
-        for (const [rentalId, r] of rentalsMap) {
-          // Skip if not a real rental
-          const info = extractRentalInfo(r);
-          if (!isRealRental(r, info)) {
-            console.log(`[monitor:${acct}] Skipping ghost rental: ${rentalId}`);
-            continue;
-          }
-
-          const liveRig = getRigLookupKeys(r).map(key => rigLookupByRentalId.get(key)).find(Boolean);
-          if (liveRig) {
-            r.name = liveRig.name || r.name;
-            if (!r.hashrate || typeof r.hashrate !== 'object') r.hashrate = {};
-            const liveVal = parseFloat(liveRig.hashrate || liveRig.status?.hashrate || 0);
-            if (liveVal > 0) {
-              r.hashrate.current = liveVal;
-            }
-            if ((!r.algo || r.algo === 'Unknown') && liveRig.algo) {
-              r.algo = liveRig.algo;
-            }
-          }
-
-          const startT = parseUtcDate(info.startTime);
-          const endT = parseUtcDate(info.endTime);
-          
-          // Skip if no valid times
-          if (startT <= 0 || endT <= 0) {
-            console.log(`[monitor:${acct}] Skipping rental with invalid times: ${rentalId}`);
-            continue;
-          }
-
-          const remainingMs = Math.max(0, endT - now);
-          
-          // Skip if finished
-          if (remainingMs <= 0) {
-            console.log(`[monitor:${acct}] Skipping finished rental: ${rentalId}`);
-            await dbRunAsync(`DELETE FROM rentals WHERE id = ?`, [String(r.id)]).catch(() => {});
-            continue;
-          }
-
-          // Check if currently rented
-          const isRented = isLiveRigCurrentlyRented(liveRig);
-          if (!isRented && !currentActiveRentalIds.has(rentalId)) {
-            // Not rented and not in active list - skip
-            continue;
-          }
-
-          // This is a real active rental - count it
-          realRentalCount++;
+        for (const rental of realRentals) {
+          const liveRig = getRigLookupKeys(rental).map(key => rigLookupByRentalId.get(key)).find(Boolean);
+          const rentalId = String(rental.id);
           currentActiveRentalIds.add(rentalId);
+          currentActiveRealRentalIds.add(rentalId);
 
-          // Get hashrate data
-          const advertised = parseFloat(info.hashrate?.advertised || 0);
-          const average = parseFloat(info.hashrate?.average || 0);
-          const currentHash = parseFloat(info.hashrate?.current || 0);
-          const efficiency = parseFloat(info.percent || 0);
+          const result = await processRental(rental, acct, now, forceNotify, notifiedRentalIdsThisRun, notifications, liveRig);
 
-          // Calculate target
-          const totalDurationMs = endT - startT;
-          const elapsedMs = Math.max(0, Math.min(now - startT, totalDurationMs));
-          const totalExpectedHashes = advertised * (totalDurationMs / 1000);
-          const actualHashesDone = average * (elapsedMs / 1000);
-          const remainingHashesNeeded = totalExpectedHashes - actualHashesDone;
-          const requiredHashrate = remainingMs > 0 ? remainingHashesNeeded / (remainingMs / 1000) : 0;
-          const displayTarget = Number.isFinite(requiredHashrate) && requiredHashrate > 0 ? requiredHashrate : 0;
-
-          // Calculate order diff
-          let orderDiff = (100 - efficiency).toFixed(1);
-          
-          // Try to get NiceHash price for comparison
-          try {
-            const nhAlgo = normalizeAlgoForNiceHash(info.algo);
-            if (nhAlgo && nhAlgo !== 'UNKNOWN' && nhAlgo !== 'N/A') {
-              const cacheKey = `${nhAlgo}:${acct}`;
-              let nhP = nhPriceCache.get(cacheKey);
-              if (!nhP) {
-                const activeOrders = await getMonitorNhActiveOrders(acct);
-                const matchedOrder = activeOrders.find(o => normalizeAlgoForNiceHash(o?.algorithm || o?.algo || o?.type) === nhAlgo);
-                if (matchedOrder) {
-                  nhP = {
-                    price: parseFloat(matchedOrder?.price ?? matchedOrder?.marketPrice ?? matchedOrder?.fixedPrice ?? 0) || 0,
-                    unit: getMonitorNhAlgoPriceUnit(matchedOrder, nhAlgo)
-                  };
-                  if (nhP.price > 0) nhPriceCache.set(cacheKey, nhP);
-                }
-              }
-              if (nhP?.price > 0 && advertised > 0) {
-                const mrrBtcData = getBtcPriceData(r.price || info.price);
-                const durationHours = parseFloat(info.duration) || 0;
-                const mrrPriceNorm = durationHours > 0 && advertised > 0
-                  ? mrrBtcData.value / (durationHours / 24) / advertised
-                  : 0;
-                if (mrrPriceNorm > 0) {
-                  const roi = calculatePriceComparison(mrrPriceNorm, 'TH', nhP.price, nhP.unit);
-                  if (roi !== null && !isNaN(roi)) orderDiff = roi;
-                }
-              }
-            }
-          } catch (err) {
-            // Ignore - use default orderDiff
-          }
-
-          // Save to database
-          await dbRunAsync(
-            `INSERT INTO rentals (
-              id, name, client, start_time, end_time, algo, target_100, order_diff, 
-              last_updated, current_hashrate, average_hashrate, advertised_hashrate, price_paid
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET 
-              name=excluded.name, client=excluded.client, algo=excluded.algo,
-              start_time=excluded.start_time, end_time=excluded.end_time, 
-              target_100=excluded.target_100, order_diff=excluded.order_diff,
-              last_updated=excluded.last_updated,
-              current_hashrate=excluded.current_hashrate, 
-              average_hashrate=excluded.average_hashrate,
-              advertised_hashrate=excluded.advertised_hashrate, 
-              price_paid=excluded.price_paid`,
-            [
-              String(r.id), r.name || r.id, acct, startT, endT, info.algo,
-              displayTarget, orderDiff, now, currentHash, average, advertised,
-              info.price?.paid || 0
-            ]
-          ).catch(err => console.error(`[monitor:db] Upsert error for ${r.id}: ${err.message}`));
-
-          // Build active rental line for summary
-          const remStr = formatRemainingTime(remainingMs);
-          const perfEmoji = efficiency >= 100 ? '✅' : 
-                            efficiency >= 90 ? '🟢' : 
-                            efficiency >= 70 ? '🔵' : 
-                            efficiency >= 50 ? '🟡' : '🔴';
-          
-          const algo = resolveRentalAlgo(r, info);
-          const speedStatus = currentHash > 0 ? `${info.niceHashrate}H` : '⚠️ 0 H/s';
-          
-          activeRentalLines.push(TelegramTemplates.activeRentalLine(
-            perfEmoji,
-            getAlgoDisplayName(algo),
-            r.name || r.id,
-            remStr,
-            efficiency,
-            orderDiff,
-            info.niceAverageHashrate || '0.00',
-            info.niceAdvertisedHashrate || 'N/A',
-            speedStatus,
-            displayTarget,
-            '',
-            acct,
-            info
-          ));
-
-          // Send new rental notification if new
-          const row = await dbGetAsync(`SELECT last_notified FROM rentals WHERE id = ?`, [String(r.id)]).catch(() => null);
-          const lastNotified = row?.last_notified || 0;
-          const isNew = lastNotified === 0;
-
-          if (forceNotify || isNew) {
-            const hbType = forceNotify ? 'MONITOR' : 'NEW RENTAL';
-            const ads = info.niceAdvertisedHashrate || info.hashrate?.advertised?.nice || info.hashrate?.advertised || 'N/A';
-            const msg = forceNotify
-              ? TelegramTemplates.rentedNotice(hbType, r, info, acct, orderDiff, remStr, getAlgoDisplayName(algo), ads)
-              : TelegramTemplates.newRental(acct, r, info.price?.paid || '0.00', info.startTime, info.endTime, getAlgoDisplayName(algo), ads);
-            
-            queueTelegramMessage(msg, {
-              type: hbType,
-              label: `${hbType} ${acct} ${r.id}`,
-              onSuccess: async () => {
-                await dbRunAsync(`UPDATE rentals SET last_notified = ? WHERE id = ?`, [now, String(r.id)]);
-                notifications.push({ id: r.id, client: acct, status: 'Sent' });
-              },
-              onFailure: (err) => {
-                notifications.push({ id: r.id, client: acct, status: 'Failed', error: err.message });
-              }
-            });
+          if (result.isValid && result.activeRentalLine) {
+            activeRentalLines.push(result.activeRentalLine);
           }
         }
 
-        metric.rented = realRentalCount;
+        for (const rental of ghostRentals) {
+            markGhostRental(rental.id);
+        }
+
+        metric.rented = realRentals.length;
+        metric.ghost = ghostRentals.length;
         accountMetrics.push(metric);
         if (!metric.error) successfulAccts.push(acct);
 
@@ -698,6 +542,10 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
       }
     }));
 
+    rentedAll = accountMetrics.reduce((sum, metric) => sum + metric.rented, 0);
+    ghostTotal = accountMetrics.reduce((sum, metric) => sum + metric.ghost, 0);
+
+
     // ============================================================
     // CLEANUP & FINISHED RENTALS
     // ============================================================
@@ -706,15 +554,15 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
     if (successfulAcctList.length > 0) {
       const placeholders = successfulAcctList.map(() => '?').join(',');
       
-      // Delete rentals not in active list
-      if (currentActiveRentalIds.size > 0) {
-        const activePlaceholders = Array.from(currentActiveRentalIds).map(() => '?').join(',');
-        await dbRunAsync(
+      // Delete rentals not in the current active real list
+      if (currentActiveRealRentalIds.size > 0) {
+        const activePlaceholders = Array.from(currentActiveRealRentalIds).map(() => '?').join(',');
+        await dbRunAsync(db,
           `DELETE FROM rentals WHERE client IN (${placeholders}) AND id NOT IN (${activePlaceholders})`,
-          [...successfulAcctList, ...Array.from(currentActiveRentalIds)]
+          [...successfulAcctList, ...Array.from(currentActiveRealRentalIds)]
         ).catch((err) => console.warn(`[monitor:db] Failed to prune stale rentals: ${err.message}`));
       } else {
-        await dbRunAsync(
+        await dbRunAsync(db, // If no real rentals were found for these accounts, clear them all
           `DELETE FROM rentals WHERE client IN (${placeholders})`,
           successfulAcctList
         ).catch((err) => console.warn(`[monitor:db] Failed to clear stale rentals: ${err.message}`));
@@ -733,6 +581,7 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
         totals: {
           rigs: totalAll || 0,
           available: availableAll || 0,
+          ghost: ghostTotal || 0,
           rented: rentedAll || 0,
           offline: offlineAll || 0,
           disabled: disabledAll || 0,
@@ -798,7 +647,7 @@ export async function getGhostRentals(client) {
 
 export async function clearGhostRentals(client) {
   try {
-    await dbRunAsync(db,
+    await dbRunAsync(
       `UPDATE ghost_rentals_log SET cleaned_up = 1 WHERE client = ?`,
       [client]
     );

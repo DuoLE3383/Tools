@@ -1,5 +1,5 @@
 // rentalProcessor.js - Complete upgraded version
-import { dbRunAsync, dbGetAsync } from "./db-utils.js";
+import { dbRunAsync, dbGetAsync } from "../mrr/db-utils.js";
 import { TELEGRAM_CONFIG, TelegramTemplates } from "../../src/core/telegram.js";
 import {
   normalizeAlgoForNiceHash,
@@ -9,7 +9,6 @@ import {
 } from "../../src/core/mapping.js";
 import { getBtcPriceData } from "../../src/core/priceUtils.js";
 import { sendTelegramInternal, getMonitorNhActiveOrders } from "../monitor.js";
-
 import { extractRentalInfo } from "../utils.js";
 import { getNiceHashPriceValue } from "../../src/core/mrrUtils.js";
 
@@ -57,12 +56,12 @@ export function isRealRental(rental, info, now = Date.now()) {
     // BUGFIX: Use separate variables per source. Do NOT let || chain hide zero values.
     const currentHashRaw = info.hashrate?.current;
     const averageHashRaw = info.hashrate?.average;
-    const currentHash = (currentHashRaw !== undefined && currentHashRaw !== null) ? parseFloat(currentHashRaw) : 0; // eslint-disable-line
+    const currentHashValue = (currentHashRaw !== undefined && currentHashRaw !== null) ? parseFloat(currentHashRaw) : 0;
     const averageHash = (averageHashRaw !== undefined && averageHashRaw !== null) ? parseFloat(averageHashRaw) : 0;
     const paidAmount = parseFloat(info.price?.paid || null);
     
     // If there's any activity or payment, it's real
-    if (paidAmount > 0 || averageHash > 0 || currentHash > 0) {
+    if (paidAmount > 0 || averageHash > 0 || currentHashValue > 0) {
         console.debug(`[monitor:isRealRental] Rental ${rentalId} is real (has paid amount or hashrate).`);
         return true;
     }
@@ -106,7 +105,7 @@ export function isRealRental(rental, info, now = Date.now()) {
  * @returns {Promise<number|null>} The price of the matched order, or null if not found.
  */
 async function getNiceHashOrderPriceForRental(rental, acct) {
-        const nhAlgo = normalizeAlgoForNiceHash(rental.algo);
+        const nhAlgo = normalizeAlgoForNiceHash(rental.algo || info.algo);
         if (!nhAlgo || nhAlgo === "UNKNOWN" || nhAlgo === "N/A") {
             return null;
         }
@@ -301,7 +300,7 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
 
     // --- New Rental Notification ---
     const isNewToMonitor = lastNotified === 0;
-    const withinReasonableStart = startT > 0 && elapsedMs < 10 * 60 * 1000;
+    const withinReasonableStart = startT > 0 && elapsedMs < 15 * 60 * 1000; // 15 minute window
     const alreadyNotifiedThisRun = notifiedRentalIdsThisRun.has(String(rental.id));
     if (!alreadyNotifiedThisRun && (forceNotify || (isNewToMonitor && withinReasonableStart))) {
         notifiedRentalIdsThisRun.add(String(rental.id));
@@ -336,7 +335,7 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
     const remM_s = Math.floor((remainingMs % 3600000) / 60000);
 
     const remStr_s = isFinished_s ? "Finished" : hasEndTime ? (remD_s > 0 ? `${remD_s}d ${remH_s}h` : `${remH_s}h ${remM_s}m`) : "Active";
-    const perfEmoji = efficiency >= 100 ? "✅" : efficiency >= 90 ? "🟢" : efficiency >= 70 ? "🔵" : efficiency >= 50 ? "🟡" : "🔴"; // eslint-disable-line no-nested-ternary
+    const perfEmoji = efficiency >= 100 ? "✅" : efficiency >= 90 ? "🟢" : efficiency >= 70 ? "🔵" : efficiency >= 50 ? "🟡" : "🔴";
 
     const nhOrderPrice = await getNiceHashOrderPriceForRental(rental, acct);
     info.nicehashPrice = nhOrderPrice;
@@ -349,7 +348,7 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
     // BUILD ACTIVE RENTAL LINE WITH CORRECT PARAMETER ORDER with core/telegram.js
     // ============================================================
     const activeRentalLine = TelegramTemplates.activeRentalLine(
-        perfEmoji,                    // 1: perfEmoji
+        perfEmoji, // 1: perfEmoji
         getAlgoMapping(info.algo).displayName, // 2: algo
         liveRig?.name || rental.name || rental.id, // 3: name
         remStr_s,                     // 4: remaining
@@ -358,9 +357,10 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
         avgDisplay,                   // 7: avg
         advDisplay,                   // 8: ads
         currentDisplay,               // 9: cur (now with fallback)
-        displayTarget,                // 10: target
-        acct,                         // 12: client
-        info                          // 13: info
+        formatHashrate(displayTarget, suffix), // 10: target
+        '', // 11: extra
+        acct, // 12: client
+        info // 13: info
     );
 
     return {

@@ -1,7 +1,33 @@
 import React from "react";
-import { poolHelpers as ph } from "./src/core/poolUtils";
-import { ALGO_MAPPING } from "./src/core/mapping";
+import { poolHelpers as ph } from "./core/poolUtils";
+import { ALGO_MAPPING } from "./core/mapping";
+/**
+ * Extracts a display-friendly message from a verification result object.
+ * This function is designed to handle various response structures from the backend verification process.
+ *
+ * @param {object} result - The result object from a verification call.
+ * @returns {string} A user-friendly status message.
+ */
+const getVerifyMessage = (result) => {
+  const data = result?.data || result;
+  if (!data) return "No response";
+  if (data.error) return data.error;
 
+  // ✅ Prioritize "Skipped" message to avoid incorrect "Verified" status
+  if (typeof data.message === 'string' && data.message.includes("Skipped")) return data.message;
+
+  // Prioritize success/fail check over generic messages
+  if (poolHelpers.isVerifySuccess(result)) return "Verified";
+
+  if (data.stopped) return data.message || "Stopped";
+  if (data.message) return data.message;
+
+  if (Array.isArray(data.logs) && data.logs.length > 0) {
+    return data.logs[data.logs.length - 1]?.message || "Completed with logs";
+  }
+  // Final fallback based on success status
+  return poolHelpers.isVerifySuccess(result) ? "Verified" : "Verification failed";
+};
 export default function VerificationResults({
   verifyResults,
   verifyFromFile,

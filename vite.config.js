@@ -46,25 +46,25 @@ export default defineConfig(({ command }) => ({
         }
       },
       
-      // ✅ Main API proxy - YOUR BACKEND
-      '/api': {
-        target: 'http://localhost:3003',
+      // Proxy WebSocket connections
+      '/api/v2/prices/ws': {
+        target: 'ws://localhost:3003', // Use ws:// for WebSocket proxy
+        ws: true, // This is crucial for WebSockets
         changeOrigin: true,
-        ws: true, // ✅ Enable WebSocket proxying
         configure: (proxy) => {
           proxy.on('error', (err) => {
-            console.error('[API Proxy] Error:', err.message);
+            console.error('[WS Proxy] Error:', err.message);
           });
-          proxy.on('proxyReq', (proxyReq, req, res) => {
-            console.log('[API Proxy] ->', req.url);
-          });
-          // ✅ Handle WebSocket upgrade
-          proxy.on('upgrade', (proxyReq, socket, head) => {
-            console.log('[WS Proxy] WebSocket upgrade');
+          proxy.on('proxyReq', (proxyReq, req) => {
+            console.log(`[WS Proxy] -> ${req.method} ${req.url}`);
           });
         },
-        // ✅ Don't rewrite - keep path as is
-        // rewrite: (path) => path, // This is the default behavior
+      },
+
+      // Proxy regular API calls (must be after the specific WS proxy)
+      '/api': {
+        target: 'http://localhost:3003', // Target your main backend server
+        changeOrigin: true,
       },
     },
   },

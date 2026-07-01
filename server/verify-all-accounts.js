@@ -79,14 +79,11 @@ async function run() {
               const poolName = (pool.name || '').trim();
               const poolAlgo = pool.miningAlgorithm || pool.algorithm || '';
               const nameAlgoKey = `${poolName}|${poolAlgo}`;
-              const poolId = pool.id || pool.poolId;
+              const poolId = String(pool.id || pool.poolId || '');
 
-              if (poolName.toLowerCase() === 'active') {
-                console.log(`⏭️  SKIPPED (Active Name)`);
-                continue;
-              }
-              if (poolId && activePoolIds.has(String(poolId))) {
-                console.log(`⏭️  SKIPPED (In Use)`);
+              // ✅ Correctly check if the pool ID is in the set of active pool IDs
+              if (poolId && activePoolIds.has(poolId)) {
+                console.log(`⏭️  SKIPPED (In Use by Active Order)`);
                 continue;
               }
               if (poolName && seenPoolAlgos.has(nameAlgoKey)) {
@@ -96,30 +93,10 @@ async function run() {
               if (poolName) seenPoolAlgos.add(nameAlgoKey);
 
               let details = pool;
-              if (poolId) {
-                let detailsFetched = false;
-                while (!detailsFetched) {
-                  try {
-                    const detailRes = await nhApp.pools.getPoolDetails(poolId);
-                    if (detailRes?.status === 429) {
-                      throw { statusCode: 429 };
-                    }
-                    details = detailRes;
-                    detailsFetched = true;
-                  } catch (dErr) {
-                    if (dErr.statusCode === 429 || String(dErr.message).includes('429')) {
-                      process.stdout.write(`⏳ (429 details, wait 3s)... `);
-                      await new Promise(r => setTimeout(r, 3000));
-                      continue;
-                    }
-                    throw dErr;
-                  }
-                }
-              }
 
               // Mapping fields correctly from full details
-              const stratumHost = details.stratumHost || details.stratumHostname || details.host || '';
-              const stratumPort = Number(details.stratumPort || details.port || 0);
+              const stratumHost = details.stratumHostname || details.stratumHost || details.host || '';
+              const stratumPort = Number(details.port || details.stratumPort || 0);
               const miningAlgorithm = details.miningAlgorithm || details.algorithm || '';
               const poolLocation = details.serviceLocation || details.poolVerificationServiceLocation || details.location || 'ANY';
               const username = details.username || details.user || '';
