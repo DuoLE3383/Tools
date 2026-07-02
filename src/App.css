@@ -1,4 +1,5 @@
 :root {
+  --app-max: 1600px;
   --primary-width: 1600px;
   --primary-color: var(--accent);
   --primary-hover: var(--accent-strong);
@@ -12,16 +13,26 @@
 }
 
 .app-shell {
-  width: min(100%, var(--app-max));
+  width: 100%;
+  max-width: 100%;
   margin: 0 auto;
   padding: var(--shell-pad);
   position: relative;
   z-index: 1;
 }
 
-.app-shell.dashboard-shell,
+/* Auth shell: constrained width for login page */
 .app-shell.auth-shell {
-  width: min(100%, calc(var(--app-max) + 40px));
+  width: min(100%, var(--app-max));
+  margin: 0 auto;
+}
+
+/* Full-width dashboard shell */
+.app-shell.dashboard-shell {
+  width: 100% !important;
+  max-width: none;
+  padding: 0 var(--shell-pad) 40px;
+  margin: 0 auto;
 }
 
 .dashboard,
@@ -39,6 +50,66 @@
   backdrop-filter: blur(16px);
 }
 
+/* ===== DASHBOARD HEADER ===== */
+.dashboard-header {
+  padding: clamp(24px, 3vw, 40px) var(--shell-pad);
+  width: 100%;
+  max-width: none;
+  margin: 0 auto clamp(18px, 3vw, 30px);
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
+.dashboard-status-card {
+  width: 100%;
+}
+
+.dashboard-system-label {
+  opacity: 0.5;
+  margin-right: 10px;
+}
+
+.dashboard-actions-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.dashboard-user-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-right: 10px;
+  min-width: 140px;
+  justify-content: center;
+}
+
+.dashboard-user-label {
+  font-size: 11px;
+  opacity: 0.55;
+}
+
+.dashboard-user-name {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.dashboard-user-role {
+  font-size: 11px;
+  opacity: 0.7;
+  text-transform: uppercase;
+}
+
+.dashboard-btn {
+  font-size: clamp(9px, 1.2vw, 10px);
+  text-align: center;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .app-header {
   display: flex;
   justify-content: space-between;
@@ -51,6 +122,7 @@
 
 .brand-block {
   min-width: 0;
+  flex: 1;
 }
 
 .subtitle {
@@ -98,9 +170,13 @@
 
 .dashboard {
   display: grid;
-  grid-template-columns: minmax(0, 1.45fr) minmax(360px, 0.95fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--grid-gap);
   align-items: start;
+  min-width: 0;
+  max-width: none;
+  margin: 0 auto;
+  width: 100%;
 }
 
 .quick-actions {
@@ -110,7 +186,11 @@
 }
 
 .column-stack {
+  display: flex;
+  flex-direction: column;
   gap: var(--grid-gap) !important;
+  min-width: 0;
+  width: 100%;
 }
 
 .panel,
@@ -126,7 +206,8 @@
 .panel {
   padding: clamp(14px, 1.4vw, 20px);
   width: 100%;
-  max-width: 100%;
+  max-width: none;
+  min-width: 0;
 }
 
 .panel-header {
@@ -639,7 +720,7 @@
 
 .response-modal {
   width: min(100%, 1100px);
-  max-width: 1100px;
+  max-width: var(--app-max);
   max-height: 90vh;
   overflow: hidden;
   display: flex;
@@ -692,6 +773,7 @@
   text-align: center;
 }
 
+/* ========== CRYPTO RATE PAGE ========== */
 .crypto-rate-page {
   width: 100% !important;
   max-width: 100% !important;
@@ -699,13 +781,189 @@
   min-height: 0 !important;
   align-self: start;
   overflow: hidden;
+  padding: 10px 14px;
+  color: #f8fafc;
+  background: transparent;
+  font-family: sans-serif;
+  box-sizing: border-box;
 }
 
-.crypto-rate-page input[type="number"],
-.crypto-rate-page button {
-  min-width: 100%;
+.crp-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  padding-bottom: 8px;
 }
 
+.crp-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.crp-title {
+  font-size: clamp(1rem, 2vw, 1.3rem);
+  font-weight: 900;
+}
+
+.crp-accent {
+  color: #60a5fa;
+}
+
+.crp-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.crp-status-dot.live {
+  background: #10b981;
+}
+
+.crp-status-dot.polling {
+  background: #f59e0b;
+}
+
+.crp-status-label {
+  opacity: 0.4;
+  font-size: 0.6rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.crp-updated {
+  opacity: 0.5;
+  font-size: 0.6rem;
+  white-space: nowrap;
+}
+
+.crp-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.crp-dollar {
+  font-size: clamp(0.9rem, 1.5vw, 1rem);
+  color: #60a5fa;
+  font-weight: 700;
+}
+
+.crp-amount-input {
+  width: clamp(90px, 12vw, 120px);
+  background: rgba(30, 41, 59, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  padding: 4px 8px;
+  font-size: clamp(1rem, 2vw, 1.3rem);
+  color: #fff;
+  font-family: monospace;
+  outline: none;
+  text-align: right;
+}
+
+.crp-refresh {
+  background: rgba(96, 165, 250, 0.08);
+  border: 1px solid rgba(96, 165, 250, 0.1);
+  border-radius: 4px;
+  padding: 4px 10px;
+  color: #60a5fa;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: sans-serif;
+  white-space: nowrap;
+  min-width: auto !important;
+}
+
+.crp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+.crp-card {
+  aspect-ratio: 2 / 1;
+  background: rgba(30, 41, 59, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.03);
+  border-radius: 10px;
+  padding: 14px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  transition: all 0.2s ease;
+}
+
+.crp-card.active {
+  background: rgba(96, 165, 250, 0.06);
+  border-color: rgba(96, 165, 250, 0.15);
+}
+
+.crp-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.crp-symbol {
+  font-weight: 800;
+  color: #d660fa;
+  font-size: 0.85rem;
+}
+
+.crp-change {
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.crp-change.up {
+  color: #10b981;
+}
+
+.crp-change.down {
+  color: #f87171;
+}
+
+.crp-card-input-wrap {
+  margin: 8px 0;
+}
+
+.crp-card-input {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: clamp(0.9rem, 2vw, 1.2rem);
+  color: #fff;
+  font-family: monospace;
+  outline: none;
+  text-align: center;
+  box-sizing: border-box;
+  min-width: auto !important;
+}
+
+.crp-price {
+  font-size: 0.75rem;
+  font-family: monospace;
+  color: rgba(255, 255, 255, 0.35);
+  text-align: center;
+}
+
+.crp-error {
+  font-size: 0.75rem;
+  color: #f87171;
+  text-align: center;
+  margin-top: 10px;
+}
+
+/* ========== COIN PRICE MODAL ========== */
 .coin-price-modal {
   position: fixed;
   inset: 0;
@@ -728,9 +986,190 @@
   box-shadow: var(--shadow);
 }
 
+/* ========== MINER PAGE ========== */
+.miner-page {
+  width: 100%;
+  min-height: 100svh;
+  padding: var(--shell-pad);
+}
+
+.miner-page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: var(--grid-gap);
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.miner-page-header h1 {
+  font-size: clamp(1.5rem, 3vw, 2.4rem);
+  letter-spacing: 0;
+}
+
+.miner-page-header p,
+.miner-muted {
+  color: var(--muted);
+}
+
+.miner-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.miner-summary,
+.miner-account-grid,
+.miner-stats-grid {
+  display: grid;
+  gap: var(--grid-gap);
+}
+
+.miner-summary {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: var(--grid-gap);
+}
+
+.miner-account-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+}
+
+.miner-account-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.miner-card-header {
+  margin-bottom: 0;
+}
+
+.miner-status {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.miner-status.ok {
+  color: var(--accent);
+  background: rgba(103, 232, 162, 0.12);
+  border-color: rgba(103, 232, 162, 0.24);
+}
+
+.miner-status.error,
+.miner-error {
+  color: var(--danger);
+}
+
+.miner-status.error {
+  background: rgba(255, 127, 127, 0.12);
+  border-color: rgba(255, 127, 127, 0.24);
+}
+
+.miner-address {
+  padding: 10px 12px;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-h);
+  font-family: var(--mono);
+  font-size: 0.82rem;
+}
+
+.miner-stats-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.miner-stat-tile {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.miner-stat-tile span,
+.miner-section-title {
+  display: block;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.miner-stat-tile strong {
+  display: block;
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+  color: var(--text-h);
+  font-size: 1rem;
+}
+
+.miner-workers {
+  display: grid;
+  gap: 8px;
+}
+
+.miner-worker-list {
+  display: grid;
+  gap: 8px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.miner-worker-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.miner-worker-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.miner-card-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: auto;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+}
+
+.miner-card-footer span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.miner-empty {
+  color: var(--muted);
+}
+
+/* ========== RESPONSIVE BREAKPOINTS ========== */
 @media (max-width: 1200px) {
+  .app-shell.dashboard-shell {
+    width: 100% !important;
+    max-width: none;
+    padding: 0 var(--shell-pad) 40px;
+    margin: 0 auto;
+  }
+
   .dashboard {
     grid-template-columns: minmax(0, 1fr);
+    max-width: none;
+    margin: 0 auto;
+    width: 100%;
   }
 
   .quick-actions {
@@ -752,6 +1191,10 @@
   .pools-manager .pool-algorithm-summary {
     order: 3;
   }
+
+  .crp-grid {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  }
 }
 
 @media (max-width: 900px) {
@@ -764,12 +1207,34 @@
     width: 100%;
   }
 
+  .dashboard-actions-row {
+    flex-direction: row;
+  }
+
   .verify-log-row {
     grid-template-columns: 56px 1fr;
   }
 
   .verify-log-row time {
     grid-column: 1 / -1;
+  }
+
+  .crp-grid {
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  }
+
+  .miner-page-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .miner-header-actions {
+    justify-content: flex-start;
+  }
+
+  .miner-summary,
+  .miner-stats-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -809,6 +1274,23 @@
 
   .crypto-rate-page {
     width: 100% !important;
+    padding: 8px 10px;
+  }
+
+  .crp-grid {
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 8px;
+  }
+
+  .crp-card {
+    aspect-ratio: auto;
+    min-height: 100px;
+    padding: 10px 8px;
+  }
+
+  .dashboard-user-info {
+    min-width: 100%;
+    margin-right: 0;
   }
 }
 
@@ -853,5 +1335,48 @@
 
   .algorithm-row .btn-pro.secondary {
     width: 100%;
+  }
+
+  .crp-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .crp-header-right {
+    justify-content: flex-end;
+  }
+
+  .crp-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 6px;
+  }
+
+  .crp-amount-input {
+    width: 100%;
+    max-width: 120px;
+  }
+
+  .crp-updated {
+    white-space: normal;
+  }
+
+  .dashboard-actions-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .dashboard-btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .miner-header-actions,
+  .miner-header-actions .btn-pro {
+    width: 100%;
+  }
+
+  .miner-card-footer,
+  .miner-worker-row {
+    flex-direction: column;
   }
 }

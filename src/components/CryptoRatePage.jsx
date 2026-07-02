@@ -1,4 +1,4 @@
-// CryptoRatePage.jsx - Add callback to share prices
+// CryptoRatePage.jsx - Full width responsive redesign
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   loadCryptoPriceCache,
@@ -22,7 +22,7 @@ const COIN_ALIASES = {
   "bitcoin-cash": ["bitcoin-cash", "bitcoin_cash", "bitcoincash", "BCH", "bch"],
 };
 
-function Sparkline({ data, width = 180, height = 80, color = "#60a5fa" }) {
+function Sparkline({ data, width = 120, height = 40, color = "#60a5fa" }) {
   if (!data || !Array.isArray(data) || data.length < 2) {
     return (
       <div
@@ -178,7 +178,6 @@ export default function CryptoRatePage({ onCall, onPriceUpdate }) {
     fetchPrices();
   }, [fetchPrices]);
 
-  // Use refs to hold stable references to callbacks inside the WebSocket effect
   const onPriceUpdateRef = useRef(onPriceUpdate);
   const formatPricesForRigCardRef = useRef(formatPricesForRigCard);
   useEffect(() => {
@@ -193,8 +192,12 @@ export default function CryptoRatePage({ onCall, onPriceUpdate }) {
     let reconnectTimeout = null;
     let reconnectAttempts = 0;
     const maxReconnectAttempts = 5;
+    let isDisposed = false;
 
     const connectWebSocket = () => {
+      // Guard: don't connect if already disposed
+      if (isDisposed) return;
+
       try {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${protocol}//${window.location.host}/api/v2/prices/ws?token=${encodeURIComponent(token)}`;
@@ -204,12 +207,12 @@ export default function CryptoRatePage({ onCall, onPriceUpdate }) {
         ws = new WebSocket(wsUrl);
 
         ws.onopen = () => {
+          if (isDisposed) { ws?.close(); return; }
           console.log('[WebSocket] Connected successfully');
           setWsStatus("connected");
           reconnectAttempts = 0;
-          // Send a ping to keep the connection alive
           const pingInterval = setInterval(() => {
-            if (ws && ws.readyState === WebSocket.OPEN) {
+            if (ws && ws.readyState === WebSocket.OPEN && !isDisposed) {
               ws.send(JSON.stringify({ type: 'ping' }));
             } else {
               clearInterval(pingInterval);
@@ -219,12 +222,13 @@ export default function CryptoRatePage({ onCall, onPriceUpdate }) {
         };
 
         ws.onmessage = (event) => {
+          if (isDisposed) return;
           try {
             const data = JSON.parse(event.data);
             if (data.type === 'price_update' && data.data) {
               setPrices((prev) => {
                 const merged = mergeCryptoPriceCatalog(prev, data.data);
-                saveCryptoPriceCache(merged, { source: "CryptoRatePage.ws" }); // Keep saving cache
+                saveCryptoPriceCache(merged, { source: "CryptoRatePage.ws" });
                 if (onPriceUpdateRef.current) {
                   onPriceUpdateRef.current(formatPricesForRigCardRef.current(data.data));
                 }
@@ -240,11 +244,16 @@ export default function CryptoRatePage({ onCall, onPriceUpdate }) {
         };
 
         ws.onerror = (error) => {
+          if (isDisposed) return;
           console.error('[WebSocket] Error:', error);
           setWsStatus("error");
         };
 
         ws.onclose = (event) => {
+          if (isDisposed) {
+            console.log(`[WebSocket] Closed after dispose: ${event.code}`);
+            return;
+          }
           console.log(`[WebSocket] Closed: ${event.code} - ${event.reason}`);
           setWsStatus("disconnected");
           
@@ -254,30 +263,37 @@ export default function CryptoRatePage({ onCall, onPriceUpdate }) {
             const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
             reconnectAttempts++;
             console.log(`[WebSocket] Reconnecting in ${delay}ms (attempt ${reconnectAttempts}/${maxReconnectAttempts})`);
-            
             reconnectTimeout = setTimeout(connectWebSocket, delay);
           } else {
             console.error('[WebSocket] Max reconnect attempts reached');
           }
         };
       } catch (err) {
+        if (isDisposed) return;
         console.error('[WebSocket] Connection error:', err);
       }
     };
 
     connectWebSocket();
 
-    // Cleanup
     return () => {
-      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      isDisposed = true;
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+        reconnectTimeout = null;
+      }
       if (ws) {
+        // Remove onclose handler to prevent reconnect triggering during cleanup
+        ws.onclose = null;
+        ws.onerror = null;
+        ws.onmessage = null;
         if (ws._pingInterval) clearInterval(ws._pingInterval);
         if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
           ws.close(1000, 'Component unmounting');
         }
       }
     };
-  }, []); // This effect should only run once on mount to establish the connection.
+  }, []);
 
   useEffect(() => {
     const pollTimer = setInterval(() => {
@@ -310,150 +326,72 @@ export default function CryptoRatePage({ onCall, onPriceUpdate }) {
   }, [prices, amounts, baseCoin]);
 
   return (
-    <div
-      className="crypto-rate-page"
-      style={{
-        padding: "10px 14px",
-        color: "#f8fafc",
-        background: "transparent",
-        fontFamily: "sans-serif",
-        overflow: "hidden",
-        boxSizing: "border-box",
-        width: "60%",
-        maxWidth: "60%",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: "8px",
-          marginBottom: "12px",
-          borderBottom: "1px solid rgba(255,255,255,0.05)",
-          paddingBottom: "8px",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          <span style={{ fontSize: "1.3rem", fontWeight: "900" }}>
-            LIVE <span style={{ color: "#60a5fa" }}>CONVERTER</span>
+    <div className="crypto-rate-page">
+      {/* Header bar */}
+      <div className="crp-header">
+        <div className="crp-header-left">
+          <span className="crp-title">
+            LIVE <span className="crp-accent">CONVERTER</span>
           </span>
-          <div
-            style={{
-              width: "8px",
-              height: "8px",
-              borderRadius: "50%",
-              background: wsStatus === "connected" ? "#10b981" : "#f59e0b",
-            }}
-          />
-          <span style={{ opacity: 0.4, fontSize: "0.6rem", fontWeight: "600", textTransform: "uppercase" }}>
+          <span className={`crp-status-dot ${wsStatus === "connected" ? "live" : "polling"}`} />
+          <span className="crp-status-label">
             {wsStatus === "connected" ? "LIVE" : "POLLING"}
           </span>
-          {lastUpdated && <span style={{ opacity: 0.5, fontSize: '0.6rem', marginLeft: '6px' }}>
-          Updated at {lastUpdated.toLocaleTimeString()}
-          </span>}
+          {lastUpdated && (
+            <span className="crp-updated">
+              Updated at {lastUpdated.toLocaleTimeString()}
+            </span>
+          )}
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <span style={{ fontSize: "1rem", color: "#60a5fa", fontWeight: "700" }}>$</span>
+        <div className="crp-header-right">
+          <span className="crp-dollar">$</span>
           <input
             type="number"
+            className="crp-amount-input"
             value={baseCoin === "usd" ? amounts.usd : (results[0]?.usdValue || 0).toFixed(2)}
             onChange={(e) => onValueChange("usd", e.target.value)}
-            style={{
-              width: "120px",
-              background: "rgba(30,41,59,0.3)",
-              border: "1px solid rgba(255,255,255,0.06)",
-              borderRadius: "8px",
-              padding: "4px 8px",
-              fontSize: "1.3rem",
-              color: "#fff",
-              fontFamily: "monospace",
-              outline: "none",
-              textAlign: "right",
-            }}
             placeholder="0"
           />
-          <button
-            onClick={fetchPrices}
-            style={{
-              background: "rgba(96,165,250,0.08)",
-              border: "1px solid rgba(96,165,250,0.1)",
-              borderRadius: "4px",
-              padding: "4px 10px",
-              color: "#60a5fa",
-              fontSize: "0.8rem",
-              fontWeight: "600",
-              cursor: "pointer",
-              fontFamily: "sans-serif",
-              whiteSpace: "nowrap",
-            }}
-          >
+          <button className="crp-refresh" onClick={fetchPrices} title="Refresh">
             ⟳
           </button>
         </div>
       </div>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))",
-          gap: "10px",
-          maxWidth: "400px",
-          margin: "0 auto",
-          padding: "0 14px",
-        }}
-      >
+      {/* Coin cards grid */}
+      <div className="crp-grid">
         {results.map((coin) => (
           <div
             key={coin.id}
-            style={{
-              aspectRatio: "2 / 1",
-              background: baseCoin === coin.id ? "rgba(96,165,250,0.06)" : "rgba(30,41,59,0.12)",
-              border: baseCoin === coin.id ? "1px solid rgba(96,165,250,0.15)" : "1px solid rgba(255,255,255,0.03)",
-              borderRadius: "10px",
-              padding: "14px 12px 12px",
-              display: "flex",
-              flexDirection: "column",
-              justifyContent: "space-between",
-              transition: "all 0.2s ease",
-            }}
+            className={`crp-card ${baseCoin === coin.id ? "active" : ""}`}
           >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontWeight: "800", color: "#d660fa", fontSize: "0.85rem" }}>{coin.symbol}</span>
-              <span style={{ color: coin.change >= 0 ? "#10b981" : "#f87171", fontWeight: "600", fontSize: "0.85rem" }}>
+            <div className="crp-card-top">
+              <span className="crp-symbol">{coin.symbol}</span>
+              <span className={`crp-change ${coin.change >= 0 ? "up" : "down"}`}>
                 {coin.change >= 0 ? "▲" : "▼"} {Math.abs(coin.change).toFixed(1)}%
               </span>
             </div>
-            <div style={{ margin: "8px 0" }}>
+            <div className="crp-card-input-wrap">
               <input
                 type="number"
-                value={baseCoin === coin.id ? amounts[coin.id] : coin.calculated > 0 ? coin.calculated.toFixed(6) : "0.000000"}
+                className="crp-card-input"
+                value={
+                  baseCoin === coin.id
+                    ? amounts[coin.id]
+                    : coin.calculated > 0
+                      ? coin.calculated.toFixed(6)
+                      : "0.000000"
+                }
                 onChange={(e) => onValueChange(coin.id, e.target.value)}
-                style={{
-                  width: "100%",
-                  background: "rgba(0,0,0,0.25)",
-                  border: "1px solid rgba(255,255,255,0.05)",
-                  borderRadius: "6px",
-                  padding: "6px 8px",
-                  fontSize: "1.2rem",
-                  color: "#fff",
-                  fontFamily: "monospace",
-                  outline: "none",
-                  textAlign: "center",
-                  boxSizing: "border-box",
-                }}
               />
             </div>
-            <div style={{ fontSize: "0.75rem", fontFamily: "monospace", color: "rgba(255,255,255,0.35)", textAlign: "center" }}>
-              $ {coin.price.toFixed(2)}
-            </div>
+            <div className="crp-price">$ {coin.price.toFixed(2)}</div>
           </div>
         ))}
       </div>
 
       {error && (
-        <div style={{ fontSize: "0.75rem", color: "#f87171", textAlign: "center", marginTop: "10px" }}>
+        <div className="crp-error">
           {error}
         </div>
       )}

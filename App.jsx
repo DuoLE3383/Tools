@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, useRef, useMemo, useReducer } from 'r
 import Login from './src/components/Login.jsx';
 import Dashboard from './src/components/Dashboard.jsx';
 import MiningPage from './src/components/mining/MiningPage.jsx';
+import MinerPage from './src/components/MinerPage.jsx';
 import { RentedRigProvider } from './src/components/mrr/RentedRigContext.jsx';
 import CryptoRatePage from './src/components/CryptoRatePage.jsx';
 import './src/App.css';
@@ -28,9 +29,11 @@ const initialState = {
   mrrClient: 'BT',
   view: (typeof window !== 'undefined' && window.location.pathname === '/mining')
     ? 'mining'
-    : (typeof window !== 'undefined' && window.location.pathname === '/cryptorate')
-      ? 'cryptorate'
-      : 'dashboard',
+    : (typeof window !== 'undefined' && window.location.pathname === '/miner')
+      ? 'miner'
+      : (typeof window !== 'undefined' && window.location.pathname === '/cryptorate')
+        ? 'cryptorate'
+        : 'dashboard',
   activeDashboard: 'nicehash',
 };
 
@@ -449,7 +452,7 @@ export default function App() {
       const path = window.location.pathname;
       dispatch({
         type: 'SET_VIEW',
-        payload: path === '/cryptorate' ? 'cryptorate' : path === '/mining' ? 'mining' : 'dashboard',
+        payload: path === '/cryptorate' ? 'cryptorate' : path === '/mining' ? 'mining' : path === '/miner' ? 'miner' : 'dashboard',
       });
     };
     window.addEventListener('popstate', handlePath);
@@ -615,6 +618,18 @@ export default function App() {
           }}
         />
       </RentedRigProvider>
+    );
+  }
+
+  if (state.view === 'miner') {
+    return (
+      <MinerPage
+        onCall={callApi}
+        onNavigateHome={() => {
+          window.history.pushState({}, '', '/');
+          dispatch({ type: 'SET_VIEW', payload: 'dashboard' });
+        }}
+      />
     );
   }
 

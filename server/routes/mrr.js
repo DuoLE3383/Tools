@@ -93,6 +93,9 @@ export function registerMrrRoutes(app) {
         const lastPrice = parseFloat(String(lastMatch?.[2] || "0").replace(/,/g, ""));
         const avgPrice = parseFloat(String(avgMatch?.[2] || "0").replace(/,/g, ""));
         const price = Number.isFinite(avgPrice) && avgPrice > 0 ? avgPrice : lastPrice;
+        if (!Number.isFinite(price) || price <= 0) {
+          throw new Error("Unable to parse MRR price from sha256ab");
+        }
 
         res.json({
           success: true,

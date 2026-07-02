@@ -4,6 +4,7 @@ import Modal from "../Modal";
 import TelegramManager, { useTelegram } from "../TelegramManager";
 import { calculateRemainingTime, toUtcTimestamp } from "../../core/time";
 import ErrorBoundary from "../ErrorBoundary";
+// import {NiceHashOrderCard} from "../nicehash/NiceHashOrdersCard.jsx";
 
 /** Safely extracts an array from various MRR API response shapes */
 function extractArray(
@@ -779,6 +780,7 @@ export default function MiningRigRental({
   };
 
   return (
+    
     <div
       className="rig-section"
       style={{

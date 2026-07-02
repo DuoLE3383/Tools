@@ -6,7 +6,7 @@ import NiceHashOrderCard from "./NiceHashOrdersCard.jsx";
 import { getAlgoDisplayName } from "../../core/mapping.js";
 import { useNiceHashOrders } from "./NiceHashContext";
 
-function NiceHashOrderManager({ onCall, nhClient, setNhClient }) {
+export function NiceHashOrderManager({ onCall, nhClient, setNhClient }) {
   // Get ALL data from context including price data
   const {
     nicehashOrders,

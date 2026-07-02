@@ -125,7 +125,14 @@ export default function Dashboard({
     window.dispatchEvent(new PopStateEvent("popstate"));
     dispatch({
       type: "SET_VIEW",
-      payload: path === "/cryptorate" ? "cryptorate" : path === "/mining" ? "mining" : "dashboard",
+      payload:
+        path === "/cryptorate"
+          ? "cryptorate"
+          : path === "/mining"
+            ? "mining"
+            : path === "/miner"
+              ? "miner"
+              : "dashboard",
     });
   };
 
@@ -144,176 +151,90 @@ export default function Dashboard({
   };
 
   return (
-    <div
-      className="app-shell dashboard-shell"
-      style={{ padding: "0 24px 40px" }}
-    >
+    <div className="app-shell dashboard-shell">
       {/* HEADER */}
-      <header
-        className="app-header"
-        style={{
-          padding: "40px 0",
-          borderBottom: "1px solid rgba(255,255,255,0.05)",
-          marginBottom: "30px",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-end",
-        }}
-      >
-        <div className="brand-block" style={{ flex: 1 }}>
-          <div className="status-card" style={{ marginBottom: "2px" }}>
+      <header className="app-header dashboard-header">
+        <div className="brand-block">
+          <div className="status-card dashboard-status-card">
             <div className="status-item">
-              <span style={{ opacity: 0.5, marginRight: "10px" }}>SYSTEM:</span>
+              <span className="dashboard-system-label">SYSTEM:</span>
               <span
                 className={`status-value ${state.loading ? "status-ready" : state.error ? "status-error" : "status-success"}`}
               >
                 {state.loading ? "Loading..." : state.error ? "Error" : "Ready"}
               </span>
             </div>
-            <div
-              style={{
-                display: "flex",
-                gap: "8px",
-                marginTop: "8px",
-                flexWrap: "wrap",
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "2px",
-                  marginRight: "10px",
-                  minWidth: "160px",
-                  justifyContent: "center",
-                }}
-              >
-                <span style={{ fontSize: "11px", opacity: 0.55 }}>Logged in as</span>
-                <span style={{ fontSize: "13px", fontWeight: 700 }}>
+            <div className="dashboard-actions-row">
+              <div className="dashboard-user-info">
+                <span className="dashboard-user-label">Logged in as</span>
+                <span className="dashboard-user-name">
                   {currentUser?.username || "Unknown user"}
                 </span>
-                <span style={{ fontSize: "11px", opacity: 0.7, textTransform: "uppercase" }}>
+                <span className="dashboard-user-role">
                   {currentUser?.role || "unknown"}
                 </span>
               </div>
               <button
-                className="btn-pro secondary"
-                onClick={() => {
-                  forceCheckStatus();
-                }}
-                style={{ fontSize: "10px" }}
+                className="btn-pro secondary dashboard-btn"
+                onClick={() => forceCheckStatus()}
               >
                 Force Check
               </button>
               <button
-                className="btn-pro secondary"
-                onClick={() =>
-                  dispatch({ type: "SET_DEBUG_MODAL", payload: true })
-                }
-                style={{ fontSize: "10px" }}
+                className="btn-pro secondary dashboard-btn"
+                onClick={() => dispatch({ type: "SET_DEBUG_MODAL", payload: true })}
               >
                 Debug Logs
               </button>
               <button
-                className="btn-pro secondary"
+                className="btn-pro secondary dashboard-btn"
                 onClick={handleLogout}
-                style={{ fontSize: "10px" }}
               >
                 Logout
               </button>
               {isAdmin && (
                 <button
-                  className="btn-pro secondary"
+                  className="btn-pro secondary dashboard-btn"
                   onClick={() => setUsersModalOpen(true)}
-                  style={{ fontSize: "10px" }}
                 >
                   Users
                 </button>
               )}
-
-
-
-              {/* Calculator - Modal */}
               <button
-                className="btn-pro secondary"
-                onClick={() =>
-                  dispatch({ type: "SET_CALCULATOR_MODAL", payload: true })
-                }
-                style={{ fontSize: "10px" }}
+                className="btn-pro secondary dashboard-btn"
+                onClick={() => dispatch({ type: "SET_CALCULATOR_MODAL", payload: true })}
               >
                 Calculator
               </button>
-
-              {/* Live Rates */}
               <a
                 href="/cryptorate"
-                className="btn-pro secondary"
+                className="btn-pro secondary dashboard-btn"
                 onClick={handleNavClick("/cryptorate")}
-                style={{
-                  fontSize: "10px",
-                  textAlign: "center",
-                  textDecoration: "none",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
               >
                 Live Rates
               </a>
-
-              {/* Mining */}
               <a
                 href="/mining"
-                className="btn-pro secondary"
+                className="btn-pro secondary dashboard-btn"
                 onClick={handleNavClick("/mining")}
-                style={{
-                  fontSize: "10px",
-                  textAlign: "center",
-                  textDecoration: "none",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
               >
                 Mining
+              </a>
+              <a
+                href="/miner"
+                className="btn-pro secondary dashboard-btn"
+                onClick={handleNavClick("/miner")}
+              >
+                Miner
               </a>
             </div>
           </div>
         </div>
       </header>
 
-      {/* POOLS SECTION */}
-      {/* <section
-        className="pools-section"
-        style={{
-          marginBottom: "15px",
-          marginTop: "0px",
-          background: "rgba(255, 255, 255, 0.02)",
-          border: "1px solid rgba(255, 255, 255, 0.05)",
-          borderRadius: "16px",
-          padding: "20px",
-          height: "850px",
-          minHeight: "200px",
-          overflow: "auto",
-        }}
-      >
-        <Pools
-          onCall={callApi}
-          poolData={state.poolData}
-          niceHashData={state.niceHashData}
-          mrrClient={state.mrrClient}
-          setMrrClient={setMrrClient}
-          nhClient={state.nhPoolClient}
-          setNhClient={setNhPoolClient}
-        />
-      </section> */}
-
       {/* MAIN DASHBOARD */}
       <main className="dashboard">
-        <div
-          className="column-stack"
-          style={{ display: "flex", flexDirection: "column", gap: "24px" }}
-        >
+        <div className="column-stack">
           <NiceHashOrderProvider
             nhClient={state.nhOrderClient}
             callApi={callApi}
@@ -331,54 +252,6 @@ export default function Dashboard({
               />
             </article>
 
-            {/* QUICK ACTIONS */}
-            {/* <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: "16px",
-                gap: "12px",
-                flexWrap: "wrap",
-              }}
-            >
-              <div>
-                <h3 style={{ margin: 0, fontSize: "1rem" }}>Quick Actions</h3>
-                <p
-                  style={{
-                    margin: "4px 0 0",
-                    color: "var(--muted)",
-                    fontSize: "0.85rem",
-                  }}
-                >
-                  Open the hashrate calculator or view live rates.
-                </p>
-              </div>
-              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                <button
-                  className="btn-pro secondary"
-                  onClick={() =>
-                    dispatch({ type: "SET_CALCULATOR_MODAL", payload: true })
-                  }
-                >
-                  Open Calculator
-                </button>
-                <a
-                  href="/cryptorate"
-                  className="btn-pro secondary"
-                  onClick={handleNavClick("/cryptorate")}
-                  style={{
-                    textDecoration: "none",
-                    display: "inline-flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  Live Rates
-                </a>
-              </div>
-            </div> */}
-
             {/* MINING RIG SECTION */}
             <article className="panel">
               <MiningRigSection
@@ -390,8 +263,6 @@ export default function Dashboard({
               />
             </article>
           </NiceHashOrderProvider>
-
-          {/* HERO MINERS CARD */}
         </div>
       </main>
 

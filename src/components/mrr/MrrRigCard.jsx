@@ -335,7 +335,7 @@ const MrrRigCard = ({
       if (isShaFamily) {
         // For AsicBoost, always try 'sha256ab' first. The logic in getMrrAlgoKey should handle this,
         // but we can be explicit here for clarity.
-        const primaryShaKey = isAsicBoost(normalizedAlgo) ? 'sha256ab' : 'sha256ab'; 
+        const primaryShaKey = isAsicBoost(normalizedAlgo) ? 'sha256ab' : 'sha256ab';
         await fetchForKey(primaryShaKey);
       }
 
@@ -762,7 +762,7 @@ const MrrRigCard = ({
               }}
             >
               {displayAlgo}
-              {/* {asicBoostBadge} */}
+              {asicBoostBadge}
             </span>
             |
             {paidLabel && (

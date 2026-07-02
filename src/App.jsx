@@ -1,17 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Pools from "./components/Pools";
 import Modal from "./components/Modal";
-<<<<<<< Updated upstream
-import HashCompletionCalculator from "./components/HashCompletionCalculator";
-import HashpowerBot from "./components/HashpowerBot";
-import NiceHash from "./components/NiceHash";
-import MiningRigRental from "./components/MiningRigRental";
-=======
 import HashCompletionCalculator from "./components/ProfitCompletion";
-import HashpowerBot from "./components/nicehash/HashpowerBot.jsx";
 import NiceHash from "./components/nicehash/NiceHash";
 import MiningRigRental from "./components/mrr/MiningRigRental.jsx";
->>>>>>> Stashed changes
 import CryptoRatePage from "./components/CryptoRatePage";
 import MiningPage from "./components/mining/MiningPage.jsx";
 import { createApiClient } from "./core/apiClient";
@@ -270,11 +262,10 @@ export default function App() {
   const isMiningRoute = (window.location.pathname || "/").startsWith("/mining");
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell${isMiningRoute ? '' : ' dashboard-shell'}`}>
       {!isMiningRoute && (
         <header className="app-header">
           <div className="brand-block">
-            {/* <h2>Ben Tre Mining Tool</h2> */}
             <p className="subtitle">
               A powerful desktop tool for Nicehash miners. Manage rigs, monitor
               stats, and automate hashpower purchases with ease.
