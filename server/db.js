@@ -25,87 +25,10 @@ export async function getTrendDb() {
     await run(db, "PRAGMA synchronous = NORMAL");
     await run(db, "PRAGMA cache_size = 10000");
 
-    // Create tables with all columns upfront
-    await run(db, `CREATE TABLE IF NOT EXISTS mining_opportunities (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      algo TEXT NOT NULL,
-      captured_at TEXT NOT NULL,
-      pool_btc_per_day REAL DEFAULT 0,
-      nh_price_btc REAL DEFAULT 0,
-      mrr_price_btc REAL DEFAULT 0,
-      spread_pct REAL DEFAULT 0,
-      spread_vs_mrr REAL DEFAULT 0,
-      pool_miners INTEGER DEFAULT 0,
-      profit_status TEXT DEFAULT 'neutral',
-      trend_direction TEXT DEFAULT 'stable',
-      coin_name TEXT,
-      coin_id TEXT,
-      coin_prices_json TEXT,
-      summary_json TEXT,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP
-    )`);
-
-    await run(db, `CREATE TABLE IF NOT EXISTS coin_prices (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      coin_id TEXT NOT NULL,
-      coin_name TEXT,
-      symbol TEXT,
-      price_usd REAL,
-      price_btc REAL,
-      market_cap REAL,
-      volume_24h REAL,
-      price_change_24h REAL,
-      captured_at TEXT NOT NULL,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(coin_id, captured_at)
-    )`);
-
-    await run(db, `CREATE TABLE IF NOT EXISTS coin_metadata (
-      coin_id TEXT PRIMARY KEY,
-      coin_name TEXT,
-      symbol TEXT,
-      last_updated TEXT,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP
-    )`);
-
-    await run(db, `CREATE INDEX IF NOT EXISTS idx_opp_algo_time ON mining_opportunities(algo, captured_at)`);
-    await run(db, `CREATE INDEX IF NOT EXISTS idx_opp_status ON mining_opportunities(profit_status, captured_at)`);
-    await run(db, `CREATE INDEX IF NOT EXISTS idx_opp_coin ON mining_opportunities(coin_id, captured_at)`);
-    await run(db, `CREATE INDEX IF NOT EXISTS idx_coin_prices_coin ON coin_prices(coin_id, captured_at)`);
-    await run(db, `CREATE INDEX IF NOT EXISTS idx_coin_prices_time ON coin_prices(captured_at)`);
-
-    // Ensure any missing columns (if table existed before this code)
-    await ensureMissingColumns(db);
-
     opportunityDb = db;
     return db;
   })();
   return dbInitPromise;
-}
-
-// Helper to add missing columns without recursion
-async function ensureMissingColumns(db) {
-  const columns = await all(db, "PRAGMA table_info(mining_opportunities)");
-  const existing = new Set(columns.map(c => c.name));
-
-  const toAdd = {
-    profit_status: "TEXT DEFAULT 'neutral'",
-    trend_direction: "TEXT DEFAULT 'stable'",
-    coin_name: "TEXT",
-    coin_id: "TEXT",
-    coin_prices_json: "TEXT",
-    summary_json: "TEXT",
-    spread_vs_mrr: "REAL DEFAULT 0"
-  };
-
-  let added = 0;
-  for (const [col, definition] of Object.entries(toAdd)) {
-    if (!existing.has(col)) {
-      await run(db, `ALTER TABLE mining_opportunities ADD COLUMN ${col} ${definition}`);
-      added++;
-    }
-  }
-  if (added > 0) console.log(`[DB] Added ${added} missing column(s) to mining_opportunities.`);
 }
 
 export function run(db, sql, params = []) {
