@@ -1,4 +1,4 @@
-node server/verify-all-accounts.js --client=LN --loops=0 --verbose --delay=2200 --interval=2
+node server/verify-all-accounts.js --client=PH --loops=0 --verbose --delay=2200 --interval=2
 
 
 # Process PH first, then BT (order preserved)
