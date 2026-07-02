@@ -169,32 +169,6 @@ export async function getCachedNhPools(clientNameRaw) {
       page++;
     }
     poolCache.set(clientName, { pools: allPools, ts: Date.now() });
-
-    // Persistence: Sync fetched NiceHash pools to database
-    // if (allPools.length > 0) {
-    //   db.serialize(() => {
-    //     db.run(`CREATE TABLE IF NOT EXISTS nh_pools (
-    //       id TEXT,
-    //       name TEXT,
-    //       algorithm TEXT,
-    //       stratumHostname TEXT,
-    //       port TEXT,
-    //       username TEXT,
-    //       password TEXT,
-    //       nhClient TEXT,
-    //       last_updated DATETIME DEFAULT CURRENT_TIMESTAMP,
-    //       PRIMARY KEY (id, nhClient)
-    //     )`);
-    //     // const stmt = db.prepare(`INSERT OR REPLACE INTO nh_pools 
-    //     //   (id, name, algorithm, stratumHostname, port, username, password, nhClient, last_updated) 
-    //     //   VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`);
-    //     // allPools.forEach(p => {
-    //     //   stmt.run(p.id, p.name, p.algorithm, p.stratumHostname, p.port, p.username, p.password, clientName);
-    //     // });
-    //     // stmt.finalize();
-    //   });
-    // }
-
     return allPools;
   } catch (e) {
     console.warn(`[nh:pools] Cache fetch failed for ${clientName}:`, e.message);
