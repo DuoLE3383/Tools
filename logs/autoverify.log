@@ -1,0 +1,463 @@
+[2026-07-01T23:54:08.385Z] [Manager] Starting auto-run script: verify-all-accounts.js
+[2026-07-01T23:54:08.421Z] [Manager] Auto-run process started with PID: 328303
+[2026-07-01T23:54:08.510Z] [AutoRun] 🚀 Starting Global Pool Auto-Verification
+[2026-07-01T23:54:08.511Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Found 4 Accounts: BT, PH, LN, NHATLINH
+[2026-07-01T23:54:08.579Z] [AutoRun] Start Time:     7/2/2026, 6:54:08 AM
+[2026-07-01T23:54:08.580Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-01T23:54:08.581Z] [AutoRun] 📂 Processing: Account [BT]
+   📡 Fetching pools...
+[2026-07-01T23:54:08.581Z] [AutoRun] [NiceHash] First-time function delay (1s): /main/api/v2/pools
+[2026-07-01T23:54:09.595Z] [AutoRun] [NiceHash] First-time function delay (1s): getServerTime
+[2026-07-01T23:54:12.442Z] [AutoRun] Fetching active orders...
+[2026-07-01T23:54:12.443Z] [AutoRun] [NiceHash] First-time function delay (1s): /main/api/v2/hashpower/myOrders
+[2026-07-01T23:54:14.157Z] [AutoRun ERROR] ❌ Critical Account Error: Malformed request
+[2026-07-01T23:54:14.158Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📂 Processing: Account [PH]
+   📡 Fetching pools... [NiceHash] First-time function delay (1s): /main/api/v2/pools
+[2026-07-01T23:54:14.147Z] [AutoRun] [NiceHash] First-time function delay (1s): getServerTime
+[2026-07-01T23:54:16.715Z] [AutoRun] Fetching active orders...
+[2026-07-01T23:54:16.716Z] [AutoRun] [NiceHash] First-time function delay (1s): /main/api/v2/hashpower/myOrders
+[2026-07-01T23:54:18.435Z] [AutoRun ERROR] ❌ Critical Account Error: Malformed request
+[2026-07-01T23:54:18.436Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📂 Processing: Account [LN]
+   📡 Fetching pools... [NiceHash] First-time function delay (1s): /main/api/v2/pools
+[2026-07-01T23:54:19.438Z] [AutoRun] [NiceHash] First-time function delay (1s): getServerTime
+[2026-07-01T23:54:22.852Z] [AutoRun] Fetching active orders...
+[2026-07-01T23:54:22.852Z] [AutoRun] [NiceHash] First-time function delay (1s): /main/api/v2/hashpower/myOrders
+[2026-07-01T23:54:24.567Z] [AutoRun ERROR] ❌ Critical Account Error: Malformed request
+[2026-07-01T23:54:24.567Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📂 Processing: Account [NHATLINH]
+   📡 Fetching pools... [NiceHash] First-time function delay (1s): /main/api/v2/pools
+[2026-07-01T23:54:25.569Z] [AutoRun] [NiceHash] First-time function delay (1s): getServerTime
+[2026-07-01T23:54:27.388Z] [AutoRun] Fetching active orders...
+[2026-07-01T23:54:27.388Z] [AutoRun] [NiceHash] First-time function delay (1s): /main/api/v2/hashpower/myOrders
+[2026-07-01T23:54:29.106Z] [AutoRun ERROR] ❌ Critical Account Error: Malformed request
+[2026-07-01T23:54:29.107Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✨ Global Cycle Finished
+Total Pools Verified: 0
+Cycle Duration:       20s
+Total Session Run:    20s
+Last Finish Time:     7/2/2026, 6:54:29 AM
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Restarting in 2s...
+[2026-07-01T23:54:31.112Z] [AutoRun] 🚀 Starting Global Pool Auto-Verification
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-01T23:54:31.112Z] [AutoRun] Found 4 Accounts: BT, PH, LN, NHATLINH
+Start Time:     7/2/2026, 6:54:31 AM
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📂 Processing: Account [BT]
+   📡 Fetching pools...
+[2026-07-01T23:54:32.593Z] [AutoRun] Fetching active orders...
+[2026-07-01T23:54:33.307Z] [AutoRun ERROR] ❌ Critical Account Error: Malformed request
+[2026-07-01T23:54:33.308Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📂 Processing: Account [PH]
+   📡 Fetching pools...
+[2026-07-01T23:54:34.840Z] [AutoRun] Fetching active orders...
+[2026-07-01T23:54:35.554Z] [AutoRun ERROR] ❌ Critical Account Error: Malformed request
+[2026-07-01T23:54:35.554Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📂 Processing: Account [LN]
+   📡 Fetching pools...
+[2026-07-01T23:54:37.832Z] [AutoRun] Fetching active orders...
+[2026-07-01T23:54:38.550Z] [AutoRun ERROR] ❌ Critical Account Error: Malformed request
+[2026-07-01T23:54:38.550Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📂 Processing: Account [NHATLINH]
+   📡 Fetching pools...
+[2026-07-01T23:54:39.350Z] [AutoRun] Fetching active orders...
+[2026-07-01T23:54:40.063Z] [AutoRun ERROR] ❌ Critical Account Error: Malformed request
+[2026-07-01T23:54:40.063Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✨ Global Cycle Finished
+Total Pools Verified: 0
+Cycle Duration:       8s
+Total Session Run:    31s
+Last Finish Time:     7/2/2026, 6:54:40 AM
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Restarting in 2s...
+[2026-07-01T23:54:42.063Z] [AutoRun] 🚀 Starting Global Pool Auto-Verification
+[2026-07-01T23:54:42.063Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Found 4 Accounts: BT, PH, LN, NHATLINH
+Start Time:     7/2/2026, 6:54:42 AM
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📂 Processing: Account [BT]
+   📡 Fetching pools...
+[2026-07-01T23:54:43.638Z] [AutoRun] Fetching active orders...
+[2026-07-01T23:54:44.354Z] [AutoRun ERROR] ❌ Critical Account Error: Malformed request
+[2026-07-01T23:54:44.355Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📂 Processing: Account [PH]
+   📡 Fetching pools...
+[2026-07-01T23:54:44.885Z] [AutoRun] Fetching active orders...
+[2026-07-01T23:54:45.594Z] [AutoRun ERROR] ❌ Critical Account Error: Malformed request
+[2026-07-01T23:54:45.594Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📂 Processing: Account [LN]
+   📡 Fetching pools...
+[2026-07-01T23:54:47.979Z] [AutoRun] Fetching active orders...
+[2026-07-01T23:54:48.694Z] [AutoRun ERROR] ❌ Critical Account Error: Malformed request
+[2026-07-01T23:54:48.695Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📂 Processing: Account [NHATLINH]
+   📡 Fetching pools...
+[2026-07-01T23:54:49.434Z] [AutoRun] Fetching active orders...
+[2026-07-01T23:54:50.142Z] [AutoRun ERROR] ❌ Critical Account Error: Malformed request
+[2026-07-01T23:54:50.143Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✨ Global Cycle Finished
+Total Pools Verified: 0
+Cycle Duration:       8s
+Total Session Run:    41s
+Last Finish Time:     7/2/2026, 6:54:50 AM
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Restarting in 2s...
+[2026-07-01T23:54:52.147Z] [AutoRun] 🚀 Starting Global Pool Auto-Verification
+[2026-07-01T23:54:52.148Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Found 4 Accounts: BT, PH, LN, NHATLINH
+Start Time:     7/2/2026, 6:54:52 AM
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📂 Processing: Account [BT]
+   📡 Fetching pools...
+[2026-07-01T23:54:53.700Z] [AutoRun] Fetching active orders...
+[2026-07-01T23:54:54.415Z] [AutoRun ERROR] ❌ Critical Account Error: Malformed request
+[2026-07-01T23:54:54.416Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📂 Processing: Account [PH]
+   📡 Fetching pools...
+[2026-07-01T23:54:55.868Z] [AutoRun] Fetching active orders...
+[2026-07-01T23:54:56.579Z] [AutoRun ERROR] ❌ Critical Account Error: Malformed request
+[2026-07-01T23:54:56.580Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📂 Processing: Account [LN]
+   📡 Fetching pools...
+[2026-07-01T23:54:58.862Z] [AutoRun] Fetching active orders...
+[2026-07-01T23:54:59.579Z] [AutoRun ERROR] ❌ Critical Account Error: Malformed request
+[2026-07-01T23:54:59.580Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📂 Processing: Account [NHATLINH]
+   📡 Fetching pools...
+[2026-07-01T23:55:00.363Z] [AutoRun] Fetching active orders...
+[2026-07-01T23:55:01.077Z] [AutoRun ERROR] ❌ Critical Account Error: Malformed request
+[2026-07-01T23:55:01.077Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✨ Global Cycle Finished
+Total Pools Verified: 0
+Cycle Duration:       8s
+Total Session Run:    52s
+Last Finish Time:     7/2/2026, 6:55:01 AM
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Restarting in 2s...
+[2026-07-01T23:55:03.085Z] [AutoRun] 🚀 Starting Global Pool Auto-Verification
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Found 4 Accounts: BT, PH, LN, NHATLINH
+[2026-07-01T23:55:03.085Z] [AutoRun] Start Time:     7/2/2026, 6:55:03 AM
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📂 Processing: Account [BT]
+   📡 Fetching pools...
+[2026-07-01T23:55:04.647Z] [AutoRun] Fetching active orders...
+[2026-07-01T23:55:05.361Z] [AutoRun ERROR] ❌ Critical Account Error: Malformed request
+[2026-07-01T23:55:05.362Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📂 Processing: Account [PH]
+   📡 Fetching pools...
+[2026-07-01T23:55:06.811Z] [AutoRun] Fetching active orders...
+[2026-07-01T23:55:07.522Z] [AutoRun ERROR] ❌ Critical Account Error: Malformed request
+[2026-07-01T23:55:07.523Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📂 Processing: Account [LN]
+   📡 Fetching pools...
+[2026-07-01T23:55:09.819Z] [AutoRun] Fetching active orders...
+[2026-07-01T23:55:10.540Z] [AutoRun ERROR] ❌ Critical Account Error: Malformed request
+[2026-07-01T23:55:10.541Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📂 Processing: Account [NHATLINH]
+   📡 Fetching pools...
+[2026-07-01T23:55:11.345Z] [AutoRun] Fetching active orders...
+[2026-07-01T23:55:12.056Z] [AutoRun ERROR] ❌ Critical Account Error: Malformed request
+[2026-07-01T23:55:12.057Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✨ Global Cycle Finished
+Total Pools Verified: 0
+Cycle Duration:       8s
+Total Session Run:    63s
+Last Finish Time:     7/2/2026, 6:55:12 AM
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Restarting in 2s...
+[2026-07-01T23:55:13.923Z] [Manager] Shutting down...
+[2026-07-01T23:55:13.923Z] [Manager] Sent SIGTERM to child process 328303.
+[2026-07-01T23:55:54.588Z] [Manager] Starting auto-run script: verify-all-accounts.js
+[2026-07-01T23:55:54.596Z] [Manager] Auto-run process started with PID: 328968
+[2026-07-01T23:55:54.673Z] [AutoRun] 🚀 Starting Global Pool Auto-Verification
+[2026-07-01T23:55:54.674Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-01T23:55:54.674Z] [AutoRun] Found 4 Accounts: BT, PH, LN, NHATLINH
+[2026-07-01T23:55:54.697Z] [AutoRun] Start Time:     7/2/2026, 6:55:54 AM
+[2026-07-01T23:55:54.697Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-01T23:55:54.698Z] [AutoRun] 📂 Processing: Account [BT]
+[2026-07-01T23:55:54.698Z] [AutoRun] 📡 Fetching pools...
+[2026-07-01T23:55:54.699Z] [AutoRun] [NiceHash] First-time function delay (1s): /main/api/v2/pools
+[2026-07-01T23:55:55.703Z] [AutoRun] [NiceHash] First-time function delay (1s): getServerTime
+[2026-07-01T23:55:58.561Z] [AutoRun] Fetching active orders...
+[2026-07-01T23:55:58.561Z] [AutoRun] [NiceHash] First-time function delay (1s): /main/api/v2/hashpower/myOrders
+[2026-07-01T23:56:00.298Z] [AutoRun ERROR] ❌ Critical Account Error: Malformed request
+[2026-07-01T23:56:00.299Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-01T23:56:00.299Z] [AutoRun] 📂 Processing: Account [PH]
+[2026-07-01T23:56:00.299Z] [AutoRun] 📡 Fetching pools... [NiceHash] First-time function delay (1s): /main/api/v2/pools
+[2026-07-01T23:56:01.299Z] [AutoRun] [NiceHash] First-time function delay (1s): getServerTime
+[2026-07-01T23:56:03.882Z] [AutoRun] Fetching active orders...
+[2026-07-01T23:56:03.883Z] [AutoRun] [NiceHash] First-time function delay (1s): /main/api/v2/hashpower/myOrders
+[2026-07-01T23:56:05.625Z] [AutoRun ERROR] ❌ Critical Account Error: Malformed request
+[2026-07-01T23:56:05.626Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-01T23:56:05.626Z] [AutoRun] 📂 Processing: Account [LN]
+[2026-07-01T23:56:05.626Z] [AutoRun] 📡 Fetching pools... [NiceHash] First-time function delay (1s): /main/api/v2/pools
+[2026-07-01T23:56:06.634Z] [AutoRun] [NiceHash] First-time function delay (1s): getServerTime
+[2026-07-01T23:56:10.071Z] [AutoRun] Fetching active orders...
+[2026-07-01T23:56:10.071Z] [AutoRun] [NiceHash] First-time function delay (1s): /main/api/v2/hashpower/myOrders
+[2026-07-01T23:56:11.786Z] [AutoRun ERROR] ❌ Critical Account Error: Malformed request
+[2026-07-01T23:56:11.787Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-01T23:56:11.787Z] [AutoRun] 📂 Processing: Account [NHATLINH]
+[2026-07-01T23:56:11.787Z] [AutoRun] 📡 Fetching pools... [NiceHash] First-time function delay (1s): /main/api/v2/pools
+[2026-07-01T23:56:12.789Z] [AutoRun] [NiceHash] First-time function delay (1s): getServerTime
+[2026-07-01T23:56:14.530Z] [AutoRun] Fetching active orders...
+[2026-07-01T23:56:14.530Z] [AutoRun] [NiceHash] First-time function delay (1s): /main/api/v2/hashpower/myOrders
+[2026-07-01T23:56:16.247Z] [AutoRun ERROR] ❌ Critical Account Error: Malformed request
+[2026-07-01T23:56:16.247Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-01T23:56:16.248Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-01T23:56:16.248Z] [AutoRun] ✨ Global Cycle Finished
+[2026-07-01T23:56:16.248Z] [AutoRun] Total Pools Verified: 0
+[2026-07-01T23:56:16.248Z] [AutoRun] Cycle Duration:       21s
+[2026-07-01T23:56:16.249Z] [AutoRun] Total Session Run:    21s
+[2026-07-01T23:56:16.249Z] [AutoRun] Last Finish Time:     7/2/2026, 6:56:16 AM
+[2026-07-01T23:56:16.249Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-01T23:56:16.249Z] [AutoRun] Restarting in 2s...
+[2026-07-01T23:56:18.249Z] [AutoRun] 🚀 Starting Global Pool Auto-Verification
+[2026-07-01T23:56:18.249Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-01T23:56:18.250Z] [AutoRun] Found 4 Accounts: BT, PH, LN, NHATLINH
+[2026-07-01T23:56:18.251Z] [AutoRun] Start Time:     7/2/2026, 6:56:18 AM
+[2026-07-01T23:56:18.251Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-01T23:56:18.251Z] [AutoRun] 📂 Processing: Account [BT]
+[2026-07-01T23:56:18.251Z] [AutoRun] 📡 Fetching pools...
+[2026-07-01T23:56:18.755Z] [AutoRun] Fetching active orders...
+[2026-07-01T23:56:19.470Z] [AutoRun ERROR] ❌ Critical Account Error: Malformed request
+[2026-07-01T23:56:19.470Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-01T23:56:19.471Z] [AutoRun] 📂 Processing: Account [PH]
+[2026-07-01T23:56:19.471Z] [AutoRun] 📡 Fetching pools...
+[2026-07-01T23:56:20.971Z] [AutoRun] Fetching active orders...
+[2026-07-01T23:56:21.689Z] [AutoRun ERROR] ❌ Critical Account Error: Malformed request
+[2026-07-01T23:56:21.689Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-01T23:56:21.689Z] [AutoRun] 📂 Processing: Account [LN]
+[2026-07-01T23:56:21.690Z] [AutoRun] 📡 Fetching pools...
+[2026-07-01T23:56:23.894Z] [AutoRun] Fetching active orders...
+[2026-07-01T23:56:24.611Z] [AutoRun ERROR] ❌ Critical Account Error: Malformed request
+[2026-07-01T23:56:24.612Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-01T23:56:24.612Z] [AutoRun] 📂 Processing: Account [NHATLINH]
+[2026-07-01T23:56:24.612Z] [AutoRun] 📡 Fetching pools...
+[2026-07-01T23:56:25.430Z] [AutoRun] Fetching active orders...
+[2026-07-01T23:56:26.147Z] [AutoRun ERROR] ❌ Critical Account Error: Malformed request
+[2026-07-01T23:56:26.147Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-01T23:56:26.148Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-01T23:56:26.148Z] [AutoRun] ✨ Global Cycle Finished
+[2026-07-01T23:56:26.148Z] [AutoRun] Total Pools Verified: 0
+[2026-07-01T23:56:26.148Z] [AutoRun] Cycle Duration:       7s
+[2026-07-01T23:56:26.148Z] [AutoRun] Total Session Run:    31s
+[2026-07-01T23:56:26.148Z] [AutoRun] Last Finish Time:     7/2/2026, 6:56:26 AM
+[2026-07-01T23:56:26.149Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-01T23:56:26.149Z] [AutoRun] Restarting in 2s...
+[2026-07-01T23:56:28.152Z] [AutoRun] 🚀 Starting Global Pool Auto-Verification
+[2026-07-01T23:56:28.152Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-01T23:56:28.152Z] [AutoRun] Found 4 Accounts: BT, PH, LN, NHATLINH
+[2026-07-01T23:56:28.152Z] [AutoRun] Start Time:     7/2/2026, 6:56:28 AM
+[2026-07-01T23:56:28.153Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-01T23:56:28.153Z] [AutoRun] 📂 Processing: Account [BT]
+[2026-07-01T23:56:28.153Z] [AutoRun] 📡 Fetching pools...
+[2026-07-01T23:56:29.650Z] [AutoRun] Fetching active orders...
+[2026-07-01T23:56:30.372Z] [AutoRun ERROR] ❌ Critical Account Error: Malformed request
+[2026-07-01T23:56:30.372Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-01T23:56:30.372Z] [AutoRun] 📂 Processing: Account [PH]
+[2026-07-01T23:56:30.372Z] [AutoRun] 📡 Fetching pools...
+[2026-07-01T23:56:31.878Z] [AutoRun] Fetching active orders...
+[2026-07-01T23:56:32.595Z] [AutoRun ERROR] ❌ Critical Account Error: Malformed request
+[2026-07-01T23:56:32.595Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-01T23:56:32.596Z] [AutoRun] 📂 Processing: Account [LN]
+[2026-07-01T23:56:32.596Z] [AutoRun] 📡 Fetching pools...
+[2026-07-01T23:56:34.987Z] [AutoRun] Fetching active orders...
+[2026-07-01T23:56:35.701Z] [AutoRun ERROR] ❌ Critical Account Error: Malformed request
+[2026-07-01T23:56:35.701Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-01T23:56:35.702Z] [AutoRun] 📂 Processing: Account [NHATLINH]
+[2026-07-01T23:56:35.702Z] [AutoRun] 📡 Fetching pools...
+[2026-07-01T23:56:36.448Z] [AutoRun] Fetching active orders...
+[2026-07-01T23:56:37.160Z] [AutoRun ERROR] ❌ Critical Account Error: Malformed request
+[2026-07-01T23:56:37.160Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-01T23:56:37.161Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-01T23:56:37.161Z] [AutoRun] ✨ Global Cycle Finished
+[2026-07-01T23:56:37.161Z] [AutoRun] Total Pools Verified: 0
+[2026-07-01T23:56:37.161Z] [AutoRun] Cycle Duration:       9s
+[2026-07-01T23:56:37.161Z] [AutoRun] Total Session Run:    42s
+[2026-07-01T23:56:37.161Z] [AutoRun] Last Finish Time:     7/2/2026, 6:56:37 AM
+[2026-07-01T23:56:37.162Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-01T23:56:37.162Z] [AutoRun] Restarting in 2s...
+[2026-07-01T23:56:39.169Z] [AutoRun] 🚀 Starting Global Pool Auto-Verification
+[2026-07-01T23:56:39.170Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-01T23:56:39.170Z] [AutoRun] Found 4 Accounts: BT, PH, LN, NHATLINH
+[2026-07-01T23:56:39.170Z] [AutoRun] Start Time:     7/2/2026, 6:56:39 AM
+[2026-07-01T23:56:39.170Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-01T23:56:39.171Z] [AutoRun] 📂 Processing: Account [BT]
+[2026-07-01T23:56:39.171Z] [AutoRun] 📡 Fetching pools...
+[2026-07-01T23:56:40.755Z] [AutoRun] Fetching active orders...
+[2026-07-01T23:56:41.465Z] [AutoRun ERROR] ❌ Critical Account Error: Malformed request
+[2026-07-01T23:56:41.466Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-01T23:56:41.466Z] [AutoRun] 📂 Processing: Account [PH]
+[2026-07-01T23:56:41.466Z] [AutoRun] 📡 Fetching pools...
+[2026-07-01T23:56:42.929Z] [AutoRun] Fetching active orders...
+[2026-07-01T23:56:43.644Z] [AutoRun ERROR] ❌ Critical Account Error: Malformed request
+[2026-07-01T23:56:43.645Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-01T23:56:43.645Z] [AutoRun] 📂 Processing: Account [LN]
+[2026-07-01T23:56:43.645Z] [AutoRun] 📡 Fetching pools...
+[2026-07-01T23:56:45.941Z] [AutoRun] Fetching active orders...
+[2026-07-01T23:56:46.662Z] [AutoRun ERROR] ❌ Critical Account Error: Malformed request
+[2026-07-01T23:56:46.663Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-01T23:56:46.664Z] [AutoRun] 📂 Processing: Account [NHATLINH]
+[2026-07-01T23:56:46.664Z] [AutoRun] 📡 Fetching pools...
+[2026-07-01T23:56:47.465Z] [AutoRun] Fetching active orders...
+[2026-07-01T23:56:48.184Z] [AutoRun ERROR] ❌ Critical Account Error: Malformed request
+[2026-07-01T23:56:48.184Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-01T23:56:48.184Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-01T23:56:48.185Z] [AutoRun] ✨ Global Cycle Finished
+[2026-07-01T23:56:48.185Z] [AutoRun] Total Pools Verified: 0
+[2026-07-01T23:56:48.185Z] [AutoRun] Cycle Duration:       9s
+[2026-07-01T23:56:48.185Z] [AutoRun] Total Session Run:    53s
+[2026-07-01T23:56:48.185Z] [AutoRun] Last Finish Time:     7/2/2026, 6:56:48 AM
+[2026-07-01T23:56:48.186Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-01T23:56:48.186Z] [AutoRun] Restarting in 2s...
+[2026-07-01T23:56:50.191Z] [AutoRun] 🚀 Starting Global Pool Auto-Verification
+[2026-07-01T23:56:50.191Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-01T23:56:50.191Z] [AutoRun] Found 4 Accounts: BT, PH, LN, NHATLINH
+[2026-07-01T23:56:50.191Z] [AutoRun] Start Time:     7/2/2026, 6:56:50 AM
+[2026-07-01T23:56:50.192Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-01T23:56:50.192Z] [AutoRun] 📂 Processing: Account [BT]
+[2026-07-01T23:56:50.192Z] [AutoRun] 📡 Fetching pools...
+[2026-07-01T23:56:50.671Z] [AutoRun] Fetching active orders...
+[2026-07-01T23:56:51.385Z] [AutoRun ERROR] ❌ Critical Account Error: Malformed request
+[2026-07-01T23:56:51.386Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-01T23:56:51.386Z] [AutoRun] 📂 Processing: Account [PH]
+[2026-07-01T23:56:51.387Z] [AutoRun] 📡 Fetching pools...
+[2026-07-01T23:56:52.890Z] [AutoRun] Fetching active orders...
+[2026-07-01T23:56:53.602Z] [AutoRun ERROR] ❌ Critical Account Error: Malformed request
+[2026-07-01T23:56:53.603Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-01T23:56:53.603Z] [AutoRun] 📂 Processing: Account [LN]
+[2026-07-01T23:56:53.603Z] [AutoRun] 📡 Fetching pools...
+[2026-07-01T23:56:55.911Z] [AutoRun] Fetching active orders...
+[2026-07-01T23:56:56.633Z] [AutoRun ERROR] ❌ Critical Account Error: Malformed request
+[2026-07-01T23:56:56.633Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-01T23:56:56.633Z] [AutoRun] 📂 Processing: Account [NHATLINH]
+[2026-07-01T23:56:56.634Z] [AutoRun] 📡 Fetching pools...
+[2026-07-01T23:56:56.725Z] [Manager] Shutting down...
+[2026-07-01T23:56:56.726Z] [Manager] Sent SIGTERM to child process 328968.
+[2026-07-01T23:58:19.881Z] [Manager] Starting auto-run script: verify-all-accounts.js
+[2026-07-01T23:58:19.890Z] [Manager] Auto-run process started with PID: 329727
+[2026-07-01T23:58:19.967Z] [AutoRun] 🚀 Starting Global Pool Auto-Verification
+[2026-07-01T23:58:19.968Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-01T23:58:19.969Z] [AutoRun] Found 4 Accounts: BT, PH, LN, NHATLINH
+[2026-07-01T23:58:19.992Z] [AutoRun] Start Time:     7/2/2026, 6:58:19 AM
+[2026-07-01T23:58:19.993Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-01T23:58:19.993Z] [AutoRun] 📂 Processing: Account [BT]
+[2026-07-01T23:58:19.994Z] [AutoRun] 📡 Fetching pools...
+[2026-07-01T23:58:19.994Z] [AutoRun] [NiceHash] First-time function delay (1s): /main/api/v2/pools
+[2026-07-01T23:58:20.997Z] [AutoRun] [NiceHash] First-time function delay (1s): getServerTime
+[2026-07-01T23:58:24.004Z] [AutoRun] Fetching active orders...
+[2026-07-01T23:58:24.005Z] [AutoRun] [NiceHash] First-time function delay (1s): /main/api/v2/hashpower/myOrders
+[2026-07-01T23:58:24.696Z] [AutoRun ERROR] ❌ Critical Account Error: Malformed request
+[2026-07-01T23:58:24.697Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-01T23:58:24.697Z] [AutoRun] 📂 Processing: Account [PH]
+[2026-07-01T23:58:24.697Z] [AutoRun] 📡 Fetching pools... [NiceHash] First-time function delay (1s): /main/api/v2/pools
+[2026-07-01T23:58:25.702Z] [AutoRun] [NiceHash] First-time function delay (1s): getServerTime
+[2026-07-01T23:58:28.300Z] [AutoRun] Fetching active orders...
+[2026-07-01T23:58:28.300Z] [AutoRun] [NiceHash] First-time function delay (1s): /main/api/v2/hashpower/myOrders
+[2026-07-01T23:58:30.023Z] [AutoRun ERROR] ❌ Critical Account Error: Malformed request
+[2026-07-01T23:58:30.023Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-01T23:58:30.023Z] [AutoRun] 📂 Processing: Account [LN]
+[2026-07-01T23:58:30.024Z] [AutoRun] 📡 Fetching pools... [NiceHash] First-time function delay (1s): /main/api/v2/pools
+[2026-07-01T23:58:31.052Z] [AutoRun] [NiceHash] First-time function delay (1s): getServerTime
+[2026-07-01T23:58:34.396Z] [AutoRun] Fetching active orders...
+[2026-07-01T23:58:34.397Z] [AutoRun] [NiceHash] First-time function delay (1s): /main/api/v2/hashpower/myOrders
+[2026-07-01T23:58:36.121Z] [AutoRun ERROR] ❌ Critical Account Error: Malformed request
+[2026-07-01T23:58:36.122Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-01T23:58:36.122Z] [AutoRun] 📂 Processing: Account [NHATLINH]
+[2026-07-01T23:58:36.122Z] [AutoRun] 📡 Fetching pools... [NiceHash] First-time function delay (1s): /main/api/v2/pools
+[2026-07-01T23:58:37.127Z] [AutoRun] [NiceHash] First-time function delay (1s): getServerTime
+[2026-07-01T23:58:38.951Z] [AutoRun] Fetching active orders...
+[2026-07-01T23:58:38.952Z] [AutoRun] [NiceHash] First-time function delay (1s): /main/api/v2/hashpower/myOrders
+[2026-07-01T23:58:39.354Z] [Manager] Shutting down...
+[2026-07-01T23:58:39.354Z] [Manager] Sent SIGTERM to child process 329727.
+[2026-07-01T23:59:06.563Z] [Manager] Starting auto-run script: verify-all-accounts.js
+[2026-07-01T23:59:06.572Z] [Manager] Auto-run process started with PID: 330078
+[2026-07-01T23:59:06.651Z] [AutoRun] 🚀 Starting Global Pool Auto-Verification
+[2026-07-01T23:59:06.652Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-01T23:59:06.652Z] [AutoRun] Found 4 Accounts: BT, PH, LN, NHATLINH
+[2026-07-01T23:59:06.677Z] [AutoRun] Start Time:     7/2/2026, 6:59:06 AM
+[2026-07-01T23:59:06.677Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-01T23:59:06.678Z] [AutoRun] 📂 Processing: Account [BT]
+[2026-07-01T23:59:06.678Z] [AutoRun] 📡 Fetching pools...
+[2026-07-01T23:59:06.679Z] [AutoRun] [NiceHash] First-time function delay (1s): /main/api/v2/pools
+[2026-07-01T23:59:07.683Z] [AutoRun] [NiceHash] First-time function delay (1s): getServerTime
+[2026-07-01T23:59:10.582Z] [AutoRun] Fetching active orders...
+[2026-07-01T23:59:10.582Z] [AutoRun] [NiceHash] First-time function delay (1s): /main/api/v2/hashpower/myOrders
+[2026-07-01T23:59:12.323Z] [AutoRun ERROR] ❌ Critical Account Error: Invalid input: Unknown algorithm:
+[2026-07-01T23:59:12.323Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-01T23:59:12.324Z] [AutoRun] 📂 Processing: Account [PH]
+[2026-07-01T23:59:12.324Z] [AutoRun] 📡 Fetching pools... [NiceHash] First-time function delay (1s): /main/api/v2/pools
+[2026-07-01T23:59:13.326Z] [AutoRun] [NiceHash] First-time function delay (1s): getServerTime
+[2026-07-01T23:59:15.799Z] [AutoRun] Fetching active orders...
+[2026-07-01T23:59:15.800Z] [AutoRun] [NiceHash] First-time function delay (1s): /main/api/v2/hashpower/myOrders
+[2026-07-01T23:59:17.543Z] [AutoRun ERROR] ❌ Critical Account Error: Invalid input: Unknown algorithm:
+[2026-07-01T23:59:17.544Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-01T23:59:17.544Z] [AutoRun] 📂 Processing: Account [LN]
+[2026-07-01T23:59:17.544Z] [AutoRun] 📡 Fetching pools... [NiceHash] First-time function delay (1s): /main/api/v2/pools
+[2026-07-01T23:59:18.568Z] [AutoRun] [NiceHash] First-time function delay (1s): getServerTime
+[2026-07-01T23:59:19.493Z] [Manager] Shutting down...
+[2026-07-01T23:59:19.493Z] [Manager] Sent SIGTERM to child process 330078.
+[2026-07-02T00:00:08.199Z] [Manager] Starting auto-run script: verify-all-accounts.js
+[2026-07-02T00:00:08.209Z] [Manager] Auto-run process started with PID: 330437
+[2026-07-02T00:00:08.285Z] [AutoRun] 🚀 Starting Global Pool Auto-Verification
+[2026-07-02T00:00:08.285Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-02T00:00:08.286Z] [AutoRun] Found 4 Accounts: BT, PH, LN, NHATLINH
+[2026-07-02T00:00:08.312Z] [AutoRun] Start Time:     7/2/2026, 7:00:08 AM
+[2026-07-02T00:00:08.313Z] [AutoRun] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2026-07-02T00:00:08.314Z] [AutoRun] 📂 Processing: Account [BT]
+[2026-07-02T00:00:08.314Z] [AutoRun] 📡 Fetching pools...
+[2026-07-02T00:00:08.314Z] [AutoRun] [NiceHash] First-time function delay (1s): /main/api/v2/pools
+[2026-07-02T00:00:09.318Z] [AutoRun] [NiceHash] First-time function delay (1s): getServerTime
+[2026-07-02T00:00:12.168Z] [AutoRun] Fetching active orders...
+[2026-07-02T00:00:12.169Z] [AutoRun] [NiceHash] First-time function delay (1s): /main/api/v2/hashpower/myOrders
+[2026-07-02T00:00:13.949Z] [AutoRun] Done (148 pools, 0 active orders)
+[2026-07-02T00:00:13.949Z] [AutoRun] [1/148] SOLO 10 SCRYPT
+[2026-07-02T00:00:13.949Z] [AutoRun] [NiceHash] First-time function delay (1s): /main/api/v2/pools/verify
+[2026-07-02T00:00:18.425Z] [AutoRun] ✅ VALID
+[2026-07-02T00:00:20.947Z] [AutoRun] [2/148] BEST SOLO 16
+[2026-07-02T00:00:22.930Z] [AutoRun] ✅ VALID
+[2026-07-02T00:00:25.453Z] [AutoRun] [3/148] BA TRI 19
+[2026-07-02T00:00:27.029Z] [AutoRun] ✅ VALID
+[2026-07-02T00:00:28.522Z] [AutoRun] [4/148] BEST SOLO 10
+[2026-07-02T00:00:32.419Z] [AutoRun] ✅ VALID
+[2026-07-02T00:00:34.927Z] [AutoRun] [5/148] BA TRI 15
+[2026-07-02T00:00:37.148Z] [AutoRun] ✅ VALID
+[2026-07-02T00:00:39.657Z] [AutoRun] [6/148] BEST SOLO 01
+[2026-07-02T00:00:42.129Z] [AutoRun] ✅ VALID
+[2026-07-02T00:00:44.637Z] [AutoRun] [7/148] BEST SOLO 05
+[2026-07-02T00:00:46.346Z] [AutoRun] ✅ VALID
+[2026-07-02T00:00:48.874Z] [AutoRun] [8/148] SOLO 02 RANDOMX
+[2026-07-02T00:00:50.584Z] [AutoRun] ✅ VALID
+[2026-07-02T00:00:53.094Z] [AutoRun] [9/148] best02
+[2026-07-02T00:00:54.969Z] [AutoRun] ✅ VALID
+[2026-07-02T00:00:57.469Z] [AutoRun] [10/148] BEST SOLO 01
+[2026-07-02T00:00:59.709Z] [AutoRun] ✅ VALID
+[2026-07-02T00:01:02.211Z] [AutoRun] [11/148] BA TRI 35
+[2026-07-02T00:01:04.515Z] [AutoRun] ✅ VALID
+[2026-07-02T00:01:07.016Z] [AutoRun] [12/148] BA TRI 02
+[2026-07-02T00:01:08.826Z] [AutoRun] ❌ FAILED (Invalid)
+[2026-07-02T00:01:11.336Z] [AutoRun] [13/148] BEST SOLO 03
+[2026-07-02T00:01:13.167Z] [AutoRun] ✅ VALID

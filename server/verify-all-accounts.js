@@ -53,7 +53,16 @@ async function run() {
         const pools = poolRes?.list || [];
         
         process.stdout.write(`Fetching active orders... `);
-        const orderRes = await nhApp.hashpower.getMyOrders({ ts: Date.now().toString() });
+        // ✅ FIX: The getMyOrders endpoint requires algorithm and market.
+        // Providing empty algorithm and a default market fetches all orders.
+        // Also adding a limit, as it's often required.
+        // ✅ FIX 2: Omit the algorithm key entirely if you want all algorithms.
+        const orderRes = await nhApp.hashpower.getMyOrders({
+          market: 'USA',
+          op: 'LE', // ✅ FIX: Add the required 'op' (operator) parameter
+          limit: '100',
+          ts: Date.now().toString()
+        });
         const activeOrders = orderRes?.list || orderRes?.myOrders || (Array.isArray(orderRes) ? orderRes : []);
         
         const activePoolIds = new Set(

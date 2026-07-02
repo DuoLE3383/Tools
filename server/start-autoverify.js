@@ -65,14 +65,20 @@ function startProcess() {
 
   // Log stdout
   childProcess.stdout.on('data', (data) => {
-    const message = data.toString().trim();
-    if (message) log(`[AutoRun] ${message}`);
+    const messages = data.toString().split('\n').filter(line => line.trim() !== '');
+    messages.forEach(message => {
+      // Clean up the output slightly by removing extra whitespace from the start of lines
+      log(`[AutoRun] ${message.trim()}`);
+    });
   });
 
   // Log stderr
   childProcess.stderr.on('data', (data) => {
-    const message = data.toString().trim();
-    if (message) log(`[AutoRun ERROR] ${message}`);
+    const messages = data.toString().split('\n').filter(line => line.trim() !== '');
+    messages.forEach(message => {
+      // Ensure errors are clearly marked
+      log(`[AutoRun ERROR] ${message.trim()}`);
+    });
   });
 
   childProcess.on('error', (err) => {
