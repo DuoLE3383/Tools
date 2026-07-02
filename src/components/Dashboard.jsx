@@ -146,7 +146,7 @@ export default function Dashboard({
   return (
     <div
       className="app-shell dashboard-shell"
-      style={{ padding: "0 20px 40px", maxWidth: "1600px", margin: "0 auto" }}
+      style={{ padding: "0 20px 40px", margin: "0 auto" }}
     >
       {/* HEADER */}
       <header
@@ -282,7 +282,7 @@ export default function Dashboard({
         </div>
       </header>
 
-      {/* POOLS SECTION */}
+      {/* POOLS SECTION
       <section
         className="pools-section"
         style={{
@@ -306,7 +306,7 @@ export default function Dashboard({
           nhClient={state.nhPoolClient}
           setNhClient={setNhPoolClient}
         />
-      </section>
+      </section> */}
 
       {/* MAIN DASHBOARD */}
       <main className="dashboard">

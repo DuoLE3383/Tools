@@ -287,18 +287,18 @@ export default function MrrRigs({
       try {
         const res = await onCall("/api/v2/prices/coingecko", {
           query: {
-            ids: "bitcoin,ethereum,ethereum-classic,litecoin,dogecoin,ravencoin,monero,kaspa,iron-fish,zephyr-protocol,clore-ai,dynex,conflux,ergo",
+            ids: "bitcoin,ethereum,ethereum-classic,litecoin,dogecoin,bitcoin-cash,ravencoin,monero,kaspa,iron-fish,zephyr-protocol,clore-ai,dynex,conflux,ergo",
             vs_currencies: "usd,btc",
           },
           silent: true,
         });
-        if (res?.success) setCoinPrices(res.data);
+        if (res && typeof res === 'object' && !res.error) setCoinPrices(res);
       } catch (err) {
         console.warn("[CoinGecko] Price fetch failed:", err.message);
       }
     };
     fetchCoinPrices();
-  }, [onCall]);
+  }, [onCall]); // Added onCall to dependency array
 
   const toggleAlgoGroup = (algo) => {
     setExpandedAlgos((prev) => ({
@@ -1030,12 +1030,12 @@ export default function MrrRigs({
                         algoName={algoName}
                         info={enrichedInfo[rig.id]}
                         isMine={rig.id && userRigIds.has(String(rig.id))}
+                        onCall={onCall}
                         mrrClient={mrrClient} 
                         nhOrders={nhOrders}
                         coinPrices={coinPrices}
                         algoMarketPrices={algoMarketPrices} 
                         onOpenPool={onOpenPool}
-                        fetchRigDetailInfo={fetchRigDetailInfo}
                         loadingInfoIds={loadingInfoIds}
                         handleRigStatus={handleRigStatus}
                         handlePriceChange={handlePriceChange}

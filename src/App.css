@@ -21,7 +21,7 @@
 
 .app-shell.dashboard-shell,
 .app-shell.auth-shell {
-  width: min(100%, calc(var(--app-max) + 40px));
+  width: 100%;
 }
 
 .dashboard,

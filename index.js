@@ -51,10 +51,10 @@ app.get('/api/health', (req, res) => {
 
 app.get('/', (req, res) => {
   res.json({
-    service: 'NiceHash API Toolbox',
+    service: 'Toolbox',
     status: 'running',
-    version: '1.0.0',
-    endpoints: { health: '/api/health', time: '/api/v2/time', mining: '/api/v2/mining-stats' }
+    version: '2.0.0',
+    endpoints: { health: '/api/health', time: '/api/v2/time', mining: '/api/v2/mining-stats', mrr: '/api/v2/mrr/monitor/run', nicehash: '/api/v2/nh/pools', websocket: '/api/v2/prices/ws'  },
   });
 });
 

@@ -138,9 +138,9 @@ export default function CryptoRatePage({ onCall, onPriceUpdate }) {
         silent: true,
       });
 
-      const data = res?.data || (res && typeof res === "object" && !res.error ? res : null);
+      const data = res; // The callApi from App.jsx already returns the data object.
 
-      if (data && (data.bitcoin || data.BTC || data.btc || data["bitcoin-cash"] || data.BCH || data.bch)) {
+      if (data && typeof data === 'object' && !data.error) {
         setPrices(data);
         saveCryptoPriceCache(data, { source: "CryptoRatePage.fetchPrices" });
         // ✅ Send formatted prices to parent
@@ -207,7 +207,8 @@ export default function CryptoRatePage({ onCall, onPriceUpdate }) {
       }
 
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const wsUrl = `${protocol}//${window.location.host}/api/v2/prices/ws`;
+      const token = localStorage.getItem("token");
+      const wsUrl = `${protocol}//${window.location.host}/api/v2/prices/ws${token ? `?token=${token}` : ""}`;
 
       socket = new WebSocket(wsUrl);
       if (isComponentMounted) setWsStatus("connecting");

@@ -28,7 +28,7 @@ export function createApp({ distPath }) {
 
   // Create HTTP server and attach WebSocket
   const server = http.createServer(app);
-  setupWebSocket(server);
+  setupWebSocket(server, { authMiddleware });
   app.server = server;
 
   if (distPath) {

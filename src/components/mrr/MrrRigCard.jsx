@@ -77,7 +77,7 @@ const FALLBACK_BTC_RATES = {
   ETH: 0.052,
   LTC: 0.00078,
   DOGE: 0.0000018,
-  BCH: 0.00042,
+  BCH: 0.0062,
   ETC: 0.00042,
 };
 
@@ -174,7 +174,6 @@ const MrrRigCard = ({
   cryptoPrices,
   algoMarketPrices,
   onOpenPool,
-  onOpenCompletionCalculator,
   fetchRigDetailInfo,
   loadingInfoIds,
   handleRigStatus,
@@ -182,7 +181,9 @@ const MrrRigCard = ({
   expandedPools,
   togglePoolInfo,
   setEnrichedInfo,
+  onCall,
   mrrClient,
+  onOpenCompletionCalculator,
 }) => {
   // ── Basic state ──
   const statusStr = String(
@@ -198,6 +199,44 @@ const MrrRigCard = ({
   const [nowMs, setNowMs] = useState(0);
   const rawCur = info?.rawCur || rig.hashrate?.current || 0;
   const cur = Number.isFinite(parseFloat(rawCur)) ? parseFloat(rawCur) : 0;
+  const [isFetchingDetails, setIsFetchingDetails] = useState(false);
+
+  const internalFetchRigDetailInfo = useCallback(async (rigToFetch) => {
+    const statusStr = String(
+      typeof rigToFetch.status === "object" ? rigToFetch.status.status : rigToFetch.status || "",
+    ).toLowerCase();
+    const isRented = statusStr.includes("rented") || statusStr.includes("active");
+
+    const rigId = rigToFetch.rigid || rigToFetch.rig_id || rigToFetch.rig?.id || (isRented ? "" : rigToFetch.id);
+    const rentalId = rigToFetch.rentalid || rigToFetch.current_rental_id || rigToFetch.rental_id || (isRented ? rigToFetch.id : "");
+
+    const path = isRented && rentalId
+      ? `/api/v2/mrr/rental/${encodeURIComponent(rentalId)}`
+      : `/api/v2/mrr/rig/${encodeURIComponent(rigId || rigToFetch.id)}/info`;
+
+    setIsFetchingDetails(true);
+    try {
+      const data = await onCall(path, {
+        query: { client: rigToFetch.mrrClient || mrrClient },
+        silent: true,
+        background: true,
+      });
+
+      if (data && !data.error) {
+        const infoData = (isRented && rentalId) ? (data.data || data) : data;
+        setEnrichedInfo((prev) => ({ ...prev, [rigToFetch.id]: infoData }));
+      }
+    } catch (err) {
+      console.error("Failed to fetch rig info:", err);
+    } finally {
+      setIsFetchingDetails(false);
+    }
+  }, [onCall, mrrClient, setEnrichedInfo]);
+
+  const isLoadingDetails = useMemo(() => {
+    return loadingInfoIds.has(rig.id) || isFetchingDetails;
+  }, [loadingInfoIds, isFetchingDetails, rig.id]);
+
 
   // ── Algorithm & units ──
   const rawAlgo =
@@ -281,11 +320,11 @@ const MrrRigCard = ({
 
       for (const key of keysToTry) {
         try {
-          const url = `/api/v2/mrr/market/algos/${key}`;
-          const response = await fetch(url);
-          if (!response.ok)
-            throw new Error(`Proxy returned ${response.status}`);
-          const data = await response.json();
+          const data = await onCall(`/api/v2/mrr/market/algos/${key}`, {
+            silent: true,
+          });
+
+          if (!data || data.success === false) throw new Error(data?.error || data?.message || 'Proxy returned an error');
 
           let foundRate = 0;
           if (data.success && data.data) {
@@ -343,6 +382,7 @@ const MrrRigCard = ({
     rig.algorithm,
     rig.type,
     algoName,
+    onCall,
     mrrUnit,
     info?.rawAds,
     rig.hashrate?.advertised,
@@ -1370,10 +1410,10 @@ const MrrRigCard = ({
         <button
           className="btn-pro"
           style={{ flex: "1 1 90px", fontSize: "10px" }}
-          onClick={() => fetchRigDetailInfo(rig)}
-          disabled={loadingInfoIds.has(rig.id)}
+          onClick={() => internalFetchRigDetailInfo(rig)}
+          disabled={isLoadingDetails}
         >
-          {loadingInfoIds.has(rig.id) ? "..." : "More"}
+          {isLoadingDetails ? "..." : "More"}
         </button>
         <button
           className="btn-pro secondary"
@@ -1391,12 +1431,12 @@ const MrrRigCard = ({
               delete next[rig.id];
               return next;
             });
-            fetchRigDetailInfo(rig);
+            internalFetchRigDetailInfo(rig);
           }}
-          disabled={loadingInfoIds.has(rig.id)}
+          disabled={isLoadingDetails}
           title="Reload Rig Details"
         >
-          {loadingInfoIds.has(rig.id) ? "..." : "↻"}
+          {isLoadingDetails ? "..." : "↻"}
         </button>
       </div>
     </article>
