@@ -332,7 +332,7 @@ export default function Dashboard({
             </article>
 
             {/* QUICK ACTIONS */}
-            <div
+            {/* <div
               style={{
                 display: "flex",
                 justifyContent: "space-between",
@@ -377,7 +377,7 @@ export default function Dashboard({
                   Live Rates
                 </a>
               </div>
-            </div>
+            </div> */}
 
             {/* MINING RIG SECTION */}
             <article className="panel">

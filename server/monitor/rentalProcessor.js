@@ -142,6 +142,7 @@ export function isRealRental(rental, info, now = Date.now()) {
     
     // If it doesn't have rental fields, it's just a rig, not a rental
     if (!hasRentalFields) {
+        logger.debug(`[monitor:isRealRental] ${rentalId} is a rig with rental ID, not a real rental (no rental fields).`);
         return false;
     }
 
@@ -155,6 +156,7 @@ export function isRealRental(rental, info, now = Date.now()) {
     // ✅ Must have valid start AND end times
     // ============================================================
     if (startT <= 0 || endT <= 0) {
+        logger.debug(`[monitor:isRealRental] ${rentalId} has invalid times (start: ${startT}, end: ${endT}), skipping.`);
         return false;
     }
 
@@ -163,6 +165,7 @@ export function isRealRental(rental, info, now = Date.now()) {
     // ============================================================
     const remainingMs = Math.max(0, endT - now);
     if (remainingMs <= 0) {
+        logger.debug(`[monitor:isRealRental] ${rentalId} is finished, skipping.`);
         return false;
     }
 
@@ -175,9 +178,11 @@ export function isRealRental(rental, info, now = Date.now()) {
     const hasActivity = currentHash > 0 || averageHash > 0 || paidAmount > 0;
 
     if (!hasActivity) {
+        logger.debug(`[monitor:isRealRental] ${rentalId} has no activity (hashrate or payment), skipping.`);
         return false;
     }
 
+    logger.debug(`[monitor:isRealRental] ${rentalId} is a real rental (remaining: ${formatRemainingTime(remainingMs)}, hashrate: ${currentHash > 0 || averageHash > 0}, paid: ${paidAmount > 0})`);
     return true;
 }
 
@@ -246,7 +251,7 @@ async function getNiceHashOrderPriceForRental(rental, acct) {
             return price > 0 ? price : null;
         }
     } catch (err) {
-        console.error(`[monitor] Error in getNiceHashOrderPriceForRental for rental ${rental.id}: ${err.message}`);
+        logger.error(`[monitor] Error in getNiceHashOrderPriceForRental for rental ${rental.id}: ${err.message}`);
     }
 
     return null;
@@ -311,7 +316,7 @@ async function getPriceRoi(info, acct, now) {
         const cachedError = monitorNhPriceErrorCache.get(cacheKey);
         if (!cachedError || cachedError.message !== err.message || now - cachedError.ts >= 10 * 60 * 1000) {
             monitorNhPriceErrorCache.set(cacheKey, { message: err.message, ts: now });
-            console.warn(`[monitor] ROI price skipped for ${cacheKey}: ${err.message}`);
+            logger.warn(`[monitor] ROI price skipped for ${cacheKey}: ${err.message}`);
         }
     }
     return null;
@@ -322,7 +327,7 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
     const isValidRental = isRealRental(rental, info, now);
 
     if (!isValidRental) {
-        console.log(`[monitor:process] Skipped invalid or ghost rental: ${rental.id || 'N/A'}`);
+        logger.debug(`[monitor:process] Skipped invalid or ghost rental: ${rental.id || 'N/A'}`);
         return { isValid: false };
     }
 
@@ -345,7 +350,7 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
     const current = parseFloat(info.hashrate?.current || 0);
 
     // Log raw values for debugging
-    console.log(`[monitor] ${rental.id} - Raw: current=${current}, avg=${average}, adv=${advertised}`);
+    logger.debug(`[monitor] ${rental.id} - Raw: current=${current}, avg=${average}, adv=${advertised}`);
 
     // ============================================================
     // FORMAT HASHRATE VALUES FOR DISPLAY
@@ -365,7 +370,7 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
         : "0 H/s";
 
     // Log formatted values for debugging
-    console.log(`[monitor] ${rental.id} - Formatted: cur=${currentDisplay}, avg=${avgDisplay}, adv=${advDisplay}`);
+    logger.debug(`[monitor] ${rental.id} - Formatted: cur=${currentDisplay}, avg=${avgDisplay}, adv=${advDisplay}`);
 
     const totalExpectedHashes = advertised * (totalDurationMs / 1000);
     const actualHashesDone = average * (elapsedMs / 1000);
@@ -389,7 +394,7 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
          ON CONFLICT(id) DO UPDATE SET 
            name=excluded.name, client=excluded.client, algo=excluded.algo, order_diff=excluded.order_diff, start_time=excluded.start_time, end_time=excluded.end_time, target_100=excluded.target_100, last_updated=excluded.last_updated, low_hashrate_start=excluded.low_hashrate_start, zero_hashrate_start=excluded.zero_hashrate_start, current_hashrate=excluded.current_hashrate, average_hashrate=excluded.average_hashrate, advertised_hashrate=excluded.advertised_hashrate, price_paid=excluded.price_paid`,
         [String(rental.id), liveRig?.name || rental.name || rental.id, acct, startT, endT, info.algo, displayTarget, orderDiff, now, lowHashStart, zeroHashStart, current, average, advertised, info.price.paid, lastNotified]
-    ).catch(err => console.error(`[monitor:db] Upsert error for ${rental.id}: ${err.message}`));
+    ).catch(err => logger.error(`[monitor:db] Upsert error for ${rental.id}: ${err.message}`));
 
     if (startT > 0) {
         await dbRunAsync("INSERT OR IGNORE INTO rental_history (id, start_time) VALUES (?, ?)", [String(rental.id), startT]);

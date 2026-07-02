@@ -827,7 +827,7 @@ export default function MiningRigRental({
         >
           Rigs Manager
         </button>
-        <button
+        {/* <button
           className="btn-pro secondary"
           onClick={() =>
             onCall("/api/v2/mrr/balance", {
@@ -837,7 +837,7 @@ export default function MiningRigRental({
           }
         >
           Balance
-        </button>
+        </button> */}
         <TelegramManager onCall={onCall} mrrClient={mrrClient} />
       </div>
 
