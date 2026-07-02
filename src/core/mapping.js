@@ -79,8 +79,8 @@ export const NICEHASH_ALGO_MAP = {
 // MRR algorithm mapping
 export const MRR_ALGO_MAP = {
   SHA256: "sha256",
-  SHA256AB: "SHA256ASICBOOST",
-  SHA256ASICBOOST: "SHA256ASICBOOST",
+  SHA256AB: "sha256ab",
+  SHA256ASICBOOST: "sha256ab",
   SCRYPT: "scrypt",
   DAGGERHASHIMOTO: "DAGGERHASHIMOTO",
   EQUIHASH: "equihash",
@@ -506,16 +506,11 @@ export function isAsicBoost(algo) {
  * @returns {string} MRR API key (e.g., "sha256" or "sha256ab")
  */
 export function getMrrAlgoKey(algo) {
-  if (!algo) return "sha256";
+  if (!algo) return "unknown";
   const normalized = normalizeAlgoForNiceHash(algo);
-  
-  // If it's AsicBoost, use sha256ab
-  if (isAsicBoost(normalized)) {
-    return "sha256ab";
-  }
-  
-  // Otherwise use standard mapping
-  return mapNiceHashToMRR(normalized);
+  // The logic in MrrRigCard now handles trying both 'sha256' and 'sha256ab' for all SHA256 family algos.
+  // This function should just return the standard mapping.
+  return mapNiceHashToMRR(normalized) || 'unknown';
 }
 
 /**

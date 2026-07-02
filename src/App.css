@@ -693,7 +693,8 @@
 }
 
 .crypto-rate-page {
-  width: min(100%, 600px) !important;
+  width: 100% !important;
+  max-width: 100% !important;
   height: auto !important;
   min-height: 0 !important;
   align-self: start;
@@ -702,7 +703,7 @@
 
 .crypto-rate-page input[type="number"],
 .crypto-rate-page button {
-  min-width: 0;
+  min-width: 100%;
 }
 
 .coin-price-modal {

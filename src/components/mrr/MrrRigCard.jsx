@@ -73,7 +73,7 @@ const COINGECKO_BY_CURRENCY = {
   ETC: "ethereum-classic",
 };
 const PRICE_CURRENCIES = ["BTC", "ETH", "LTC", "DOGE", "BCH"];
-const FALLBACK_BTC_RATES = {
+const FALLBACK_BTC_RATES = { // Last resort if CoinGecko fails
   ETH: 0.052,
   LTC: 0.00078,
   DOGE: 0.0000018,
@@ -81,27 +81,33 @@ const FALLBACK_BTC_RATES = {
   ETC: 0.00042,
 };
 
-const resolvePaidPrice = (priceSource, convertedSource) => {
-  const primary = getPriceDataLocal(priceSource);
-  if (primary.value > 0)
-    return {
-      amount: primary.value,
-      currency: String(primary.currency || "BTC").toUpperCase(),
-    };
+const resolvePaidPrice = (priceSource, convertedSource, algo) => {
+  // For SHA256 variants, ALWAYS prioritize BTC and never fall back to other currencies.
+  // This logic must run FIRST to prevent other currencies from being picked up.
+  const isSha256Family = String(algo || "").toUpperCase().includes("SHA256");
+  if (isSha256Family) {
+    if (priceSource?.BTC) {
+      const btcPriceData = getPriceDataLocal(priceSource.BTC);
+      if (btcPriceData.value > 0) return { amount: btcPriceData.value, currency: 'BTC' };
+    }
+    // Also check the root of the price object for a direct BTC price
+    if (String(priceSource?.currency).toUpperCase() === 'BTC' && priceSource?.paid > 0) {
+      return { amount: priceSource.paid, currency: 'BTC' };
+    }
+    return { amount: 0, currency: 'BTC' }; // Explicitly return 0 BTC if no valid BTC price is found
+  }
+
+  // For all other algorithms, find the first available price.
   if (priceSource && typeof priceSource === "object") {
     for (const currency of PRICE_CURRENCIES) {
       const nested = priceSource[currency];
-      if (!nested || typeof nested !== "object") continue;
-      const nestedPrice = getPriceDataLocal(nested);
-      if (nestedPrice.value > 0) return { amount: nestedPrice.value, currency };
+      if (nested && getPriceDataLocal(nested).value > 0) return { amount: getPriceDataLocal(nested).value, currency };
     }
   }
-  const converted = getPriceDataLocal(convertedSource);
-  if (converted.value > 0)
-    return {
-      amount: converted.value,
-      currency: String(converted.currency || "BTC").toUpperCase(),
-    };
+
+  const primary = getPriceDataLocal(priceSource || convertedSource);
+  if (primary.value > 0) return { amount: primary.value, currency: String(primary.currency || 'BTC').toUpperCase() };
+
   return { amount: 0, currency: "BTC" };
 };
 
@@ -154,7 +160,6 @@ const resolveAlgoLookupKeys = (...values) => {
       keys.add(normalized.toLowerCase());
       if (normalized === "SHA256ASICBOOST") {
         keys.add("SHA256AB");
-        keys.add("sha256ab");
       }
     }
   };
@@ -182,6 +187,7 @@ const MrrRigCard = ({
   expandedPools,
   togglePoolInfo,
   setEnrichedInfo,
+  onCall,
   mrrClient,
 }) => {
   // ── Basic state ──
@@ -245,10 +251,13 @@ const MrrRigCard = ({
 
   // ── MRR rate fetch ──
   useEffect(() => {
-    const rawAlgo =
+    // Prioritize the most specific algo info from the rig/info objects first.
+    // The `algoName` prop is a fallback for when the rig object is generic.
+    const specificRawAlgo =
       info?.algo || rig.algo || rig.algorithm || rig.type || algoName;
-    const normalizedAlgo = normalizeAlgoForNiceHash(rawAlgo || algoName);
+    const normalizedAlgo = normalizeAlgoForNiceHash(specificRawAlgo);
 
+    // Fallback to a calculated rate if we can't determine the algorithm.
     if (!normalizedAlgo || normalizedAlgo === "UNKNOWN") {
       if (info?.price?.paid && info?.hashrate?.advertised) {
         const paid = parseFloat(info.price.paid);
@@ -268,48 +277,77 @@ const MrrRigCard = ({
       setMrrRateError(null);
 
       const primaryKey = getMrrAlgoKey(normalizedAlgo);
-      const keysToTry = [primaryKey];
-      if (
-        normalizedAlgo === "SHA256ASICBOOST" ||
-        normalizedAlgo === "SHA256AB"
-      ) {
-        if (primaryKey !== "sha256") keysToTry.push("sha256");
+      if (!primaryKey || primaryKey === 'unknown') {
+        return; // No valid key to fetch
       }
 
-      let rate = 0;
+      let foundRate = 0;
       let usedKey = "";
 
-      for (const key of keysToTry) {
+      const fetchForKey = async (key) => {
         try {
-          const url = `/api/v2/mrr/market/algos/${key}`;
-          const response = await fetch(url);
-          if (!response.ok)
-            throw new Error(`Proxy returned ${response.status}`);
-          const data = await response.json();
+          const data = await onCall(`/api/v2/mrr/market/algos/${key}`, {
+            silent: true,
+          });
 
-          let foundRate = 0;
-          if (data.success && data.data) {
-            if (data.data.suggested_price?.amount)
-              foundRate = parseFloat(data.data.suggested_price.amount);
-            else if (data.data.stats?.prices?.lowest?.price)
-              foundRate = parseFloat(data.data.stats.prices.lowest.price);
-            else if (data.data.price) foundRate = parseFloat(data.data.price);
-            else if (data.data.BTC) foundRate = parseFloat(data.data.BTC);
-          } else if (data.price) foundRate = parseFloat(data.price);
-          else if (data.BTC) foundRate = parseFloat(data.BTC);
+          if (!data) {
+            console.warn(`[MrrRigCard] No data returned for key "${key}"`);
+            return;
+          }
+          if (data.error || data.success === false) {
+            if (data.data?.price || data.price) {
+              // Continue processing if there's still a price in the data
+            } else {
+              console.warn(`[MrrRigCard] API error for key "${key}":`, data.message || 'Unknown error');
+              return;
+            }
+          }
 
-          if (foundRate > 0) {
-            rate = foundRate;
+          let rate = 0;
+          if (data.data?.suggested_price?.amount)
+            rate = parseFloat(data.data.suggested_price.amount);
+          else if (data.data?.stats?.prices?.lowest?.price)
+            rate = parseFloat(data.data.stats.prices.lowest.price);
+          else if (data.data?.stats?.prices?.average?.price)
+            rate = parseFloat(data.data.stats.prices.average.price);
+          else if (data.data?.price) rate = parseFloat(data.data.price);
+          else if (data.data?.BTC) rate = parseFloat(data.data.BTC);
+          else if (data.price) rate = parseFloat(data.price);
+          else if (data.BTC) rate = parseFloat(data.BTC);
+          
+          if (rate > 0) {
+            foundRate = rate;
             usedKey = key;
-            break;
+            console.log(`[MrrRigCard] Found rate ${rate} for key "${key}"`);
+          } else {
+            console.warn(`[MrrRigCard] No valid rate found for key "${key}"`);
           }
         } catch (err) {
-          console.warn(`⚠️ Failed to fetch MRR rate for ${key}:`, err.message);
+          console.warn(`[MrrRigCard] Could not fetch MRR rate for key "${key}". Error: ${err.message}`);
         }
+      };
+
+      // For the SHA256 family, the MRR API is inconsistent. We must try both
+      // 'sha256ab' (AsicBoost) and the generic 'sha256' to find a valid rate,
+      // as pricing is often consolidated under one of them.
+      const isShaFamily = String(normalizedAlgo).toUpperCase().includes("SHA256");
+ 
+      if (isShaFamily) {
+        // The MRR API is inconsistent for the SHA256 family. We must always try both 'sha256' and 'sha256ab'
+        // to ensure we find a price if one exists under either key.
+        // We can prioritize based on whether it's an AsicBoost algo.
+        const primaryShaKey = isAsicBoost(normalizedAlgo) ? 'sha256ab' : 'sha256';
+        const secondaryShaKey = isAsicBoost(normalizedAlgo) ? 'sha256' : 'sha256ab';
+        await fetchForKey(primaryShaKey);
+        // If the first key didn't yield a result, try the other one.
+        if (foundRate <= 0) await fetchForKey(secondaryShaKey);
+      } else {
+        // For all other algorithms, use the determined primary key.
+        await fetchForKey(primaryKey);
       }
 
-      if (rate > 0) {
-        setMrrMarketRate(rate);
+      if (foundRate > 0) {
+        setMrrMarketRate(foundRate);
         setMrrUsedKey(usedKey);
         setMrrRateError(null);
       } else {
@@ -401,6 +439,7 @@ const MrrRigCard = ({
   const paidPrice = resolvePaidPrice(
     info?.normalized?.price || info?.price || rig.price,
     info?.price_converted || rig.price_converted,
+    normalizedAlgo, // Pass algo to help resolve currency
   );
   const paidAmount = paidPrice.amount;
   const paidCurrency =

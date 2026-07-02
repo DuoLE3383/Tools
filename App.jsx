@@ -210,10 +210,13 @@ export default function App() {
 
     // Build query string
     const enrichedQuery = { ...query };
-    const isPriceReq = path.includes('/order/price');
-    if (path.startsWith('/api/v2/') && !enrichedQuery.client && !isPriceReq) {
-      const isPoolReq = path.includes('/pools') || section === 'pools';
-      enrichedQuery.client = isPoolReq ? state.nhPoolClient : state.nhOrderClient;
+    const isPriceReq = path.includes('/prices/');
+    const isNhRequest = path.includes('/mining/') || path.includes('/pools') || path.includes('/hashpower');
+
+    // Only add client for NiceHash v2 API calls, not for MRR or other services.
+    if (path.startsWith('/api/v2/') && isNhRequest && !enrichedQuery.client) {
+      const isPoolsEndpoint = path.includes('/pools') || section === 'pools';
+      enrichedQuery.client = isPoolsEndpoint ? state.nhPoolClient : state.nhOrderClient;
     }
 
     // Generate cache key
@@ -466,32 +469,48 @@ export default function App() {
 
       if (!cancelled) setSessionReady(false);
 
+      // Set a timeout so we don't hang forever on slow networks
+      const timeoutMs = 5000;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
       try {
         const res = await fetch('/api/v2/time', {
           method: 'GET',
           headers: { Authorization: `Bearer ${authToken}` },
+          signal: controller.signal,
           credentials: 'omit',
         });
+
+        clearTimeout(timeoutId);
 
         if (!res.ok) {
           throw new Error(`Session check failed (${res.status})`);
         }
 
-        const profileRes = await fetch('/api/auth/profile', {
+        // Token is valid — mark session ready immediately
+        if (!cancelled) setSessionReady(true);
+        if (!cancelled) setCurrentUser({ username: 'admin' });
+
+        // Lightweight profile fetch — don't block sessionReady on it
+        fetch('/api/auth/profile', {
           method: 'GET',
           headers: { Authorization: `Bearer ${authToken}` },
           credentials: 'omit',
-        });
-
-        if (!profileRes.ok) {
-          throw new Error(`Profile check failed (${profileRes.status})`);
+        })
+          .then((r) => r.json().catch(() => null))
+          .then((profileData) => {
+            if (!cancelled && profileData?.user) setCurrentUser(profileData.user);
+          })
+          .catch(() => {});
+      } catch (err) {
+        clearTimeout(timeoutId);
+        if (err.name === 'AbortError') {
+          // Timeout — log out cleanly
+          if (!cancelled) handleLogout();
+        } else {
+          if (!cancelled) handleLogout();
         }
-
-        const profileData = await profileRes.json().catch(() => null);
-        if (!cancelled) setSessionReady(true);
-        if (!cancelled) setCurrentUser(profileData?.user || null);
-      } catch {
-        if (!cancelled) handleLogout();
       }
     };
 
@@ -564,16 +583,16 @@ export default function App() {
     return <Login onLoginSuccess={handleLoginSuccess} onCall={callApi} />;
   }
 
-  // CryptoRate view
+  // CryptoRate view — spans full viewport width with no max-width constraint
   if (state.view === 'cryptorate') {
     return (
-      <div className="app-shell" style={{ background: '#0f172a', minHeight: '100vh' }}>
-        <div style={{ padding: '16px 20px' }}>
+      <div style={{ background: '#0f172a', minHeight: '100vh' }}>
+        <div style={{ display: 'flex', alignItems: 'center', padding: '16px 20px' }}>
           <button
             className="btn-pro secondary"
             onClick={() => {
               window.history.pushState({}, '', '/');
-              dispatch({ type: 'SET_VIEW', payload: 'dashboard' }); // Navigate home
+              dispatch({ type: 'SET_VIEW', payload: 'dashboard' });
             }}
           >
             ← Back to Dashboard

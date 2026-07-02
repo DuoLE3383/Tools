@@ -907,7 +907,6 @@ export default function MrrRigs({
           flexGrow: 1,
           display: "flex",
           flexDirection: "column",
-          maxHeight: "auto",
           paddingRight: "2px",
         }}
       >
@@ -1042,6 +1041,7 @@ export default function MrrRigs({
                         expandedPools={expandedPools}
                         togglePoolInfo={togglePoolInfo}
                         setEnrichedInfo={setEnrichedInfo}
+                        onCall={onCall}
                       />
                     ))}
                   </div>

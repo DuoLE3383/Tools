@@ -189,7 +189,7 @@ export default function MrrPoolsManager({ onCall, mrrClient, externalPoolData = 
       {loading && <div style={{ textAlign: 'center', padding: '20px', opacity: 0.6 }}>Fetching pool configurations...</div>}
 
       {poolData && (
-        <div className="pool-results-container" style={{ fontSize: '12px', marginTop: '20px', maxHeight: '600px', maxWidth: '480px', overflowY: 'auto' }}>
+        <div className="pool-results-container" style={{ fontSize: '12px', marginTop: '20px', maxHeight: '600px', overflowY: 'auto' }}>
           {poolData.success === false ? (
             <div className="error-message">{poolData.message}</div>
           ) : (

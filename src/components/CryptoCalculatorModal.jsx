@@ -201,7 +201,7 @@ export function CryptoCalculatorModal({ isOpen, onClose, onCall }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-2">
-      <div className="bg-[#1e293b] border border-slate-200 rounded-xl shadow-lg w-full max-w-[280px] overflow-hidden">
+      <div className="bg-[#1e293b] border border-slate-200 rounded-xl shadow-lg w-full max-w-sm overflow-hidden">
         {/* Header */}
         <div className="px-3 py-2 border-b border-slate-200 flex justify-between items-center bg-slate-800/30">
           <h3 className="font-black text-white tracking-tight">

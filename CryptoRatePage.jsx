@@ -187,11 +187,13 @@ export default function CryptoRatePage({ onCall, onPriceUpdate, onNavigateHome }
     let isComponentMounted = true;
     let retryCount = 0;
 
-    const connectWs = () => {
+    const connectWs = () => { // This function contains the logic that needs adjustment
       if (!isComponentMounted || !wsEnabled) return;
 
       if (socket) {
+        // Prevent onclose from firing during manual reconnection
         socket.onclose = null;
+        socket.onerror = null;
         socket.close();
       }
 
@@ -230,7 +232,7 @@ export default function CryptoRatePage({ onCall, onPriceUpdate, onNavigateHome }
         if (!isComponentMounted) return;
         setWsStatus("disconnected");
 
-        if (retryCount < 2 && wsEnabled) {
+        if (retryCount < 3 && wsEnabled) { // Increase retries for better resilience
           const delay = Math.min(30000, 5000 * Math.pow(2, retryCount));
           reconnectTimeout = setTimeout(connectWs, delay);
           retryCount++;

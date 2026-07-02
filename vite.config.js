@@ -25,7 +25,7 @@ export default defineConfig(({ command }) => ({
         }
       },
       '/api': {
-        target: 'http://127.0.0.1:3000',
+        target: 'http://127.0.0.1:3003',
         ws: true,
         configure: (proxy) => {
           proxy.on('error', (err) => console.error('Proxy error:', err));

@@ -342,7 +342,7 @@ export default function App() {
 
   return (
     <RentedRigProvider nhClient={nhClient} callApi={callApi}>
-    <div className="app-shell" style={{ padding: '0 20px 40px', maxWidth: '1600px', margin: '0 auto' }}>
+    <div className="app-shell" style={{ padding: '0 20px 40px', margin: '0 auto' }}>
       <header className="app-header" style={{
         padding: '40px 0',
         borderBottom: '1px solid rgba(255,255,255,0.05)',
@@ -375,7 +375,7 @@ export default function App() {
           border: '1px solid rgba(255, 255, 255, 0.05)',
           borderRadius: '16px',
           padding: '24px',
-          height: '12800px',
+          height: 'auto',
           minHeight: '700px'
         }}
       >
@@ -402,7 +402,7 @@ export default function App() {
                 setNhClient={setNhClient}
               />
             </article>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', gap: '12px', flexWrap: 'wrap' }}>
+            {/* <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', gap: '12px', flexWrap: 'wrap' }}>
               <div>
                 <h3 style={{ margin: 0, fontSize: '1rem' }}>Quick Actions</h3>
                 <p style={{ margin: '4px 0 0', color: 'var(--muted)', fontSize: '0.85rem' }}>Unit conversions and rental projections.</p>
@@ -418,7 +418,7 @@ export default function App() {
                   Unit Converter
                 </button>
               </div>
-            </div>
+            </div> */}
           </div>
           <article className="panel">
             <MiningRigSection

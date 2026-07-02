@@ -984,7 +984,7 @@ function NiceHashOrderManager({ onCall, nhClient, setNhClient }) {
       </div>
 
       {/* Accounting Section */}
-      <div
+      {/* <div
         className="accounting-integration"
         style={{
           marginTop: "20px",
@@ -999,7 +999,7 @@ function NiceHashOrderManager({ onCall, nhClient, setNhClient }) {
           <span className="panel-icon">💰</span>
         </div>
         <Accounting onCall={onCall} />
-      </div>
+      </div> */}
     </div>
   );
 }

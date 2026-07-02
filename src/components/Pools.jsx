@@ -1406,13 +1406,13 @@ export default function Pools({
       <div
         className="pools-dashboard-layout"
         style={{
-          display: "flex",
+          display: "grid",
+          gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))',
           gap: "1.5rem",
-          flexWrap: "wrap",
           alignItems: "flex-start",
         }}
       >
-        {sidebarVisible && (
+        {sidebarVisible && false && (
           <div
             className="pool-sidebar"
             style={{
