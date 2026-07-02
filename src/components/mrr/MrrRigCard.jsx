@@ -286,7 +286,8 @@ const MrrRigCard = ({
 
       const fetchForKey = async (key) => {
         try {
-          const data = await onCall(`/api/v2/mrr/market/algos/${key}`, {
+          // Use the correct MRR API endpoint: /info/algos/{key}
+          const data = await onCall(`/api/v2/mrr/info/algos/${key}`, {
             silent: true,
           });
 
@@ -294,22 +295,24 @@ const MrrRigCard = ({
             console.warn(`[MrrRigCard] No data returned for key "${key}"`);
             return;
           }
+
           if (data.error || data.success === false) {
-            if (data.data?.price || data.price) {
-              // Continue processing if there's still a price in the data
-            } else {
-              console.warn(`[MrrRigCard] API error for key "${key}":`, data.message || 'Unknown error');
-              return;
-            }
+            console.warn(`[MrrRigCard] API error for key "${key}":`, data.message || 'Unknown error');
+            return;
           }
 
           let rate = 0;
+          // Parse the response according to the official MRR API structure
           if (data.data?.suggested_price?.amount)
             rate = parseFloat(data.data.suggested_price.amount);
-          else if (data.data?.stats?.prices?.lowest?.price)
-            rate = parseFloat(data.data.stats.prices.lowest.price);
-          else if (data.data?.stats?.prices?.average?.price)
-            rate = parseFloat(data.data.stats.prices.average.price);
+          else if (data.data?.stats?.prices?.lowest?.amount)
+            rate = parseFloat(data.data.stats.prices.lowest.amount);
+          else if (data.data?.stats?.prices?.average?.amount)
+            rate = parseFloat(data.data.stats.prices.average.amount);
+          else if (data.data?.stats?.prices?.last?.amount)
+            rate = parseFloat(data.data.stats.prices.last.amount);
+          else if (data.data?.stats?.prices?.last_10?.amount)
+            rate = parseFloat(data.data.stats.prices.last_10.amount);
           else if (data.data?.price) rate = parseFloat(data.data.price);
           else if (data.data?.BTC) rate = parseFloat(data.data.BTC);
           else if (data.price) rate = parseFloat(data.price);
@@ -327,24 +330,16 @@ const MrrRigCard = ({
         }
       };
 
-      // For the SHA256 family, the MRR API is inconsistent. We must try both
-      // 'sha256ab' (AsicBoost) and the generic 'sha256' to find a valid rate,
-      // as pricing is often consolidated under one of them.
-      const isShaFamily = String(normalizedAlgo).toUpperCase().includes("SHA256");
+      const isShaFamily = String(normalizedAlgo).toUpperCase() === "SHA256ASICBOOST";
  
       if (isShaFamily) {
-        // The MRR API is inconsistent for the SHA256 family. We must always try both 'sha256' and 'sha256ab'
-        // to ensure we find a price if one exists under either key.
-        // We can prioritize based on whether it's an AsicBoost algo.
-        const primaryShaKey = isAsicBoost(normalizedAlgo) ? 'sha256ab' : 'sha256';
-        const secondaryShaKey = isAsicBoost(normalizedAlgo) ? 'sha256' : 'sha256ab';
+        // For AsicBoost, always try 'sha256ab' first. The logic in getMrrAlgoKey should handle this,
+        // but we can be explicit here for clarity.
+        const primaryShaKey = isAsicBoost(normalizedAlgo) ? 'sha256ab' : 'sha256ab'; 
         await fetchForKey(primaryShaKey);
-        // If the first key didn't yield a result, try the other one.
-        if (foundRate <= 0) await fetchForKey(secondaryShaKey);
-      } else {
-        // For all other algorithms, use the determined primary key.
-        await fetchForKey(primaryKey);
       }
+
+      
 
       if (foundRate > 0) {
         setMrrMarketRate(foundRate);
@@ -372,7 +367,8 @@ const MrrRigCard = ({
     };
 
     fetchRate();
-  }, [
+  }
+  , [
     info?.algo,
     info?.price?.paid,
     info?.hashrate?.advertised,
@@ -441,7 +437,7 @@ const MrrRigCard = ({
     info?.price_converted || rig.price_converted,
     normalizedAlgo, // Pass algo to help resolve currency
   );
-  const paidAmount = paidPrice.amount;
+  const paidAmount = Number(paidPrice.amount || 0);
   const paidCurrency =
     paidPrice.currency || info?.currency || rig.currency || "BTC";
   const paidLabel =
@@ -766,7 +762,7 @@ const MrrRigCard = ({
               }}
             >
               {displayAlgo}
-              {asicBoostBadge}
+              {/* {asicBoostBadge} */}
             </span>
             |
             {paidLabel && (

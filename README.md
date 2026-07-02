@@ -40,6 +40,7 @@ cp .env.example .env
 
 
 4. Start the backend server:
+node start.js > app.log 2>&1
 
 ```bash
 npm run backend

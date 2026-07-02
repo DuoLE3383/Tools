@@ -43,19 +43,33 @@ export const ALGO_DISPLAY_NAMES = {
 
 // NiceHash algorithm normalization
 export const NICEHASH_ALGO_MAP = {
+  // SHA256
   SHA256: "SHA256",
+  // SHA256ASICBOOST
   SHA256AB: "SHA256ASICBOOST",
   SHA256ASICBOOST: "SHA256ASICBOOST",
+  // SCRYPT
   SCRYPT: "SCRYPT",
+  // DAGGERHASHIMOTO
   DAGGERHASHIMOTO: "DAGGERHASHIMOTO",
+  HASHIMOTOS: "DAGGERHASHIMOTO",
+  HASHIMOTO: "DAGGERHASHIMOTO",
+  "DAGGER-HASHIMOTO": "DAGGERHASHIMOTO",
+  "DAGGER HASHIMOTO": "DAGGERHASHIMOTO",
+  // EQUIHASH & ZHASH
   EQUIHASH: "EQUIHASH",
   ZHASH: "ZHASH",
+  // ETCHASH
   ETCHASH: "ETCHASH",
+  // KAWPOW
   KAWPOW: "KAWPOW",
+  // AUTOLYKOS
   AUTOLYKOSV2: "AUTOLYKOS",
   AUTOLYKOS: "AUTOLYKOS",
+  // RANDOMX
   RANDOMX: "RANDOMXMONERO",
   RANDOMXMONERO: "RANDOMXMONERO",
+  // OTHER
   OCTOPUS: "OCTOPUS",
   KHEAVYHASH: "KHEAVYHASH",
   EAGLESONG: "EAGLESONG",
@@ -63,8 +77,11 @@ export const NICEHASH_ALGO_MAP = {
   NEXAPOW: "NEXAPOW",
   FISHHASH: "FISHHASH",
   DYNEXSOLVE: "DYNEXSOLVE",
+  // BEAM
   BEAMHASHIII: "BEAMV3",
   BEAMV3: "BEAMV3",
+  BEAMHASH: "BEAMV3",
+  // BLAKE3 / ALEPHIUM
   BLAKE3_ALPH: "ALEPHIUM",
   BLAKE3: "ALEPHIUM",
   JANUSHASH: "JANUSHASH",
@@ -73,6 +90,7 @@ export const NICEHASH_ALGO_MAP = {
   PROGPOWZ: "PROGPOWZ",
   PEARLHASH: "PEARLHASH",
   IRONFISH: "IRONFISH",
+  // ALEPHIUM (duplicate for completeness)
   ALEPHIUM: "ALEPHIUM",
 };
 
@@ -264,39 +282,12 @@ export function normalizeAlgoForNiceHash(algo) {
   const extracted = extractAlgoText(algo);
   if (!extracted) return "UNKNOWN";
   const normalized = extracted.toUpperCase().trim();
+  const cleanAlgo = normalized.replace(/[^A-Z0-9]/g, '');
 
   // Direct mapping
-  if (NICEHASH_ALGO_MAP[normalized]) {
-    return NICEHASH_ALGO_MAP[normalized];
+  if (NICEHASH_ALGO_MAP[cleanAlgo]) {
+    return NICEHASH_ALGO_MAP[cleanAlgo];
   }
-
-  // Handle common variations
-  if (normalized.includes("SHA256AB") || normalized.includes("ASICBOOST"))
-    return "SHA256ASICBOOST";
-  if (normalized.includes("SHA256")) return "SHA256";
-  if (normalized.includes("SCRYPT")) return "SCRYPT";
-  if (normalized.includes("HASHIMOTOS")) return "DAGGERHASHIMOTO";
-  if (normalized.includes("HASHIMOTO")) return "DAGGERHASHIMOTO";
-  if (normalized.includes("DAGGERHASHIMOTO")) return "DAGGERHASHIMOTO";
-  if (normalized.includes("DAGGER HASHIMOTO")) return "DAGGERHASHIMOTO";
-  if (normalized.includes("DAGGER-HASHIMOTO")) return "DAGGERHASHIMOTO";
-  if (normalized.includes("ETCHASH")) return "ETCHASH";
-  if (normalized.includes("KAWPOW")) return "KAWPOW";
-  if (normalized.includes("RANDOMX")) return "RANDOMXMONERO";
-  if (normalized.includes("OCTOPUS")) return "OCTOPUS";
-  if (normalized.includes("KHEAVYHASH")) return "KHEAVYHASH";
-  if (normalized.includes("ZHASH")) return "ZHASH";
-  if (normalized.includes("EAGLESONG")) return "EAGLESONG";
-  if (normalized.includes("VERUSHASH")) return "VERUSHASH";
-  if (normalized.includes("NEXAPOW")) return "NEXAPOW";
-  if (normalized.includes("FISHHASH")) return "FISHHASH";
-  if (normalized.includes("DYNEXSOLVE")) return "DYNEXSOLVE";
-  if (normalized.includes("BEAMHASH")) return "BEAMHASHIII";
-  if (normalized.includes("BLAKE3")) return "BLAKE3";
-  if (normalized.includes("JANUSHASH")) return "JANUSHASH";
-  if (normalized.includes("XELISHASH")) return "XELISHASHV3";
-  if (normalized.includes("PROGPOW")) return "PROGPOWZ";
-  if (normalized.includes("PEARLHASH")) return "PEARLHASH";
 
   return "UNKNOWN";
 }
@@ -492,25 +483,46 @@ function getUnitMultiplier(unit) {
  * @returns {boolean} True if algorithm is SHA256 AsicBoost
  */
 export function isAsicBoost(algo) {
-  if (!algo) return false;
-  const normalized = extractAlgoText(algo).toUpperCase().trim();
-  return normalized === "SHA256ASICBOOST" || 
-         normalized === "SHA256AB" ||
-         normalized.includes("ASICBOOST");
+    if (!algo) return false;
+    const normalized = String(algo).toUpperCase().trim();
+    return normalized.includes('SHA256AB') ||
+           normalized.includes('ASICBOOST') ||
+           normalized === 'SHA256ASICBOOST';
 }
 
 /**
- * Get appropriate MRR algorithm key for API calls
- * Special handling for AsicBoost vs standard SHA256
+ * Get MRR algorithm key (handles special cases like SHA256AB)
  * @param {string} algo - Algorithm name
- * @returns {string} MRR API key (e.g., "sha256" or "sha256ab")
+ * @returns {string} MRR algorithm key
  */
 export function getMrrAlgoKey(algo) {
-  if (!algo) return "unknown";
-  const normalized = normalizeAlgoForNiceHash(algo);
-  // The logic in MrrRigCard now handles trying both 'sha256' and 'sha256ab' for all SHA256 family algos.
-  // This function should just return the standard mapping.
-  return mapNiceHashToMRR(normalized) || 'unknown';
+    if (!algo) return 'unknown';
+    
+    const normalized = String(algo).toUpperCase().trim();
+    
+    // Direct mapping from MRR_ALGO_MAP
+    if (MRR_ALGO_MAP[normalized]) {
+      return MRR_ALGO_MAP[normalized];
+    }
+    
+    // Handle special cases
+    if (normalized.includes('SHA256AB') || normalized.includes('ASICBOOST')) {
+      return 'sha256ab';
+    }
+    
+    if (normalized.includes('SHA256')) {
+      return 'sha256';
+    }
+    
+    // Try to find by matching the normalized name to MRR keys
+    for (const [key, mrrKey] of Object.entries(MRR_ALGO_MAP)) {
+      if (normalized.includes(key) || key.includes(normalized)) {
+        return mrrKey;
+      }
+    }
+    
+    // Fallback: just lowercase the input
+    return String(algo).toLowerCase().trim();
 }
 
 /**
@@ -520,7 +532,7 @@ export function getMrrAlgoKey(algo) {
  */
 export function buildMrrApiUrl(algo) {
   const mrrAlgo = getMrrAlgoKey(algo);
-  return `https://www.miningrigrentals.com/api/v2/market/algos/${mrrAlgo}`;
+  return `https://www.miningrigrentals.com/api/v2/info/algos/${mrrAlgo}`;
 }
 
 /**
@@ -532,22 +544,43 @@ export function buildMrrApiUrl(algo) {
 export async function fetchMrrMarketRate(algo, currency = "BTC") {
   try {
     const mrrAlgo = getMrrAlgoKey(algo);
-    const url = `https://www.miningrigrentals.com/api/v2/market/algos/${mrrAlgo}`;
+    // Use the correct MRR API endpoint
+    const url = `https://www.miningrigrentals.com/api/v2/info/algos/${mrrAlgo}`;
     
-    const response = await fetch(url);
+    const response = await fetch(url, {
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      }
+    });
+    
     if (!response.ok) {
       throw new Error(`API returned ${response.status}`);
     }
     
     const data = await response.json();
     
+    // Parse the response according to MRR API structure
     let price = 0;
     if (data.success && data.data) {
-      price = data.data.price || data.data[currency] || 0;
+      // The MRR API returns price in data.suggested_price.amount
+      if (data.data.suggested_price?.amount) {
+        price = parseFloat(data.data.suggested_price.amount);
+      } else if (data.data.price) {
+        price = parseFloat(data.data.price);
+      } else if (data.data[currency]) {
+        price = parseFloat(data.data[currency]);
+      }
+      
+      // If we have stats.prices, use those as fallback
+      if (!price && data.data.stats?.prices) {
+        const stats = data.data.stats.prices;
+        price = parseFloat(stats.last?.price || stats.average?.price || stats.lowest?.price || 0);
+      }
     } else if (data.price) {
-      price = data.price;
+      price = parseFloat(data.price);
     } else if (data[currency]) {
-      price = data[currency];
+      price = parseFloat(data[currency]);
     }
     
     return price;
@@ -558,21 +591,120 @@ export async function fetchMrrMarketRate(algo, currency = "BTC") {
 }
 
 /**
- * Fetch all MRR market rates
+ * Fetch all MRR market rates with caching
+ * @param {string} currency - Currency to fetch rates in (default: "BTC")
+ * @param {boolean} forceRefresh - Force refresh the cache
  * @returns {Promise<Object|null>} All market rates or null if failed
  */
-export async function fetchAllMrrRates() {
+const mrrRatesCache = new Map();
+const MRR_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+export async function fetchAllMrrRates(currency = "BTC", forceRefresh = false) {
+  const cacheKey = `all_rates_${currency}`;
+  const cached = mrrRatesCache.get(cacheKey);
+  const now = Date.now();
+  
+  if (!forceRefresh && cached && (now - cached.timestamp) < MRR_CACHE_TTL) {
+    return cached.data;
+  }
+  
   try {
-    const response = await fetch("https://www.miningrigrentals.com/api/v2/market/algos");
+    // Use the correct MRR API endpoint for all algos
+    const url = `https://www.miningrigrentals.com/api/v2/info/algos?currency=${currency}`;
+    const response = await fetch(url, {
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      }
+    });
+    
     if (!response.ok) {
       throw new Error(`API returned ${response.status}`);
     }
     
     const data = await response.json();
-    return data.success ? data.data : data;
+    
+    if (data.success && data.data) {
+      // Parse all algos data
+      const algos = Array.isArray(data.data) ? data.data : [data.data];
+      const result = {};
+      
+      for (const algo of algos) {
+        const algoName = algo.name || algo.algo || '';
+        if (!algoName) continue;
+        
+        let price = 0;
+        if (algo.suggested_price?.amount) {
+          price = parseFloat(algo.suggested_price.amount);
+        } else if (algo.price) {
+          price = parseFloat(algo.price);
+        } else if (algo[currency]) {
+          price = parseFloat(algo[currency]);
+        }
+        
+        if (price > 0) {
+          result[algoName] = {
+            price,
+            unit: algo.suggested_price?.unit || algo.unit || 'TH',
+            currency: currency,
+            display: algo.display || algoName,
+            stats: algo.stats
+          };
+        }
+      }
+      
+      // Cache the result
+      mrrRatesCache.set(cacheKey, {
+        data: result,
+        timestamp: now
+      });
+      
+      return result;
+    }
+    
+    return null;
   } catch (error) {
     console.error("Failed to fetch MRR rates:", error);
     return null;
   }
 }
 export const normalizeAlgo = normalizeAlgoForNiceHash;
+
+/**
+ * Get MRR rate for a specific algorithm with fallback
+ * @param {string} algo - Algorithm name
+ * @param {string} currency - Currency (default: "BTC")
+ * @returns {Promise<number>} Market rate
+ */
+export async function getMrrRate(algo, currency = "BTC") {
+  try {
+    const rate = await fetchMrrMarketRate(algo, currency);
+    if (rate > 0) return rate;
+    
+    // Try all rates cache
+    const allRates = await fetchAllMrrRates(currency);
+    if (allRates) {
+      const mrrAlgo = getMrrAlgoKey(algo);
+      const found = allRates[mrrAlgo] || allRates[algo];
+      if (found && found.price > 0) return found.price;
+    }
+    
+    // Try with different algorithm variations
+    const variations = [
+      algo,
+      algo.toUpperCase(),
+      algo.toLowerCase(),
+      normalizeAlgoForNiceHash(algo)
+    ];
+    
+    for (const variant of variations) {
+      const rate = await fetchMrrMarketRate(variant, currency);
+      if (rate > 0) return rate;
+    }
+    
+    return 0;
+  } catch (error) {
+    console.error(`Failed to get MRR rate for ${algo}:`, error);
+    return 0;
+  }
+}

@@ -1,5 +1,6 @@
 // server/monitor.js - SIMPLIFIED WORKING VERSION
 
+import { logger } from './logger.js';
 import { db } from './db.js';
 import { mrrApiCall, mrrConfigs } from './mrr.js';
 import { resolveNhClient, getNiceHashApp, isAggregate, nhConfigs } from './nh.js';
@@ -483,15 +484,25 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
         // ============================================================
         // PROCESS RENTALS - SIMPLIFIED
         // ============================================================
-        let realRentalCount = 0;
+        const realRentals = [];
+        const ghostRentalIds = [];
 
         for (const [rentalId, r] of rentalsMap) {
-          // Skip if not a real rental
           const info = extractRentalInfo(r);
           if (!isRealRental(r, info)) {
-            console.log(`[monitor:${acct}] Skipping ghost rental: ${rentalId}`);
-            continue;
+            ghostRentalIds.push(rentalId);
+          } else {
+            realRentals.push([rentalId, r]);
           }
+        }
+
+        if (ghostRentalIds.length > 0) {
+          console.log(`[monitor:${acct}] Skipping ${ghostRentalIds.length} ghost rentals.`);
+        }
+
+        let realRentalCount = 0;
+        for (const [rentalId, r] of realRentals) {
+          const info = extractRentalInfo(r);
 
           const liveRig = getRigLookupKeys(r).map(key => rigLookupByRentalId.get(key)).find(Boolean);
           if (liveRig) {

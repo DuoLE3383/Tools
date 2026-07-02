@@ -104,13 +104,6 @@ async function fetchWithRetry(url, options = {}, maxRetries = 3, delay = 1000) {
         signal: AbortSignal.timeout(10000),
       });
 
-      // Add Content-Type check to handle non-JSON responses (e.g., Cloudflare pages)
-      const contentType = response.headers.get('content-type');
-      if (response.ok && contentType && !contentType.includes('application/json')) {
-        const errorText = await response.text().catch(() => 'Non-JSON response');
-        throw new Error(`Invalid Content-Type from external API: ${contentType}. Body: ${errorText.slice(0, 200)}`);
-      }
-
       if (response.ok) {
         return response;
       }

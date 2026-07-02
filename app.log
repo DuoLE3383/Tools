@@ -1,0 +1,95 @@
+🔪 Killing process on port 3003...
+🚀 Starting backend (optimised)...
+✅ Backend started on port 3003 – Press Ctrl+C to stop.
+[WS] WebSocket server initialized at /api/v2/prices/ws
+[init] Initializing database...
+[init] Merging databases into stats.db...
+📂 Target database: /home/duole/Tools/data/stats.db
+✅ Target schema is ready.
+
+🔄 Merging mining_trends.db...
+  ✅ Copied table mining_opportunities (12 columns)
+  🗑️ Deleted mining_trends.db
+
+✅ All databases merged into stats.db
+[init] Database merge completed.
+[init] Cleaning cache...
+[init] Wiping persistent cache for fresh start...
+✨ Persistent cache (stats_cache) cleared.
+[init] Initializing mining training DB...
+[init] Loading stats...
+[init] Migrating old CSV files...
+[migrate] Ensuring database schema...
+[migrate] ✅ Schema is up to date.
+[migrate] Scanning for CSV/XLSX files...
+[migrate] No CSV or XLSX files found.
+[migrate] ✅ All done.
+[init] Initializing MRR configs...
+[init] Repairing stored client tags...
+[init] Initializing app...
+🚀 Initializing system...
+[auth] Invalidated all sessions (startup); auth_epoch=90
+✅ Auth Configuration Loaded:
+   - ADMIN_USER: admin
+   - JWT_SECRET: ******** (Set)
+   - ADMIN_PASS: ******** (Set)
+[mrr:init] Loaded nonce baseline for Key 92086be2...: 9223372036870091929
+[mrr:init] Loaded nonce baseline for Key 26a32e6a...: 9223372036865975537
+[mrr:init] Loaded nonce baseline for Key e7b0d999...: 9223372036867253521
+[mrr:init] Loaded nonce baseline for Key f36cce5f...: 9223372036873588233
+[mrr:clock] Synchronizing with MiningRigRentals server time...
+[mrr:clock] Significant drift detected! Offset: -1556ms. (RTT: 467ms)
+[sync] Starting background synchronization...
+[NiceHash] First-time function delay (1s): /main/api/v2/pools
+[NiceHash] First-time function delay (1s): /main/api/v2/pools
+[NiceHash] First-time function delay (1s): /main/api/v2/pools
+[NiceHash] First-time function delay (1s): /main/api/v2/pools
+[NiceHash] First-time function delay (1s): getServerTime
+[init] Registering routes...
+[Routes] All routes registered
+[WS] WebSocket server initialized at /api/v2/prices/ws
+--- NiceHash API Toolbox Server Started ---
+Environment: PRODUCTION
+Listening on: http://localhost:3003
+WebSocket on: ws://localhost:3003/api/v2/prices/ws
+[NiceHash] First-time function delay (1s): getServerTime
+[NiceHash] First-time function delay (1s): getServerTime
+[NiceHash] First-time function delay (1s): getServerTime
+[NiceHash] First-time function delay (1s): getServerTime
+✅ Connection verified. Server Time: 7/3/2026, 3:04:11 AM
+[MRR] First-time endpoint delay (3s): /rig/mine
+[MRR] First-time endpoint delay (3s): /rig/mine
+[MRR] First-time endpoint delay (3s): /rig/mine
+[MRR] First-time endpoint delay (3s): /rig/mine
+[Mining Scanner] Initializing...
+[mine:scan] Starting scanner (every 15 min)
+[mine:scan] Scanning...
+[CoinGecko] Fetching coin prices...
+[mrr:LUCKY] HMAC failed (Not Authenticated - Invalid Key - rig/81), retrying with Legacy SHA1 Concatenation...
+[3:04:18 AM] [mrr:LN] endpoint=/rig/mine nonce=9223372036867253525 status=200 msg=OK
+[MRR] First-time endpoint delay (3s): /rig/:id/pool
+[3:04:18 AM] [mrr:LUCKY] endpoint=/rig/mine nonce=9223372036873588244 status=401 msg=Not Authenticated - Invalid Key - rig/81
+[3:04:19 AM] [api:BT] -> GET /api/v2/hashpower/order/price?algorithm=RANDOMXMONERO&client=BT
+[3:04:19 AM] [api:BT] <- 401 GET /api/v2/hashpower/order/price?algorithm=RANDOMXMONERO&client=BT 5ms
+[3:04:19 AM] [api:SYSTEM] -> GET /api/v2/mrr/rentals?algo=RANDOMXMONERO&limit=1
+[3:04:19 AM] [api:SYSTEM] <- 401 GET /api/v2/mrr/rentals?algo=RANDOMXMONERO&limit=1 1ms
+[3:04:19 AM] [mrr:SL] endpoint=/rig/mine nonce=9223372036865975540 status=200 msg=OK
+[MRR] First-time endpoint delay (3s): /rig/:id/pool
+[3:04:20 AM] [mrr:BT] endpoint=/rig/mine nonce=9223372036870091931 status=200 msg=OK
+[MRR] First-time endpoint delay (3s): /rig/:id/pool
+[3:04:22 AM] [mrr:LN] endpoint=/rig/338167;338036;364089;364092;364090;364091;364182;364180;364183;364181;341705;341706;334241;334242;333250;332636;332644;332639;332637;332641;332640;332643;332638;332749;332746;332744;332739;332747;332748;332752;332750;332745;332742;332751;331860;331865;331864;331861;331866;331862;353739;353737;353738;336464;336467;338545;338542;341229;341230;338549;341231;341233;338546;338550;341232;341236;338551;338547;341238;338548;316648;316655;316656;335793;316657;365676;365675;365677;316654;316759;316762;316763;316764;332544;332543;332803;332802;368754;368755;368753;333970;329720;332568;329724;329727;329721;329723;332553;332552;332571;332572;332633;332634;363188;363195;363192;363194;363197;363191;363196;363193;363190;363189;363198;363199;364414;364419;364420;364418;368782;368783;336664;333284;333288;333289;333290;333751;333749;333752;333750;333994/pool nonce=9223372036867253532 status=200 msg=OK
+[3:04:23 AM] [mrr:SL] endpoint=/rig/372494;372497;372496;372495;369698;370391;370390;369307;369325;369681;369680;369789;369788;369787;369790;371859;371858;377044;377043;369457;377052;377050;377051;372441;377056;377057;377054;369305;369314;370123;370124;370922;370923;371646;371648;371649;371647;371663;371664;371845;371844;371846;371850;371847;371849;371848;372666;373527;373528;373525;373526;369808;369809;369811;369810;370372;370373;370371;370370;372978;372976;372979;372977;369458;369459;369460;369462;369463;369659;369658;369657;377046;377049;377047;377048;370271;370274;370273;370272;371996;371995;371997;372788;373724;373725;373727;373726/pool nonce=9223372036865975548 status=200 msg=OK
+[3:04:24 AM] [mrr:BT] endpoint=/rig/300805;320093;336474;336473;336472;366053;366056;366055;366054;249923;320309;320308;320307;299476;299558;299559;332619;264822;299617;299618;317720;317713;317712;317715;318345;319766;319767;319765;336449;321263;321264;332708;332709;353907;353908;353904;353905;353906;353909;353970;353971;353972;354897;354898;354899;360321;360323;360320;360322;362608;362609;291243;291680;293664;317078;317738;318187;318186;318817;318819;318820;318818;318821;318822;252456;256835;291451;299500;301706;249778;266339;251312;251440;290653;318249;325183;291674;325185;325187;316863;317735;318261;361978;361981;361979;361980;361977;362558;362555;362556;362557;362867;362866;362868;362869;367705;367706;367704;367703;367702;367701;368307;368306;368308;368309;368310;354745;336435;354747;354746;354802;354800;348843;354801;366914;336442;353741;353742;353740;362562;362561;362560;362563;366916;366915;366917;367637;367645;367639;367643;367638;367634;367642;367647;367640;367644;367635;367641;367646;367636;363908;363906;363907;299917;368391;368393;368392;300178;300176;336446;299951;317781;300260;299661;353319;353322;363054;362386;355562;355561;363052;363053;355571;355570;355568;355569;355699;355697;355698;355726;355725;355850;355854;355852;355853;355851;355855;355857;355859;355858;355856;362283;362291;362287;362289;362290;362293;363837;363838;362285;362288;362286;362284;362292;332173;332174;332175;332177;332176;332209;291932;292002;293263;292043;316851;318349;318350;318585;318586;318684;318683;318685;319820;319821;320897;319949/pool nonce=9223372036870091940 status=200 msg=OK
+[3:04:25 AM] Starting check for 4 accounts...
+[MRR] First-time endpoint delay (3s): /rental
+[MRR] First-time endpoint delay (3s): /rental
+[MRR] First-time endpoint delay (3s): /rental
+[MRR] First-time endpoint delay (3s): /rental
+[MRR] First-time endpoint delay (3s): /rental
+[MRR] First-time endpoint delay (3s): /rental
+[MRR] First-time endpoint delay (3s): /rental
+[MRR] First-time endpoint delay (3s): /rental
+[mrr:LUCKY] HMAC failed (Not Authenticated - Invalid Key - rig/81), retrying with Legacy SHA1 Concatenation...
+[3:04:26 AM] [mrr:LUCKY] endpoint=/rig/mine nonce=9223372036873588265 status=401 msg=Not Authenticated - Invalid Key - rig/81
+[api] Received SIGINT, shutting down...
+[api] Server closed
