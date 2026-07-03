@@ -44,7 +44,15 @@ function StatTile({ label, value }) {
 function MinerAccountCard({ account }) {
   const workers = Array.isArray(account.workers) ? account.workers : [];
   const onlineWorkers = workers.filter((worker) => worker.online !== false);
-  const market = account.market || {};
+  const {
+    balance = 0,
+    paid = 0,
+    immature = 0,
+    currentHashrate = 0,
+    averageHashrate = 0,
+    market = {},
+    success,
+  } = account;
 
   return (
     <article className="panel miner-account-card">
@@ -53,8 +61,8 @@ function MinerAccountCard({ account }) {
           <h2>{account.coin}</h2>
           <p className="miner-muted">{account.pool}</p>
         </div>
-        <span className={`miner-status ${account.success ? "ok" : "error"}`}>
-          {account.success ? "Online" : "Error"}
+        <span className={`miner-status ${success ? "ok" : "error"}`}>
+          {success ? "Online" : "Error"}
         </span>
       </div>
 
@@ -65,12 +73,12 @@ function MinerAccountCard({ account }) {
       ) : (
         <>
           <div className="miner-stats-grid">
-            <StatTile label="Current" value={formatHashrate(account.currentHashrate)} />
-            <StatTile label="Average" value={formatHashrate(account.averageHashrate)} />
+            <StatTile label="Current" value={formatHashrate(currentHashrate)} />
+            <StatTile label="Average" value={formatHashrate(averageHashrate)} />
             <StatTile label="Workers" value={`${onlineWorkers.length}/${workers.length}`} />
-            <StatTile label="Balance" value={formatNumber(account.balance)} />
-            <StatTile label="Paid" value={formatNumber(account.paid)} />
-            <StatTile label="Immature" value={formatNumber(account.immature)} />
+            <StatTile label="Balance" value={formatNumber(balance)} />
+            <StatTile label="Paid" value={formatNumber(paid)} />
+            <StatTile label="Immature" value={formatNumber(immature)} />
           </div>
 
           <div className="miner-market-panel">
@@ -91,12 +99,11 @@ function MinerAccountCard({ account }) {
                 }
               />
             </div>
-            <div
-              className={`miner-profit-note ${
-                market.cheapest ? "ok" : "muted"
-              }`}
-            >
-              {market.profitable || market.error || "Market comparison unavailable"}
+            <div className={`miner-profit-note ${market.cheapest ? 'ok' : 'muted'}`}>
+              {market.cheapest
+                ? `Cheapest: ${market.cheapest.source} at ${formatBtc(market.cheapest.price)}`
+                : market.error || 'Market comparison unavailable'
+              }
             </div>
             {(market.nicehash?.error || market.mrr?.error) && (
               <div className="miner-market-errors">
@@ -175,7 +182,7 @@ export default function MinerPage({ onCall, onNavigateHome }) {
     <main className="miner-page">
       <header className="miner-page-header">
         <div>
-          <h1>Miner Accounts</h1>
+          <h1>Miner Dashboard</h1>
           <p>HeroMiners, 2Miners, K1Pool, and Kryptex wallet monitor with NiceHash and MRR market prices</p>
         </div>
         <div className="miner-header-actions">
@@ -183,7 +190,7 @@ export default function MinerPage({ onCall, onNavigateHome }) {
             Dashboard
           </button>
           <button className="btn-pro primary" onClick={loadAccounts} disabled={loading}>
-            {loading ? "Refreshing..." : "Refresh"}
+            {loading ? "Waiting..." : error ? "Failed" : "Refresh"}
           </button>
         </div>
       </header>

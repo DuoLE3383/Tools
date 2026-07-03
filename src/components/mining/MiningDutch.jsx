@@ -221,7 +221,7 @@ export default function MiningDutch({ onCall }) {
             textDecoration: "underline",
           }}
         >
-          {loading ? "…" : "Refresh"}
+          {loading ? "Waiting..." : error ? "Failed" : "Refresh"}
         </button>
       </div>
 

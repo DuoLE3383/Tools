@@ -36,6 +36,7 @@ export default function App() {
   const [mrrPoolData, setMrrPoolData] = useState(null);
   const [mrrPoolRigId, setMrrPoolRigId] = useState('');
   const [mrrPoolRentalId, setMrrPoolRentalId] = useState('');
+  const [heroMinersModalOpen, setHeroMinersModalOpen] = useState(false);
   const [completionCalculatorContext, setCompletionCalculatorContext] = useState(null);
 
   const inFlightRequests = useRef(new Map());
@@ -431,9 +432,11 @@ export default function App() {
               onClose={() => setMrrPoolData(null)}
             />
           </article>
-          <article className="panel">
-            <HeroMinersCard mrrClient={mrrClient} onCall={callApi} />
-          </article>
+          <div className="panel-placeholder">
+            <button className="btn-pro secondary" onClick={() => setHeroMinersModalOpen(true)}>
+              Open HeroMiners Stats
+            </button>
+          </div>
           <article className="panel">
             <MiningCoin onCall={callApi} nhClient={nhClient} />
           </article>
@@ -469,6 +472,15 @@ export default function App() {
         <pre className="response-body modal" style={{ maxHeight: '60vh', overflow: 'auto' }}>
           {JSON.stringify(modalContent || output, null, 2)}
         </pre>
+      </Modal>
+      <Modal
+        isOpen={heroMinersModalOpen}
+        onClose={() => setHeroMinersModalOpen(false)}
+        title="HeroMiners Account Stats"
+        maxWidth="800px"
+      >
+        {/* Render HeroMinersCard only when the modal is open to fetch data on demand */}
+        {heroMinersModalOpen && <HeroMinersCard mrrClient={mrrClient} onCall={callApi} />}
       </Modal>
     </div>
     </RentedRigProvider>

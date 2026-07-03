@@ -4,7 +4,7 @@ import { createHash, createHmac } from 'crypto';
 import { db } from './db.js';
 import { normalizeCredential, sanitizeMrrEndpoint } from './utils.js';
 import { isAggregate, resolveNhClient, getNiceHashApp } from './nh.js';
-
+ 
 const mrrLastNonceByClient = new Map();
 const mrrInitTracker = new Set();
 let mrrClockOffset = 0n;
@@ -704,6 +704,28 @@ export async function mrrRequest(endpoint, req, res, method = 'GET', body = unde
   });
   res.set('X-MRR-Client', clientName);
   res.status(statusCode).json(data);
+}
+
+function getPoolApiEndpoint(poolName, coin, address) {
+  const lowerPool = String(poolName).toLowerCase();
+  const lowerCoin = String(coin).toLowerCase();
+
+  if (lowerPool.includes('2miners')) {
+    // 2Miners uses different subdomains for solo vs. pool
+    if (lowerPool.includes('solo')) {
+      return `https://solo-${lowerCoin}.2miners.com/accounts/${address}`;
+    }
+    return `https://${lowerCoin}.2miners.com/api/accounts/${address}`;
+  }
+  if (lowerPool.includes('k1pool')) {
+    return `https://k1pool.com/api/accounts/${address}`;
+  }
+  if (lowerPool.includes('kryptex')) {
+    // Kryptex has a specific API path structure
+    return `https://pool.kryptex.com/${lowerCoin}/api/v2/miner/stats/${address}`;
+  }
+  // Fallback for other pools like herominers
+  return `https://${lowerCoin}.herominers.com/api/accounts/${address}`;
 }
 
 export async function fetchAggregatedRentals(query = {}, clientParam = 'BT') {

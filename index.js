@@ -8,7 +8,7 @@ import { fileURLToPath } from 'url';
 import { setupWebSocket } from './server/ws.js';
 import { registerRoutes } from './server/routes.js';
 import { startMiningOpportunityScanner } from './server/miningOpportunityNotifier.js';
-import { createApp, initializeApp } from './server/app.js';
+import { createApp, initializeApp } from './server/app.js'; // ✅ CORRECT IMPORT
 import { verifyToken } from './server/auth.js';
 import { resolveNhClient, getNiceHashApp, nhConfigs } from './server/nh.js';
 import { mrrApiCall, initMrrConfigs, mrrConfigs, defaultMrrClient } from './server/mrr.js';
@@ -17,6 +17,7 @@ import { migrateOldCsvToDb } from './server/migrate.js';
 import { initMiningTrainingDb } from './server/miningTrainingDb.js';
 import { setDb } from './server/db.js';
 import { fetchAndSaveCoinPrices } from './server/coinGecko/coinGeckoClient.js';
+import { authMiddleware } from './server/auth.js';
 // ✅ CORRECT IMPORT – use the scripts folder
 import { mergeDatabases } from './data/merge.js';
 
@@ -178,7 +179,7 @@ async function startServer() {
     const server = http.createServer(app);
 
     // Setup WebSocket
-    setupWebSocket(server);
+    setupWebSocket(server, { authMiddleware });
 
     // Start the server
     server.listen(PORT, '0.0.0.0', () => {
