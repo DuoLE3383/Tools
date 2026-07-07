@@ -272,7 +272,10 @@ export default function MrrPoolManager({
   };
 
   const content = (
+    
     <div className="mrr-pool-manager-inner">
+            {/* <CryptoRatePage onCall={onCall} /> */}
+
       <div
         className="panel-header"
         style={{
@@ -282,7 +285,7 @@ export default function MrrPoolManager({
           alignItems: "center",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: "15px" }}>
+        {/* <div style={{ display: "flex", alignItems: "center", gap: "15px" }}>
           <h3
             style={{
               margin: 0,
@@ -313,13 +316,14 @@ export default function MrrPoolManager({
               ))}
             </select>
           )}
-        </div>
-        {onClose && (
+        </div> */}
+        {/* {onClose && (
           <button className="close-button" onClick={onClose}>
             &times;
           </button>
-        )}
+        )} */}
       </div>
+      
       <div className="panel-body" style={{ padding: "5px 0" }}>
         {loading && (
           <div style={{ textAlign: "center", opacity: 0.6, padding: "1rem" }}>
@@ -809,22 +813,21 @@ export default function MrrPoolManager({
           </div>
         )}
       </div>
-      <CryptoRatePage onCall={onCall} />
     </div>
   );
 
-  if (onClose && (rentalIds || externalPoolData || externalRigId)) {
-    return (
-      <Modal
-        isOpen={true}
-        onClose={onClose}
-        title="Pool Configuration"
-        maxWidth="1000px"
-      >
-        {content}
-      </Modal>
-    );
-  }
+  // if (onClose && (rentalIds || externalPoolData || externalRigId)) {
+  //   return (
+  //     <Modal
+  //       isOpen={true}
+  //       onClose={onClose}
+  //       title="Pool Configuration"
+  //       maxWidth="1000px"
+  //     >
+  //       {content}
+  //     </Modal>
+  //   );
+  // }
 
   return content;
 }

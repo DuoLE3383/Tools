@@ -3,7 +3,9 @@ import { WebSocketServer } from 'ws';
 import url from 'url';
 import { scrapeHeroMinersGlobal } from './miners/heroMiners.js';
 import { scrapeMiningDutchGlobal } from './miners/miningDutch.js';
+import { verifyToken } from './auth.js';
 import { getBtcPrice } from './utils/priceUtils.js';
+import { WS_PATH } from './constants.js';
 
 // ============================================
 // STATE
@@ -22,7 +24,7 @@ const ACTION_HANDLERS = {
 // ============================================
 // SETUP WEBSOCKET SERVER
 // ============================================
-export function setupWebSocket(server, { authMiddleware } = {}) {
+export function setupWebSocket(server) {
   if (!server) {
     throw new Error('[WS] Server instance required');
   }
@@ -30,55 +32,34 @@ export function setupWebSocket(server, { authMiddleware } = {}) {
   wss = new WebSocketServer({ noServer: true });
 
   // Handle upgrade requests
-  server.on('upgrade', (request, socket, head) => {
+  server.on('upgrade', async (request, socket, head) => {
     const { pathname, query } = url.parse(request.url, true);
 
-    // Check if this is our WebSocket endpoint
-    if (pathname !== '/api/v2/prices/ws') {
+    if (pathname !== WS_PATH) {
       socket.destroy();
       return;
     }
 
-    // Extract token from query or headers
-    const token = query.token ||
-                  request.headers.authorization?.replace('Bearer ', '') ||
-                  (request.url.includes('?token=') ? new URLSearchParams(request.url.split('?')[1]).get('token') : null);
+    try {
+      const token = query.token ||
+                    request.headers.authorization?.replace('Bearer ', '') ||
+                    (request.url.includes('?token=') ? new URLSearchParams(request.url.split('?')[1]).get('token') : null);
 
-    // If auth middleware is provided, use it
-    if (authMiddleware) {
-      const req = {
-        headers: {
-          ...request.headers,
-          authorization: token ? `Bearer ${token}` : undefined,
-        },
-        query,
-        url: request.url,
-      };
-      
-      const res = {};
-      
-      authMiddleware(req, res, (err) => {
-        if (err || !req.user) {
-          console.error('[WS] Auth failed:', err?.message || 'No user');
-          socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
-          socket.destroy();
-          return;
-        }
-        
-        // Store user info for later use
-        request.user = req.user;
-        
-        wss.handleUpgrade(request, socket, head, (ws) => {
-          wss.emit('connection', ws, request);
-        });
-      });
-    } else {
-      // No auth required - accept all connections
-      console.log('[WS] No auth middleware provided - accepting all connections');
-      
+      if (!token) throw new Error('No token provided');
+
+      const user = await verifyToken(token);
+      if (!user) throw new Error('Invalid or expired token');
+
+      // Attach user to the request for use in the connection handler
+      request.user = user;
+
       wss.handleUpgrade(request, socket, head, (ws) => {
         wss.emit('connection', ws, request);
       });
+    } catch (err) {
+      console.error(`[WS] Auth failed: ${err.message}`);
+      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+      socket.destroy();
     }
   });
 
@@ -86,6 +67,9 @@ export function setupWebSocket(server, { authMiddleware } = {}) {
   wss.on('connection', (ws, request) => {
     const user = request?.user;
     console.log(`[WS] Client connected${user ? ` (${user.username || user.id})` : ''}`);
+
+    // Initialize keep-alive state
+    ws.isAlive = true;
 
     // Send welcome message
     ws.send(JSON.stringify({
@@ -184,7 +168,7 @@ export function setupWebSocket(server, { authMiddleware } = {}) {
     clearInterval(pingInterval);
   });
 
-  console.log('[WS] WebSocket server initialized at /api/v2/prices/ws');
+  console.log(`[WS] WebSocket server initialized at ${WS_PATH}`);
   return wss;
 }
 
@@ -284,8 +268,12 @@ export function broadcast(data) {
   let sentCount = 0;
   wss.clients.forEach((client) => {
     if (client.readyState === client.OPEN) {
-      client.send(payload);
-      sentCount++;
+      try {
+        client.send(payload);
+        sentCount++;
+      } catch (err) {
+        console.error(`[WS] Broadcast failed for one client: ${err.message}`);
+      }
     }
   });
 

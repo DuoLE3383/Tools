@@ -406,11 +406,4 @@ export function registerMiscRoutes(app) {
     await handleMiningOpportunityScan(req, res);
   }));
 
-  // ─── Miner Pool Accounts ────────────────────────────────────
-  app.get("/api/v2/miner/accounts", asyncHandler(async (req, res) => {
-    const targets = buildMinerTargets();
-    const accountResults = await Promise.all(targets.map(fetchMinerAccount));
-    const accounts = await Promise.all(accountResults.map(attachMiningMarkets));
-    res.json({ success: true, accounts });
-  }));
 }

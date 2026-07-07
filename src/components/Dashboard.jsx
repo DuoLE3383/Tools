@@ -1,10 +1,18 @@
 import { useEffect, useState } from "react";
-import Pools from "./Pools";
 import Modal from "./Modal";
-import NiceHash from "./nicehash/NiceHash";
-import MiningRigSection from "./mrr/MiningRigSection";
-import { NiceHashOrderProvider } from "./nicehash/NiceHashContext.jsx";
+import TelegramManager from "./TelegramManager.jsx";
+import { NiceHashOrderProvider, useNiceHashOrders } from "./nicehash/NiceHashContext.jsx";
 import HashrateCalculator from "./HashrateCalculator";
+
+function RefreshOrdersButton() {
+  const { loading, refresh } = useNiceHashOrders();
+
+  return (
+    <button className="btn-pro dashboard-btn" onClick={refresh} disabled={loading}>
+      {loading ? "Refreshing..." : "Refresh Orders"}
+    </button>
+  );
+}
 
 export default function Dashboard({
   state,
@@ -132,7 +140,13 @@ export default function Dashboard({
             ? "mining"
             : path === "/miner"
               ? "miner"
-              : "dashboard",
+              : path === "/nicehash"
+                ? "nicehash"
+                : path === "/mrr"
+                  ? "mrr"
+                  : path === "/orders"
+                    ? "orders"
+                    : "dashboard",
     });
   };
 
@@ -165,6 +179,7 @@ export default function Dashboard({
               </span>
             </div>
             <div className="dashboard-actions-row">
+              <TelegramManager onCall={callApi} mrrClient={state.mrrClient} />
               <div className="dashboard-user-info">
                 <span className="dashboard-user-label">Logged in as</span>
                 <span className="dashboard-user-name">
@@ -207,6 +222,27 @@ export default function Dashboard({
                 Calculator
               </button>
               <a
+                href="/mrr"
+                className="btn-pro secondary dashboard-btn"
+                onClick={handleNavClick("/mrr")}
+              >
+                MRR
+              </a>
+              <a
+                href="/nicehash"
+                className="btn-pro secondary dashboard-btn"
+                onClick={handleNavClick("/nicehash")}
+              >
+                NiceHash
+              </a>
+              <a
+                href="/orders"
+                className="btn-pro secondary dashboard-btn"
+                onClick={handleNavClick("/orders")}
+              >
+                Orders
+              </a>
+              <a
                 href="/cryptorate"
                 className="btn-pro secondary dashboard-btn"
                 onClick={handleNavClick("/cryptorate")}
@@ -218,7 +254,7 @@ export default function Dashboard({
                 className="btn-pro secondary dashboard-btn"
                 onClick={handleNavClick("/mining")}
               >
-                Mining
+                AI
               </a>
               <a
                 href="/miner"
@@ -239,28 +275,45 @@ export default function Dashboard({
             nhClient={state.nhOrderClient}
             callApi={callApi}
           >
-            {/* NICEHASH SECTION */}
             <article className="panel">
-              <NiceHash
-                key={state.nhOrderClient}
-                onCall={handleMiningCall}
-                output={state.niceHashData}
-                algorithm={state.algorithm}
-                market={state.market}
-                nhClient={state.nhOrderClient}
-                setNhClient={setNhOrderClient}
-              />
-            </article>
-
-            {/* MINING RIG SECTION */}
-            <article className="panel">
-              <MiningRigSection
-                onCall={handleMiningCall}
-                rigsData={state.rigsData}
-                mrrClient={state.mrrClient}
-                setMrrClient={setMrrClient}
-                onOpenMrrPools={handleOpenMrrPools}
-              />
+              <div className="button-group" style={{ marginTop: 0 }}>
+                <RefreshOrdersButton />
+                <a
+                  href="/mrr"
+                  className="btn-pro secondary"
+                  onClick={handleNavClick("/mrr")}
+                >
+                  Mining Rig Rentals
+                </a>
+                <a
+                  href="/nicehash"
+                  className="btn-pro secondary"
+                  onClick={handleNavClick("/nicehash")}
+                >
+                  NiceHash Order Management
+                </a>
+                <a
+                  href="/orders"
+                  className="btn-pro secondary"
+                  onClick={handleNavClick("/orders")}
+                >
+                  Active Orders
+                </a>
+                <a
+                  href="/miner"
+                  className="btn-pro secondary"
+                  onClick={handleNavClick("/miner")}
+                >
+                  Miner
+                </a>
+                <a
+                  href="/mining"
+                  className="btn-pro secondary"
+                  onClick={handleNavClick("/mining")}
+                >
+                  Opportunities
+                </a>
+              </div>
             </article>
           </NiceHashOrderProvider>
         </div>

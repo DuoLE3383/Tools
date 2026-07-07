@@ -3,6 +3,9 @@ import Login from './src/components/Login.jsx';
 import Dashboard from './src/components/Dashboard.jsx';
 import MiningPage from './src/components/mining/MiningPage.jsx';
 import MinerPage from './src/components/MinerPage.jsx';
+import MrrPage from './src/components/mrr/MrrPage.jsx';
+import NiceHashPage from './src/components/nicehash/NiceHashPage.jsx';
+import ActiveOrdersPage from './src/components/nicehash/ActiveOrdersPage.jsx';
 import { RentedRigProvider } from './src/components/mrr/RentedRigContext.jsx';
 import CryptoRatePage from './src/components/CryptoRatePage.jsx';
 import './src/App.css';
@@ -33,6 +36,8 @@ const initialState = {
       ? 'miner'
       : (typeof window !== 'undefined' && window.location.pathname === '/cryptorate')
         ? 'cryptorate'
+        : (typeof window !== 'undefined' && window.location.pathname === '/orders')
+          ? 'orders'
         : 'dashboard',
   activeDashboard: 'nicehash',
 };
@@ -176,13 +181,15 @@ export default function App() {
   }, [addDebugLog]);
 
   const handleLogout = useCallback(() => {
+    window.history.pushState({}, '', '/');
     localStorage.removeItem('token');
     setAuthToken(null);
     setCurrentUser(null);
     setSessionReady(true);
     apiCache.current.clear();
     apiCache.current.clearInflight();
-    dispatch({ type: 'RESET_STATE' });
+    // Reset state and also reset the view to dashboard
+    dispatch({ type: 'RESET_STATE', payload: { view: 'dashboard' } });
     addDebugLog('Logged out, token cleared.', 'info');
   }, [addDebugLog]);
 
@@ -304,14 +311,20 @@ export default function App() {
           payload: { method, path: finalPath, status: `${res.status} ${res.statusText}`, durationMs: duration }
         });
 
-        // Handle 401/403 - unauthorized or expired session
+        // Handle 401/403. Do not let feature endpoints log the user out:
+        // upstream services can return auth-looking errors too. The dedicated
+        // session verifier below is responsible for clearing expired app tokens.
         if (res.status === 401 || res.status === 403) {
-          const isProxyFailure = data?.msg?.includes('Invalid Key') || data?.message?.includes('Invalid Key');
-          if (!isProxyFailure) {
+          const isAppAuthFailure =
+            path.startsWith('/api/auth/profile') ||
+            path.startsWith('/api/auth/users') ||
+            path.startsWith('/api/auth/logout');
+
+          if (isAppAuthFailure) {
             addDebugLog(`Session expired (${res.status}), logging out`, 'error');
             handleLogout();
           }
-          return { success: false, error: 'Unauthorized' };
+          return { success: false, error: data?.error || data?.message || 'Unauthorized' };
         }
 
         // Check for API errors
@@ -452,7 +465,7 @@ export default function App() {
       const path = window.location.pathname;
       dispatch({
         type: 'SET_VIEW',
-        payload: path === '/cryptorate' ? 'cryptorate' : path === '/mining' ? 'mining' : path === '/miner' ? 'miner' : 'dashboard',
+        payload: path === '/cryptorate' ? 'cryptorate' : path === '/mining' ? 'mining' : path === '/miner' ? 'miner' : path === '/nicehash' ? 'nicehash' : path === '/mrr' ? 'mrr' : path === '/orders' ? 'orders' : 'dashboard',
       });
     };
     window.addEventListener('popstate', handlePath);
@@ -478,7 +491,7 @@ export default function App() {
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
       try {
-        const res = await fetch('/api/v2/time', {
+        const res = await fetch('/api/auth/profile', {
           method: 'GET',
           headers: { Authorization: `Bearer ${authToken}` },
           signal: controller.signal,
@@ -608,16 +621,14 @@ export default function App() {
 
   if (state.view === 'mining') {
     return (
-      <RentedRigProvider callApi={callApi}>
-        <MiningPage
-          onCall={callApi}
-          nhClient={state.nhOrderClient}
-          onNavigateHome={() => {
-            window.history.pushState({}, '', '/');
-            dispatch({ type: 'SET_VIEW', payload: 'dashboard' });
-          }}
-        />
-      </RentedRigProvider>
+      <MiningPage
+        onCall={callApi}
+        nhClient={state.nhOrderClient}
+        onNavigateHome={() => {
+          window.history.pushState({}, '', '/');
+          dispatch({ type: 'SET_VIEW', payload: 'dashboard' });
+        }}
+      />
     );
   }
 
@@ -625,6 +636,47 @@ export default function App() {
     return (
       <MinerPage
         onCall={callApi}
+        onLogout={handleLogout}
+        onNavigateHome={() => {
+          window.history.pushState({}, '', '/');
+          dispatch({ type: 'SET_VIEW', payload: 'dashboard' });
+        }}
+      />
+    );
+  }
+
+  if (state.view === 'nicehash') {
+    return (
+      <NiceHashPage
+        onCall={callApi}
+        nhClient={state.nhOrderClient}
+        setNhClient={setNhOrderClient}
+        onNavigateHome={() => {
+          window.history.pushState({}, '', '/');
+          dispatch({ type: 'SET_VIEW', payload: 'dashboard' });
+        }}
+      />
+    );
+  }
+
+  if (state.view === 'mrr') {
+    return (
+      <MrrPage
+        onCall={callApi}
+        onNavigateHome={() => {
+          window.history.pushState({}, '', '/');
+          dispatch({ type: 'SET_VIEW', payload: 'dashboard' });
+        }}
+      />
+    );
+  }
+
+  if (state.view === 'orders') {
+    return (
+      <ActiveOrdersPage
+        onCall={callApi}
+        nhClient={state.nhOrderClient}
+        setNhClient={setNhOrderClient}
         onNavigateHome={() => {
           window.history.pushState({}, '', '/');
           dispatch({ type: 'SET_VIEW', payload: 'dashboard' });

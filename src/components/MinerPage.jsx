@@ -161,7 +161,10 @@ export default function MinerPage({ onCall, onNavigateHome }) {
 
   useEffect(() => {
     loadAccounts();
-    const interval = setInterval(loadAccounts, 60000);
+    // Refresh miner pool data every 60 minutes (3600000ms).
+    // The fetcher calls each pool's API + NH/MRR market prices per account,
+    // so it's relatively expensive. 60min is a good balance.
+    const interval = setInterval(loadAccounts, 3600000);
     return () => clearInterval(interval);
   }, [loadAccounts]);
 

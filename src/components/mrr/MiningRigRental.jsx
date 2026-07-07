@@ -4,6 +4,7 @@ import Modal from "../Modal";
 import TelegramManager, { useTelegram } from "../TelegramManager";
 import { calculateRemainingTime, toUtcTimestamp } from "../../core/time";
 import ErrorBoundary from "../ErrorBoundary";
+import CryptoRatePage from "../CryptoRatePage";
 // import {NiceHashOrderCard} from "../nicehash/NiceHashOrdersCard.jsx";
 
 /** Safely extracts an array from various MRR API response shapes */
@@ -829,18 +830,7 @@ export default function MiningRigRental({
         >
           Rigs Manager
         </button>
-        {/* <button
-          className="btn-pro secondary"
-          onClick={() =>
-            onCall("/api/v2/mrr/balance", {
-              query: { client: mrrClient },
-              showModal: true,
-            })
-          }
-        >
-          Balance
-        </button> */}
-        <TelegramManager onCall={onCall} mrrClient={mrrClient} />
+        <CryptoRatePage />
       </div>
 
       {/* New Rental Notification Modal */}

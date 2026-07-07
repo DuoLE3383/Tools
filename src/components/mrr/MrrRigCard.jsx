@@ -762,7 +762,6 @@ const MrrRigCard = ({
               }}
             >
               {displayAlgo}
-              {asicBoostBadge}
             </span>
             |
             {paidLabel && (

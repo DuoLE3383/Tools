@@ -42,6 +42,7 @@ export default function App() {
   const inFlightRequests = useRef(new Map());
 
   const handleLoginSuccess = useCallback((token) => {
+    window.history.pushState({}, '', '/');
     localStorage.setItem('token', token);
     setAuthToken(token);
   }, []);
@@ -52,6 +53,7 @@ export default function App() {
     setOutput(null);
     setMrrPoolData(null);
     setError('');
+    window.history.pushState({}, '', '/');
   }, []);
 
   const toDateTimeLocal = (value) => {

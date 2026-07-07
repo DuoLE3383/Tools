@@ -179,7 +179,7 @@ async function startServer() {
     const server = http.createServer(app);
 
     // Setup WebSocket
-    setupWebSocket(server, { authMiddleware });
+    setupWebSocket(server);
 
     // Start the server
     server.listen(PORT, '0.0.0.0', () => {
