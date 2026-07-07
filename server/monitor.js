@@ -238,7 +238,7 @@ async function getMonitorNhActiveOrders(clientName) {
 // ============================================================
 
 const { ALERT_COOLDOWN_MS, WARNING_RIG_THRESHOLD } = TELEGRAM_CONFIG;
-const RENTED_HEARTBEAT_MS = 15 * 60 * 1000;
+const RENTED_HEARTBEAT_MS = 5 * 60 * 1000;
 
 const lastAlertTimes = new Map([['global_summary', Date.now()]]);
 const lastRigStates = new Map();

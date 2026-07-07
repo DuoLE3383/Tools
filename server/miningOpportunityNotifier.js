@@ -499,7 +499,7 @@ export function startMiningOpportunityScanner() {
     scanMiningOpportunities(false).catch((err) => {
       console.error("[mine:scan] Scheduled scan failed:", err.message);
     });
-  }, 15 * 60 * 1000);
+  }, 60 * 60 * 1000);
 }
 
 export function stopMiningOpportunityScanner() {
