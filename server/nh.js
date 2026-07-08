@@ -39,7 +39,12 @@ export function initNhConfigs(env) {
       apiSecret: normalizeCredential(env.NICEHASH_API_SECRET_PH),
       orgId: normalizeCredential(env.NICEHASH_ORG_ID_PH),
       environment: normalizeCredential(env.NICEHASH_ENVIRONMENT || 'production'),
-
+    },
+    PH3: {
+      apiKey: normalizeCredential(env.NICEHASH_API_KEY_PH3),
+      apiSecret: normalizeCredential(env.NICEHASH_API_SECRET_PH3),
+      orgId: normalizeCredential(env.NICEHASH_ORG_ID_PH3),
+      environment: normalizeCredential(env.NICEHASH_ENVIRONMENT || 'production'),
     },
     LN: {
       apiKey: normalizeCredential(env.NICEHASH_API_KEY_LN),
@@ -271,7 +276,11 @@ export const getNiceHashApp = (client) => ({
   hashpower: {
     getBusinessBuyerStats: () => client.call({ method: 'GET', path: '/main/api/v2/hashpower/business/buyer/stats' }),
     getBusinessBuyerInfo: () => client.call({ method: 'GET', path: '/main/api/v2/hashpower/business/buyers/info' }),
-    getMyOrders: (query) => client.call({ method: 'GET', path: '/main/api/v2/hashpower/myOrders', query: { orgId: client.orgId, ...query } }),
+    getMyOrders: (query) => {
+      // Only remove our internal routing param, forward everything else
+      const { client: _c, _t, ...cleanQuery } = query || {};
+      return client.call({ method: 'GET', path: '/main/api/v2/hashpower/myOrders', query: { orgId: client.orgId, ...cleanQuery } });
+    },
     createOrder: (orderData) => client.call({ method: 'POST', path: '/main/api/v2/hashpower/order', body: orderData, query: { orgId: client.orgId } }),
     getOrderDetail: (orderId) => client.call({ method: 'GET', path: `/main/api/v2/hashpower/order/${orderId}`, query: { ts: Date.now().toString() } }),
     cancelOrder: (orderId) => client.call({ method: 'DELETE', path: `/main/api/v2/hashpower/order/${orderId}`, query: { orgId: client.orgId } }),

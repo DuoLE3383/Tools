@@ -57,7 +57,12 @@ export async function initializeApp(env) {
     initNhConfigs(env); // Initialize NiceHash configurations
     initMrrConfigs(env); // Initialize MiningRigRentals configurations
     await initAuthStore();
-    await invalidateAllSessions('startup');
+    // Only invalidate sessions if FORCE_INVALIDATE is set, otherwise let tokens expire naturally.
+    if (process.env.FORCE_INVALIDATE_SESSIONS === 'true') {
+      await invalidateAllSessions('startup');
+    } else {
+      console.log('[auth] Skipping session invalidation on startup. Set FORCE_INVALIDATE_SESSIONS=true to force.');
+    }
 
     // Validate Authentication Configuration
     const requiredAuth = ['JWT_SECRET', 'ADMIN_USER', 'ADMIN_PASS'];

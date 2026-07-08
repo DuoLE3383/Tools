@@ -300,9 +300,10 @@
 .select-trigger-pro {
   width: 100%;
   min-width: 0;
+  background-color: #64748b27;
   padding: 11px 14px;
   border: 1px solid var(--border-color);
-  background: rgba(253, 253, 253, 0.034);
+  background: rgba(94, 112, 133, 0.062);
   color: var(--text-main);
   border-radius: 12px;
   font-size: 0.95rem;
@@ -313,7 +314,7 @@
 .select-pro:focus,
 .select-trigger-pro:focus {
   outline: none;
-  border-color: rgba(103, 232, 162, 0.5);
+  border-color: rgba(114, 114, 114, 0);
   box-shadow: 0 0 0 3px var(--focus);
 }
 

@@ -157,9 +157,17 @@ export function NiceHashOrderManager({ onCall, nhClient, setNhClient }) {
     });
   };
 
-  // Sorted orders for dropdown
+  // Filter: only show ACTIVE orders in dropdown, exclude CANCELLED/COMPLETED/DEAD
+  const activeOnlyOrders = useMemo(() => {
+    return orders.filter((o) => {
+      const status = String(o.status?.code || o.status || '').toUpperCase();
+      return status === 'ACTIVE';
+    });
+  }, [orders]);
+
+  // Sorted orders for dropdown (only active)
   const sortedOrders = useMemo(() => {
-    return [...orders].sort((a, b) => {
+    return [...activeOnlyOrders].sort((a, b) => {
       let aVal, bVal;
       const key = sortConfig.key;
 

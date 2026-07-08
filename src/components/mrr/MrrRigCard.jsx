@@ -741,7 +741,7 @@ const MrrRigCard = ({
               whiteSpace: "nowrap",
             }}
           >
-            {rig.name}
+            {rig.name.length > 20 ? rig.name.substring(0, 20) + "..." : rig.name}
           </strong>
           <div
             style={{
@@ -1020,7 +1020,6 @@ const MrrRigCard = ({
         {/* ─── Right Column: Efficiency & Hashrates ─── */}
         <section style={sectionStyle}>
           <div style={{ display: "grid", gap: "4px" }}>
-            {/* Efficiency Bar */}
             <div>
               <div
                 style={{
@@ -1035,16 +1034,18 @@ const MrrRigCard = ({
                 </span>
                 <span
                   style={{
-                    fontSize: "16px",
+                    fontSize: "20px",
                     fontWeight: 800,
                     color:
-                      effNum >= 100
-                        ? "#22d3ee"
-                        : effNum > 90
-                          ? "#10b981"
+                      effNum >= 95
+                        ? "#00ff00"
+                        : effNum > 70
+                          ? "#10b948"
                           : effNum > 50
-                            ? "#fbbf24"
-                            : "#ef4444",
+                          ? "#107bb9"
+                          : effNum > 10
+                            ? "#cc7400"
+                            : "#ff0000",
                   }}
                 >
                   {eff}%
@@ -1069,7 +1070,6 @@ const MrrRigCard = ({
                 />
               </div>
             </div>
-            {/* Progress Bar */}
             <div>
               <div
                 style={{
@@ -1120,7 +1120,7 @@ const MrrRigCard = ({
                   style={{
                     width: `${Math.min(100, Math.max(0, timeProgress || 0))}%`,
                     height: "100%",
-                    background: "linear-gradient(90deg, #3b82f6, #8b5cf6)",
+                    background: "linear-gradient(90deg, #3b82f6, #cdb8ff)",
                     borderRadius: "999px",
                   }}
                 />

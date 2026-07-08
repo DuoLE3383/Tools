@@ -7,6 +7,10 @@ import React, {
   useEffect,
   useMemo,
 } from "react";
+
+// ─── Debug helper exposed globally for diagnosing ───
+let _lastOrderStatuses = [];
+export function getLastOrderStatuses() { return _lastOrderStatuses; }
 import {
   normalizeAlgoForNiceHash,
   calculatePriceComparison,
@@ -95,6 +99,7 @@ export function NiceHashOrderProvider({ children, nhClient, callApi }) {
       const data = await callApi("/api/v2/hashpower/myOrders", {
         query: { op: "LE", limit: 100, client: nhClient },
         silent: true,
+        timeout: 60000, // Increase timeout to 60 seconds for this slow endpoint
       });
 
       if (data?.error) {
@@ -107,11 +112,19 @@ export function NiceHashOrderProvider({ children, nhClient, callApi }) {
         `[NiceHashOrderContext] Fetched ${list.length} orders for client ${nhClient}`,
       );
 
-      // Separate active and inactive orders
+      // ── Debug: log the actual status values ──
+      const statuses = list.map(o => ({ id: String(o.id || '').slice(0, 8), status: o.status?.code || o.status }));
+      const uniqueStatuses = [...new Set(list.map(o => o.status?.code || o.status))];
+      console.log(`[NiceHashOrderContext] Unique statuses: ${JSON.stringify(uniqueStatuses)}`, statuses.slice(0, 5));
+      _lastOrderStatuses = { count: list.length, uniqueStatuses, sample: statuses.slice(0, 10) };
+
+      // Separate active and inactive orders — also check for status being uppercase 'ACTIVE' string or object with code 'ACTIVE'
       const activeOrders = [];
       const inactiveOrders = [];
       list.forEach((o) => {
-        if ((o.status?.code || o.status) === "ACTIVE") {
+        const rawStatus = o.status?.code || o.status;
+        const isActive = String(rawStatus).toUpperCase() === "ACTIVE";
+        if (isActive) {
           activeOrders.push(o);
         } else {
           inactiveOrders.push(o);

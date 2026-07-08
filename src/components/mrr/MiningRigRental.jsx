@@ -830,7 +830,7 @@ export default function MiningRigRental({
         >
           Rigs Manager
         </button>
-        <CryptoRatePage />
+        {/* <CryptoRatePage /> */}
       </div>
 
       {/* New Rental Notification Modal */}
