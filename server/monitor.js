@@ -1,5 +1,6 @@
-// server/monitor.js – RESTORED with robust ghost-rental filter
+// server/monitor.js - SIMPLIFIED WORKING VERSION
 
+import { logger } from './logger.js';
 import { db } from './db.js';
 import { mrrApiCall, mrrConfigs } from './mrr.js';
 import { resolveNhClient, getNiceHashApp, isAggregate, nhConfigs } from './nh.js';
@@ -15,7 +16,7 @@ import {
 import { getBtcPriceData } from '../src/core/priceUtils.js';
 
 // ============================================================
-// SIMPLE HELPERS (unchanged)
+// SIMPLE HELPERS
 // ============================================================
 
 const getAlgoDisplayName = (code) => {
@@ -97,34 +98,42 @@ function extractArray(payload, keys = ['rentals', 'rigs', 'list', 'result', 'ite
 }
 
 // ============================================================
-// ✅ ROBUST REAL RENTAL CHECK (replaces the old one)
+// SIMPLE: Check if this is a real rental (has data)
 // ============================================================
 function isRealRental(rental, info, now = Date.now()) {
   if (!rental || !info) return false;
-
+  
+  // Must have a rental ID
   const rentalId = rental.id || rental.rentalid || rental.rental_id;
   if (!rentalId) return false;
 
-  // Must have rental-specific fields (start_time, end_time, price, etc.)
+  // Rentals must have rental-specific fields
   const hasRentalFields = Boolean(
-    rental.start_time || rental.startTime || rental.end_time || rental.endTime ||
+    rental.start_time || rental.startTime || 
+    rental.end_time || rental.endTime || 
     rental.price || rental.paid
   );
   if (!hasRentalFields) return false;
 
-  // Parse start and end times
+  // Must have valid start and end times
   const startT = parseUtcTime(info.startTime || rental.start_time || rental.startTime || 0);
   const endT = parseUtcTime(info.endTime || rental.end_time || rental.endTime || 0);
-  if (startT <= 0 || endT <= 0) return false;                 // no valid timeline
+  if (startT <= 0 || endT <= 0) {
+    return false;
+  }
 
+  // Must have remaining time (not finished)
   const remainingMs = Math.max(0, endT - now);
-  if (remainingMs <= 0) return false;                         // already finished
+  if (remainingMs <= 0) {
+    return false;
+  }
 
-  // Must have some activity (hashrate or payment)
+  // Must have either hashrate or payment to be considered active
   const currentHash = parseFloat(info.hashrate?.current || 0);
   const averageHash = parseFloat(info.hashrate?.average || 0);
   const paidAmount = parseFloat(info.price?.paid || rental.price || 0);
   const hasActivity = currentHash > 0 || averageHash > 0 || paidAmount > 0;
+
   if (!hasActivity) return false;
 
   return true;
@@ -162,7 +171,7 @@ function dbAllAsync(sql, params = []) {
 }
 
 // ============================================================
-// TELEGRAM (kept inline)
+// TELEGRAM
 // ============================================================
 
 export async function getTelegramStatus() {
@@ -207,7 +216,7 @@ export async function sendTelegramInternal(message) {
 }
 
 // ============================================================
-// NICEHASH (unchanged)
+// NICEHASH
 // ============================================================
 
 const MONITOR_NH_ORDERS_TTL = 60 * 1000;
@@ -238,7 +247,7 @@ async function getMonitorNhActiveOrders(clientName) {
 // ============================================================
 
 const { ALERT_COOLDOWN_MS, WARNING_RIG_THRESHOLD } = TELEGRAM_CONFIG;
-const RENTED_HEARTBEAT_MS = 5 * 60 * 1000;
+const RENTED_HEARTBEAT_MS = 10 * 60 * 1000;
 
 const lastAlertTimes = new Map([['global_summary', Date.now()]]);
 const lastRigStates = new Map();
@@ -248,7 +257,7 @@ const monitorNhPriceErrorCache = new Map();
 let isMonitorRunning = false;
 
 // ============================================================
-// MAIN MONITOR FUNCTION (exactly as before, but using new isRealRental)
+// MAIN MONITOR FUNCTION - SIMPLIFIED
 // ============================================================
 
 export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL') {
@@ -283,8 +292,6 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
     const queuedTelegramMessages = [];
     const notifiedRentalIdsThisRun = new Set();
 
-    // ... (queueTelegramMessage, flushQueuedTelegramMessages same as original)
-
     const queueTelegramMessage = (message, options = {}) => {
       const text = String(message || '').trim();
       if (!text) return;
@@ -318,7 +325,7 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
       }
     };
 
-    // Initialize database (same as before)
+    // Initialize database
     await new Promise((resolve) => {
       db.serialize(() => {
         db.run(`CREATE TABLE IF NOT EXISTS rentals (
@@ -486,19 +493,27 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
         }
 
         // ============================================================
-        // PROCESS RENTALS – using the new isRealRental
+        // PROCESS RENTALS - SIMPLIFIED
         // ============================================================
-        let realRentalCount = 0;
+        const realRentals = [];
+        const ghostRentalIds = [];
 
         for (const [rentalId, r] of rentalsMap) {
-          // Skip if not a real rental
           const info = extractRentalInfo(r);
-          if (!isRealRental(r, info, now)) {
-            // Only log if it would have previously been considered a rental (reduces log spam)
-            const oldResult = /* we can optionally compare with old check for logging */ false;
-            if (oldResult) console.log(`[monitor:${acct}] Skipping ghost rental: ${rentalId}`);
-            continue;
+          if (!isRealRental(r, info)) {
+            ghostRentalIds.push(rentalId);
+          } else {
+            realRentals.push([rentalId, r]);
           }
+        }
+
+        if (ghostRentalIds.length > 0) {
+          console.log(`[monitor:${acct}] Skipping ${ghostRentalIds.length} ghost rentals.`);
+        }
+
+        let realRentalCount = 0;
+        for (const [rentalId, r] of realRentals) {
+          const info = extractRentalInfo(r);
 
           const liveRig = getRigLookupKeys(r).map(key => rigLookupByRentalId.get(key)).find(Boolean);
           if (liveRig) {
@@ -516,14 +531,25 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
           const startT = parseUtcTime(info.startTime);
           const endT = parseUtcTime(info.endTime);
           
-          // Extra safety – already checked in isRealRental, but keep for clarity
-          if (startT <= 0 || endT <= 0) continue;
+          // Skip if no valid times
+          if (startT <= 0 || endT <= 0) {
+            console.log(`[monitor:${acct}] Skipping rental with invalid times: ${rentalId}`);
+            continue;
+          }
+
           const remainingMs = Math.max(0, endT - now);
-          if (remainingMs <= 0) continue;
+          
+          // Skip if finished
+          if (remainingMs <= 0) {
+            console.log(`[monitor:${acct}] Skipping finished rental: ${rentalId}`);
+            await dbRunAsync(`DELETE FROM rentals WHERE id = ?`, [String(r.id)]).catch(() => {});
+            continue;
+          }
 
           // Check if currently rented
           const isRented = isLiveRigCurrentlyRented(liveRig);
           if (!isRented && !currentActiveRentalIds.has(rentalId)) {
+            // Not rented and not in active list - skip
             continue;
           }
 
@@ -630,17 +656,34 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
             info
           ));
 
-          // Send new rental notification if new
+          // Determine if this rental has non-zero activity from the MRR API data.
+          // We parse the raw hashrate values directly since info.hashrate may have stale residual data.
+          const rawCurrent = parseFloat(String(r.hashrate?.current || r.hashrate?.last_15min?.hash || 0));
+          const rawAverage = parseFloat(String(r.hashrate?.average?.hash || r.hashrate?.average || 0));
+          const rawAdvertised = parseFloat(String(r.hashrate?.advertised?.hash || r.hashrate?.advertised || 0));
+          const rawPercent = parseFloat(String(r.hashrate?.average?.percent || r.percent || 0));
+
+          const hasRealHashrate = rawCurrent > 0 || rawAverage > 0 || rawAdvertised > 0 || rawPercent > 0;
+
+          // Skip notifications for rentals with zero activity and started more than 30 min ago.
+          const startedAgo = now - startT;
+          const isOldAndDead = !hasRealHashrate && startedAgo > 1800000;
+          const isRecentlyStarted = startedAgo < 1800000; // within 30 minutes
+          const isForceNotify = forceNotify && hasRealHashrate; // force notify only sends for rentals with data
+
           const row = await dbGetAsync(`SELECT last_notified FROM rentals WHERE id = ?`, [String(r.id)]).catch(() => null);
           const lastNotified = row?.last_notified || 0;
           const isNew = lastNotified === 0;
 
-          if (forceNotify || isNew) {
-            const hbType = forceNotify ? 'MONITOR' : 'NEW RENTAL';
+          if (isOldAndDead) {
+            // Dead rental with zero hashrate — silently mark as notified, never send alert
+            console.log(`[monitor:${acct}] Suppressing NEW RENTAL for dead rental ${r.id} (${Math.floor(startedAgo / 60000)}m old, 0 hashrate)`);
+            await dbRunAsync(`UPDATE rentals SET last_notified = ? WHERE id = ?`, [now, String(r.id)]);
+          } else if (isNew && (hasRealHashrate || isRecentlyStarted)) {
+            // Legitimate new or force-notified rental
+            const hbType = 'NEW RENTAL';
             const ads = info.niceAdvertisedHashrate || info.hashrate?.advertised?.nice || info.hashrate?.advertised || 'N/A';
-            const msg = forceNotify
-              ? TelegramTemplates.rentedNotice(hbType, r, info, acct, orderDiff, remStr, getAlgoDisplayName(algo), ads)
-              : TelegramTemplates.newRental(acct, r, info.price?.paid || '0.00', info.startTime, info.endTime, getAlgoDisplayName(algo), ads);
+            const msg = TelegramTemplates.newRental(acct, r, info.price?.paid || '0.00', info.startTime, info.endTime, getAlgoDisplayName(algo), ads);
             
             queueTelegramMessage(msg, {
               type: hbType,
@@ -653,6 +696,26 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
                 notifications.push({ id: r.id, client: acct, status: 'Failed', error: err.message });
               }
             });
+          } else if (isForceNotify) {
+            const hbType = 'MONITOR';
+            const ads = info.niceAdvertisedHashrate || info.hashrate?.advertised?.nice || info.hashrate?.advertised || 'N/A';
+            const msg = TelegramTemplates.rentedNotice(hbType, r, info, acct, orderDiff, remStr, getAlgoDisplayName(algo), ads);
+            
+            queueTelegramMessage(msg, {
+              type: hbType,
+              label: `${hbType} ${acct} ${r.id}`,
+              onSuccess: async () => {
+                await dbRunAsync(`UPDATE rentals SET last_notified = ? WHERE id = ?`, [now, String(r.id)]);
+                notifications.push({ id: r.id, client: acct, status: 'Sent' });
+              },
+              onFailure: (err) => {
+                notifications.push({ id: r.id, client: acct, status: 'Failed', error: err.message });
+              }
+            });
+          } else if (isNew) {
+            // First seen but no activity — silently mark notified, no alert
+            console.log(`[monitor:${acct}] Silently marking rental ${r.id} as notified (no real hashrate / not recent)`);
+            await dbRunAsync(`UPDATE rentals SET last_notified = ? WHERE id = ?`, [now, String(r.id)]);
           }
         }
 
@@ -675,6 +738,7 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
     if (successfulAcctList.length > 0) {
       const placeholders = successfulAcctList.map(() => '?').join(',');
       
+      // Delete rentals not in active list
       if (currentActiveRentalIds.size > 0) {
         const activePlaceholders = Array.from(currentActiveRentalIds).map(() => '?').join(',');
         await dbRunAsync(
@@ -704,6 +768,7 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
     // ============================================================
     rentedAll = accountMetrics.reduce((sum, m) => sum + (Number(m.rented) || 0), 0);
 
+    // Log the rental count
     console.log(`[Monitor] 📊 Real rentals: ${rentedAll}`);
 
     const shouldSendSummary = forceNotify || (now - (lastAlertTimes.get('global_summary') || 0) >= RENTED_HEARTBEAT_MS);

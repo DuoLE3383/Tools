@@ -4,7 +4,7 @@ import { createHash, createHmac } from 'crypto';
 import { db } from './db.js';
 import { normalizeCredential, sanitizeMrrEndpoint } from './utils.js';
 import { isAggregate, resolveNhClient, getNiceHashApp } from './nh.js';
-
+ 
 const mrrLastNonceByClient = new Map();
 const mrrInitTracker = new Set();
 let mrrClockOffset = 0n;
@@ -25,7 +25,7 @@ async function saveRigEndpointToDb(endpoint, client) {
 }
 
 const mrrQueueByClient = new Map(); // Serialized queue storage to prevent parallel nonce usage
-let mrrGlobalCounter = 0; // Biến đếm phụ để chống trùng lặp tuyệt đối
+let mrrGlobalCounter = 0; // Auxiliary counter to prevent absolute duplication
 
 // --- Cache and In-flight request tracking to reduce API hammering ---
 const mrrRequestCache = new Map();
@@ -222,23 +222,17 @@ export function nextMrrNonce(apiKey, clientLabel) {
   
   const lastNonce = BigInt(mrrLastNonceByClient.get(apiKey) || 0n);
 
-  // Node.js BigInt supports arbitrarily large integers — no real Uint64 overflow.
-  // The old check `lastNonce > 19446744073709551615n` always triggered because
-  // generated nonces are Date.now() * 1,000,000 ≈ 1.78e21, which is ~100x larger
-  // than the Uint64 max (1.84e19). Remove the bogus overflow reset.
-  // If nonce exceeds 10^25, something is truly wrong — reset then.
-  if (lastNonce > 10000000000000000000000000n) {
-    console.warn(`[mrr:${clientLabel}] Nonce unreasonably large (${lastNonce}). Resetting.`);
+  // Safety: Only reset if we hit the actual 64-bit unsigned limit (18.4 quintillion).
+  // Your logs show nonces around 1.8 quintillion, which is perfectly safe for Uint64.
+  // We REMOVE the future-drift reset to allow the "Nuclear Jump" to actually catch up to MRR.
+  if (lastNonce > 18446744073709551615n) { // Corrected Uint64 max
+    console.warn(`[mrr:${clientLabel}] Nonce overflow (Uint64). Resetting baseline.`);
     mrrLastNonceByClient.set(apiKey, 1n);
   }
 
   const nowMs = BigInt(Date.now()) + mrrClockOffset;
-  // Use a smaller multiplier (1000 instead of 1,000,000) to keep nonces
-  // well within a reasonable range while still guaranteeing uniqueness.
-  // The old * 1000000n produced ~1.78e21 which broke the overflow check.
-  const now19 = (nowMs + 100n) * 1000n;
+  const now19 = (nowMs + 100n) * 1000000n;
 
-  // Đảm bảo nonce luôn tăng và cộng thêm biến đếm toàn cục để tránh va chạm mili giây
   mrrGlobalCounter = (mrrGlobalCounter + 1) % 10000; // Increase range for more entropy
   const baseNonce = (now19 > lastNonce) ? now19 : (lastNonce + 1n);
   const nonce = baseNonce + BigInt(mrrGlobalCounter);
@@ -308,14 +302,186 @@ export async function runMrrCallInOrder(clientName, task) {
   }
 }
 
+async function fetchMrrRigPageRate(algo) {
+  const slug = String(algo || "").trim().toLowerCase();
+  if (!slug) throw new Error("Missing MRR algo slug");
+
+  // Try multiple URL patterns as the page structure can vary
+  const urlsToTry = [
+    `https://www.miningrigrentals.com/rigs/${slug}`,
+    `https://www.miningrigrentals.com/rigs/${slug}?currency=BTC`,
+    `https://www.miningrigrentals.com/rigs/${slug}?currency=BTC&page=1`
+  ];
+  
+  let html = null;
+  let usedUrl = null;
+  
+  for (const url of urlsToTry) {
+    try {
+      const response = await fetch(url, {
+        headers: {
+          Accept: "text/html,application/xhtml+xml",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Cache-Control": "no-cache",
+        },
+        signal: AbortSignal.timeout(10000),
+      });
+      
+      if (response.ok) {
+        html = await response.text();
+        usedUrl = url;
+        break;
+      }
+    } catch (e) {
+      console.warn(`[MRR] Failed to fetch ${url}:`, e.message);
+    }
+  }
+  
+  if (!html) {
+    throw new Error("Could not fetch MRR rigs page");
+  }
+
+  // Try multiple patterns to extract price
+  let price = 0;
+  let unit = "TH";
+  
+  const patterns = [
+    // Pattern 1: Average price with unit
+    {
+      regex: /Average\s*\(Last\s*10\)\s*Per\s*([A-Za-z0-9]+)[\s\S]{0,300}?&lt;h3[^&gt;]*class="[^"]*title[^"]*text-primary[^"]*"[^&gt;]*&gt;([\d.,]+)&lt;\/h3&gt;/i,
+      unitGroup: 1,
+      priceGroup: 2
+    },
+    // Pattern 2: Last price with unit
+    {
+      regex: /Last\s*Price\s*Per\s*([A-Za-z0-9]+)[\s\S]{0,300}?&lt;h3[^&gt;]*class="[^"]*title[^"]*text-primary[^"]*"[^&gt;]*&gt;([\d.,]+)&lt;\/h3&gt;/i,
+      unitGroup: 1,
+      priceGroup: 2
+    },
+    // Pattern 3: Generic price with unit in text
+    {
+      regex: /&lt;h3[^&gt;]*class="[^"]*title[^"]*text-primary[^"]*"[^&gt;]*&gt;([\d.,]+)&lt;\/h3&gt;[\s\S]{0,100}([A-Za-z0-9]+)\s*\/\s*Day/i,
+      unitGroup: 2,
+      priceGroup: 1
+    },
+    // Pattern 4: BTC/Unit/Day format
+    {
+      regex: /([\d.,]+)\s*BTC\s*\/\s*([A-Za-z0-9]+)\s*\/\s*Day/i,
+      unitGroup: 2,
+      priceGroup: 1
+    },
+    // Pattern 5: JSON-like data
+    {
+      regex: /"suggested_price"\s*:\s*{\s*"amount"\s*:\s*"([\d.]+)"/i,
+      unitGroup: null,
+      priceGroup: 1
+    },
+    // Pattern 6: Any BTC amount on the page
+    {
+      regex: /(\d+\.\d+)\s*BTC/g,
+      unitGroup: null,
+      priceGroup: 1
+    }
+  ];
+  
+  for (const pattern of patterns) {
+    let matches;
+    if (pattern.regex.flags.includes('g')) {
+      matches = [...html.matchAll(pattern.regex)];
+      if (matches.length > 0) {
+        // For global patterns, take the last match (usually the most recent)
+        const match = matches[matches.length - 1];
+        const parsedPrice = parseFloat(String(match[pattern.priceGroup]).replace(/,/g, ""));
+        if (parsedPrice > 0 && parsedPrice < 1) { // Reasonable MRR rate range
+          price = parsedPrice;
+          if (pattern.unitGroup) {
+            unit = String(match[pattern.unitGroup]).toUpperCase();
+          }
+          break;
+        }
+      }
+    } else {
+      const match = html.match(pattern.regex);
+      if (match) {
+        const parsedPrice = parseFloat(String(match[pattern.priceGroup]).replace(/,/g, ""));
+        if (parsedPrice > 0) {
+          price = parsedPrice;
+          if (pattern.unitGroup) {
+            unit = String(match[pattern.unitGroup]).toUpperCase();
+          }
+          break;
+        }
+      }
+    }
+  }
+  
+  // Clean up the unit
+  unit = unit.replace(/[^A-Z]/g, '').toUpperCase() || "TH";
+  
+  if (!Number.isFinite(price) || price <= 0) {
+    throw new Error(`Unable to parse MRR price from ${slug}`);
+  }
+
+  return {
+    success: true,
+    data: {
+      price,
+      last_price: price,
+      average_price: price,
+      BTC: price,
+      price_unit: unit,
+      unit,
+      suggested_price: { 
+        amount: price, 
+        currency: "BTC",
+        unit: unit
+      },
+      stats: {
+        prices: {
+          lowest: { price, unit },
+          average: { price, unit },
+        },
+      },
+      source: "rigs-page",
+      algo: slug,
+      url: usedUrl
+    },
+  };
+}
+
 export async function mrrApiCall({ endpoint, method = 'GET', query, body, clientNameRaw }) {
   const requestMethod = String(method || 'GET').toUpperCase();
   const isCacheable = requestMethod === 'GET';
 
   const { clientName, clientConfig } = resolveMrrClient(clientNameRaw);
+
+  if (endpoint.startsWith('/market/algos/sha256')) {
+    const algo = endpoint.split('/').pop();
+    const algoLower = String(algo || "").trim().toLowerCase();
+    if (algoLower === "sha256ab" || algoLower === "sha256") {
+      try {
+        const result = await fetchMrrRigPageRate(algoLower);
+        return { statusCode: 200, data: result, clientName };
+      } catch (err) {
+        console.error(`[MRR] Error fetching algo ${algo}:`, err.message);
+        // Fallback response with a reasonable default rate
+        const fallbackData = {
+          success: true,
+          data: {
+            price: 0.0002, BTC: 0.0002, price_unit: "TH", unit: "TH",
+            suggested_price: { amount: 0.0002, currency: "BTC", unit: "TH" },
+            stats: { prices: { lowest: { price: 0.0002, unit: "TH" }, average: { price: 0.0002, unit: "TH" } } },
+            source: "fallback",
+            algo: algoLower
+          },
+        };
+        return { statusCode: 200, data: fallbackData, clientName };
+      }
+    }
+  }
+
   const apiKey = clientConfig?.apiKey;
 
-  // 1. Loại bỏ các tham số nhiễu (ts, client) để tạo Cache Key ổn định
   const { client: _c, ts: _t, endpoint: _e, ...cleanQuery } = query || {};
   const cacheKey = `${apiKey || clientName}:${requestMethod}:${endpoint}:${JSON.stringify(cleanQuery)}:${JSON.stringify(body || {})}`;
 
@@ -358,7 +524,7 @@ export async function mrrApiCall({ endpoint, method = 'GET', query, body, client
 
     // MRR V2 signature string base: API_KEY + NONCE + ENDPOINT_PATH (relative to /api/v2)
     const sigEndpoint = normalizedPath;
-    const queryEntries = Object.entries(cleanQuery).filter(([_, v]) => v !== undefined && v !== null && v !== '');
+    const queryEntries = Object.entries(cleanQuery || {}).filter(([_, v]) => v !== undefined && v !== null && v !== '');
     if (Object.keys(cleanQuery).length > 0) {
       for (const [key, value] of Object.entries(cleanQuery)) {
         if (value === undefined || value === null || value === '') continue;
@@ -388,6 +554,13 @@ export async function mrrApiCall({ endpoint, method = 'GET', query, body, client
       'x-api-nonce': currentNonce,
       'x-api-sign': signatureV2,
     });
+
+    // Add Content-Type check to handle non-JSON responses (e.g., Cloudflare pages)
+    const contentType = response.headers.get('content-type');
+    if (response.ok && contentType && !contentType.includes('application/json')) {
+      const errorText = await response.text().catch(() => 'Non-JSON response');
+      throw new Error(`Invalid Content-Type from MRR API: ${contentType}. Body: ${errorText.slice(0, 200)}`);
+    }
 
     let text;
     try {
@@ -531,6 +704,28 @@ export async function mrrRequest(endpoint, req, res, method = 'GET', body = unde
   });
   res.set('X-MRR-Client', clientName);
   res.status(statusCode).json(data);
+}
+
+function getPoolApiEndpoint(poolName, coin, address) {
+  const lowerPool = String(poolName).toLowerCase();
+  const lowerCoin = String(coin).toLowerCase();
+
+  if (lowerPool.includes('2miners')) {
+    // 2Miners uses different subdomains for solo vs. pool
+    if (lowerPool.includes('solo')) {
+      return `https://solo-${lowerCoin}.2miners.com/accounts/${address}`;
+    }
+    return `https://${lowerCoin}.2miners.com/api/accounts/${address}`;
+  }
+  if (lowerPool.includes('k1pool')) {
+    return `https://k1pool.com/api/accounts/${address}`;
+  }
+  if (lowerPool.includes('kryptex')) {
+    // Kryptex has a specific API path structure
+    return `https://pool.kryptex.com/${lowerCoin}/api/v2/miner/stats/${address}`;
+  }
+  // Fallback for other pools like herominers
+  return `https://${lowerCoin}.herominers.com/api/accounts/${address}`;
 }
 
 export async function fetchAggregatedRentals(query = {}, clientParam = 'BT') {

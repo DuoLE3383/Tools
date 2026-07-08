@@ -1,5 +1,5 @@
 // rentalProcessor.js - Complete upgraded version
-import { dbRunAsync, dbGetAsync } from "./dbHelpers.js";
+import { dbRunAsync, dbGetAsync } from '../db.js';
 import { logger } from "../logger.js";
 import { TELEGRAM_CONFIG, TelegramTemplates } from "../../src/core/telegram.js";
 import {
