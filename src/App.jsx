@@ -1,8 +1,8 @@
 // src/App.jsx — centralized state + per-page routing
 
-// App.jsx — centralized state + per-page routing
+import { useRef } from "react";
 
-import { WebSocketProvider } from './components/WebSocketContext';
+import { WebSocketProvider, useWebSocket } from './components/WebSocketContext';
 import { NiceHashOrderProvider } from './components/nicehash/NiceHashContext.jsx';
 import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 import Modal from "./components/Modal";
@@ -15,6 +15,8 @@ import DashboardPage from './page/DashboardPage.jsx';
 import NiceHashPage from './page/NiceHashPage.jsx';
 import MrrPage from './page/MrrPage.jsx';
 import "./App.css";
+
+const COIN_IDS_TO_FETCH = "bitcoin,ethereum,ethereum-classic,litecoin,dogecoin,ravencoin,monero,kaspa,iron-fish,zephyr-protocol,clore-ai,dynex,conflux,ergo,bitcoin-cash";
 
 // ── Reducer ──────────────────────────────────
 const initialView = (() => {
@@ -101,9 +103,44 @@ function reducer(state, action) {
   }
 }
 
+function PriceFetcher({ onCall, onPriceUpdate }) {
+  const { isConnected: wsConnected, prices: wsPrices } = useWebSocket();
+  const isFetching = useRef(false);
+
+  const fetchPrices = useCallback(async () => {
+    if (isFetching.current) return;
+    isFetching.current = true;
+    try {
+      const res = await onCall("/api/v2/prices/coingecko", {
+        query: { ids: COIN_IDS_TO_FETCH, vs_currencies: "usd,btc", sparkline: true },
+        silent: true,
+      });
+      const data = res?.data || (res && typeof res === 'object' && !res.error ? res : null);
+      if (data) onPriceUpdate(data);
+    } catch (err) {
+      console.warn(`[PriceManager] REST fetch failed: ${err.message}`);
+    } finally {
+      isFetching.current = false;
+    }
+  }, [onCall, onPriceUpdate]);
+
+  useEffect(() => {
+    if (wsPrices && Object.keys(wsPrices).length > 0) onPriceUpdate(wsPrices);
+  }, [wsPrices, onPriceUpdate]);
+
+  useEffect(() => {
+    fetchPrices();
+    const pollTimer = setInterval(() => { if (!wsConnected) fetchPrices(); }, 60000);
+    return () => clearInterval(pollTimer);
+  }, [fetchPrices, wsConnected]);
+
+  return null;
+}
+
 // ── AppContent ───────────────────────────────
 function AppContent({ authToken, onLoginSuccess, onLogout, callApi, setAuthToken }) {
   const [state, dispatch] = useReducer(reducer, initialState);
+  const handlePriceUpdate = useCallback((data) => { dispatch({ type: "SET_COIN_PRICES", payload: data }); }, []);
 
   // Lift current user from token if available
   useEffect(() => {
@@ -422,6 +459,7 @@ function AppContent({ authToken, onLoginSuccess, onLogout, callApi, setAuthToken
 
   return (
     <WebSocketProvider token={authToken}>
+      <PriceFetcher onCall={callApi} onPriceUpdate={handlePriceUpdate} />
       <NiceHashOrderProvider nhClient={state.nhOrderClient} callApi={callApi}>
         <div className="app-shell">
           {renderPage()}

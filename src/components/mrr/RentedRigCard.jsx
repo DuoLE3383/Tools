@@ -405,7 +405,9 @@ const RentedRigCard = ({
             textOverflow: "ellipsis",
             whiteSpace: "nowrap",
           }}>
-            {rig.name || 'Unknown Rig'}
+            {rig.name && rig.name.length > 12
+              ? `${rig.name.substring(0, 12)}...`
+              : rig.name || "Unknown Rig"}
           </strong>
           <div style={{ display: "flex", alignItems: "center", gap: "5px", flexWrap: "wrap", color: "#94a3b8", fontSize: "9px" }}>
             <span style={{

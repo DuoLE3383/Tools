@@ -5,6 +5,7 @@ import { NiceHashOrderProvider } from "../nicehash/NiceHashContext.jsx";
 import MrrPoolsManager from "./MrrManager";
 import TelegramManager from "../TelegramManager";
 import NavBar from "../NavBar";
+import CryptoRatePage from "../../CryptoRatePage.jsx";
 
 export default function MrrPage({ onCall, onNavigateHome, nhClient = "VN", currentUser }) {
   const pathname = window.location.pathname || "/";

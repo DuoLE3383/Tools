@@ -412,11 +412,11 @@ export function getRentalEfficiency(rental) {
 export const getClientBadgeStyle = (client) => {
   const c = String(client || "").toUpperCase();
   const styles = {
-    BT: { background: "#2563eb", color: "#fff" },
+    BT: { background: "#25eb3f", color: "#fff" },
     SL: { background: "#d97706", color: "#fff" },
-    LN: { background: "#eff308", color: "#fff" },
-    VN: { background: "#10b981", color: "#fff" },
-    LUCKY: { background: "#ec4899", color: "#fff" },
+    LN: { background: "#4708f3", color: "#fff" },
+    VN: { background: "#f31890", color: "#fff" },
+    LUCKY: { background: "#c0ec48", color: "#fff" },
   };
   return styles[c] || { background: "rgba(255,255,255,0.1)", color: "#94a3b8" };
 };

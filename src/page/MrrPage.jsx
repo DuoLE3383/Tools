@@ -1,6 +1,7 @@
 import MiningRigSection from "../components/mrr/MiningRigSection";
 import DashboardHeader from "../components/Dashboard/DashboardHeader.jsx";
 import { useCallback } from "react";
+import CryptoRatePage from "../../CryptoRatePage.jsx";
 
 export default function MrrPage({
   state,
@@ -43,7 +44,7 @@ export default function MrrPage({
       />
 
       <main className="dashboard">
-        <div className="column-stack" style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+        <div className="column-stack" style={{ display: "flex", flexDirection: "column", gap: "24px", minWidth: "600px" }}>
           <article className="panel">
             <MiningRigSection
               onCall={handleMiningCall}
@@ -51,9 +52,11 @@ export default function MrrPage({
               mrrClient={state.mrrClient}
               setMrrClient={setMrrClient}
               onOpenMrrPools={handleOpenMrrPools}
+              coinPrices={state.coinPrices}
             />
           </article>
         </div>
+        <CryptoRatePage onCall={callApi} coinPrices={state.coinPrices} />
       </main>
     </div>
   );

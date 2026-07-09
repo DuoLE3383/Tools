@@ -5,7 +5,7 @@ import MrrPoolsManager from "./MrrManager";
 /**
  * Encapsulates the MiningRigRental component and its related state/props.
  */
-export default function MiningRigSection({ onCall, rigsData }) {
+export default function MiningRigSection({ onCall, rigsData, coinPrices }) {
   const [mrrClient, setMrrClient] = useState("VN");
   const [mrrPoolData, setMrrPoolData] = useState(null);
   const [mrrPoolRigId, setMrrPoolRigId] = useState("");
@@ -67,6 +67,7 @@ export default function MiningRigSection({ onCall, rigsData }) {
         mrrClient={mrrClient}
         setMrrClient={setMrrClient}
         onOpenMrrPools={handleOpenMrrPools}
+        coinPrices={coinPrices}
       />
       {(mrrPoolData || mrrPoolRigId) && (
         <MrrPoolsManager

@@ -29,6 +29,7 @@ export default function MrrRigs({
   algo,
   initialStatus = "available",
   onSummaryUpdate,
+  coinPrices,
 }) {
   const nhContext = useContext(NiceHashOrderContext);
   const nhOrders = nhContext?.nicehashOrders || [];
@@ -39,7 +40,6 @@ export default function MrrRigs({
   const [enrichedInfo, setEnrichedInfo] = useState({}); // rigId -> details object
   const [loadingInfoIds, setLoadingInfoIds] = useState(new Set());
   const [algoMarketPrices, setAlgoMarketPrices] = useState({}); // algoName -> priceData
-  const [coinPrices, setCoinPrices] = useState({}); // coinId -> CoinGecko price data
 
   const [expandedPools, setExpandedPools] = useState(new Set());
   const togglePoolInfo = (rigId) => {
@@ -280,25 +280,6 @@ export default function MrrRigs({
 
   // Debug count to see if items are being filtered out
   const totalFetchedCount = rigs.length;
-
-  // Fetch CoinGecko prices for mining coins periodically
-  useEffect(() => {
-    const fetchCoinPrices = async () => {
-      try {
-        const res = await onCall("/api/v2/prices/coingecko", {
-          query: {
-            ids: "bitcoin,ethereum,ethereum-classic,litecoin,dogecoin,ravencoin,monero,kaspa,iron-fish,zephyr-protocol,clore-ai,dynex,conflux,ergo",
-            vs_currencies: "usd,btc",
-          },
-          silent: true,
-        });
-        if (res?.success) setCoinPrices(res.data);
-      } catch (err) {
-        console.warn("[CoinGecko] Price fetch failed:", err.message);
-      }
-    };
-    fetchCoinPrices();
-  }, [onCall]);
 
   const toggleAlgoGroup = (algo) => {
     setExpandedAlgos((prev) => ({

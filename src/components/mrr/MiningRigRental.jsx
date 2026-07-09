@@ -5,7 +5,8 @@ import MrrRigs from "./MrrRigs";
 import Modal from "../Modal";
 import TelegramManager, { useTelegram } from "../TelegramManager";
 import { calculateRemainingTime, toUtcTimestamp } from "../../core/time";
-import ErrorBoundary from "../ErrorBoundary";
+import ErrorBoundary from "../ErrorBoundary"; 
+import CryptoRatePage from "../CryptoRatePage.jsx"; 
 
 // ============================================
 // UTILITY FUNCTIONS
@@ -274,6 +275,7 @@ export default function MiningRigRental({
   algorithm,
   onOpenMrrPools,
   onOpenCompletionCalculator,
+  coinPrices,
 }) {
   const [activeModal, setActiveModal] = useState(null);
   const [modalData, setModalData] = useState(null);
@@ -469,11 +471,13 @@ export default function MiningRigRental({
       return { success: false, message: err.message };
     }
   };
+  const [isCryptoRateModalOpen, setIsCryptoRateModalOpen] = useState(false);
 
   return (
-    <div className="rig-section" style={{ padding: "8px", maxWidth: "100%", overflow: "hidden" }}>
+    <div className="rig-section" style={{ padding: "0", maxWidth: "100%", overflow: "hidden" }}>
       {/* Header */}
       <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: "12px", marginBottom: "12px" }}>
+        {/* Left side of header */}
         <h2 className="section-title" style={{ margin: 0, fontSize: "clamp(1rem, 2vw, 1.25rem)" }}>
           ⛏️ Mining Rig Rentals
         </h2>
@@ -481,6 +485,7 @@ export default function MiningRigRental({
             📋 Rigs
           </button>
         <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center" }}>
+          {/* Right side of header */}
           
           <select
             className="select-pro"
@@ -494,6 +499,10 @@ export default function MiningRigRental({
             <option value="LN">LN</option>
             <option value="LUCKY">LUCKY</option>
           </select>
+          <button className="btn-pro secondary" onClick={() => setIsCryptoRateModalOpen(true)} style={{ fontSize: "clamp(10px, 1vw, 12px)", padding: "4px 12px" }}>
+            Live Rates
+          </button>
+
           
           {/* <button className="btn-pro secondary" onClick={() => onCall("/api/v2/mrr/balance", { query: { client: mrrClient }, showModal: true })} style={{ fontSize: "clamp(10px, 1vw, 12px)", padding: "4px 12px" }}>
             💰 Balance
@@ -557,6 +566,7 @@ export default function MiningRigRental({
             onOpenPool={onOpenMrrPools}
             onOpenCompletionCalculator={onOpenCompletionCalculator}
             onSummaryUpdate={setMrrSummaryData}
+            coinPrices={coinPrices}
             onInfo={(id) => onCall(`/api/v2/mrr/rig/${encodeURIComponent(id)}/info`, { query: { client: mrrClient } })}
           />
         </ErrorBoundary>
@@ -641,6 +651,8 @@ export default function MiningRigRental({
           <button className="btn-pro secondary" onClick={() => setActiveModal(null)}>Close</button>
         </div>
       </Modal>
+
+      
     </div>
   );
 }

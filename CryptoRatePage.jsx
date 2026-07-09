@@ -52,8 +52,8 @@ function Sparkline({ data, width = 180, height = 80, color = "#60a5fa" }) {
   );
 }
 
-export default function CryptoRatePage({ onCall, onPriceUpdate, onNavigateHome, coinPrices: initialPrices }) {
-  const [prices, setPrices] = useState(initialPrices || null);
+export default function CryptoRatePage({ onCall, onPriceUpdate, onNavigateHome, coinPrices }) {
+  const [prices, setPrices] = useState(coinPrices || null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [amounts, setAmounts] = useState({ usd: "1000" });
@@ -64,6 +64,10 @@ export default function CryptoRatePage({ onCall, onPriceUpdate, onNavigateHome, 
     setBaseCoin(id);
     setAmounts({ [id]: val });
   };
+
+  useEffect(() => {
+    if (coinPrices) setPrices(coinPrices);
+  }, [coinPrices]);
 
   const formatPricesForRigCard = useCallback((data) => {
     const formatted = {};
@@ -109,61 +113,15 @@ export default function CryptoRatePage({ onCall, onPriceUpdate, onNavigateHome, 
     return null;
   }, [prices]);
 
-  const fetchPrices = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const ids = COINS.map((c) => c.id).join(",");
-      const res = await onCall("/api/v2/prices/coingecko", {
-        query: { ids, vs_currencies: "usd,btc", sparkline: true },
-        silent: true,
-      });
-
-      const data = res?.data || (res && typeof res === 'object' && !res.error ? res : null);
-
-      if (data && (data.bitcoin || data.BTC || data.btc || data['bitcoin-cash'] || data.BCH || data.bch)) {
-        setPrices(data);
-        // ✅ Send formatted prices to parent
-        if (onPriceUpdate) {
-          const formatted = formatPricesForRigCard(data);
-          onPriceUpdate(formatted);
-        }
-      } else {
-        const isSystemConfig = data && data.environments && data.default_client;
-        const detail = isSystemConfig ? 'Backend Routing Error' : `Format Mismatch`;
-        if (!prices) setError(`Market data unavailable. ${detail}`);
-        throw new Error(detail);
-      }
-    } catch (err) {
-      console.error(`[CryptoRate] REST fetch failed: ${err.message}`);
-    } finally {
-      setLoading(false);
-    }
-  }, [onCall, onPriceUpdate, formatPricesForRigCard, prices]);
-
   useEffect(() => {
     if (wsPrices && Object.keys(wsPrices).length > 0) {
       setPrices(prev => {
         const merged = { ...prev, ...wsPrices };
-        if (onPriceUpdate) {
-          const formatted = formatPricesForRigCard(wsPrices);
-          onPriceUpdate(formatted);
-        }
+        // Parent now handles updates via PriceManager
         return merged;
       });
     }
-  }, [wsPrices, onPriceUpdate, formatPricesForRigCard]);
-
-  useEffect(() => {
-    fetchPrices();
-    const pollTimer = setInterval(() => {
-      if (!wsConnected && !loading) {
-        console.log("[CryptoRate] WS inactive, polling for updates...");
-        fetchPrices();
-      }
-    }, 60000);
-    return () => clearInterval(pollTimer);
-  }, [fetchPrices, wsConnected, loading]);
+  }, [wsPrices]);
 
   const getPrice = (data) => data?.usd || (typeof data === "number" ? data : 0);
 
@@ -276,23 +234,6 @@ export default function CryptoRatePage({ onCall, onPriceUpdate, onNavigateHome, 
             }}
             placeholder="0"
           />
-          <button
-            onClick={fetchPrices}
-            style={{
-              background: "rgba(96,165,250,0.08)",
-              border: "1px solid rgba(96,165,250,0.1)",
-              borderRadius: "4px",
-              padding: "4px 10px",
-              color: "#60a5fa",
-              fontSize: "0.8rem",
-              fontWeight: "600",
-              cursor: "pointer",
-              fontFamily: "sans-serif",
-              whiteSpace: "nowrap",
-            }}
-          >
-            ⟳
-          </button>
         </div>
       </div>
 

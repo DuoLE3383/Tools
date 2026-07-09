@@ -669,6 +669,8 @@ const MrrRigCard = ({
     gap: "6px",
     boxShadow: "0 10px 22px rgba(0, 0, 0, 0.16)",
     overflow: "hidden",
+    width: "300px",
+    height: "380px",
   };
 
   const sectionStyle = {
@@ -703,6 +705,7 @@ const MrrRigCard = ({
       {/* ─── Header ─── */}
       <div
         style={{
+          
           display: "flex",
           justifyContent: "space-between",
           alignItems: "flex-start",
@@ -782,18 +785,21 @@ const MrrRigCard = ({
               whiteSpace: "nowrap",
             }}
           >
-            {rig.name}
+          {rig.name && rig.name.length > 12
+            ? `${rig.name.substring(0, 12)}...`
+            : rig.name}
           </strong>
           <div
             style={{
               display: "flex",
-              alignItems: "center",
-              gap: "5px",
-              flexWrap: "wrap",
+              flexDirection: "column",
+              alignItems: "flex-start",
               color: "#94a3b8",
               fontSize: "9px",
+              gap: "4px",
             }}
           >
+            {/* Line 1: Algorithm */}
             <span
               style={{
                 fontSize: "14px",
@@ -805,14 +811,17 @@ const MrrRigCard = ({
               {displayAlgo}
               {asicBoostBadge}
             </span>
-            |
-            {paidLabel && (
-              <span
-                style={{ color: "#fbbf24", fontWeight: 900, fontSize: "11px" }}
-              >
-                Paid {paidLabel}
-              </span>
-            )}
+
+            {/* Line 2: Paid and ROI */}
+            <div style={{ display: "flex", alignItems: "center", width: "100%" }}>
+              {paidLabel && (
+                <span
+                  style={{ color: "#fbbf24", fontWeight: 900, fontSize: "11px" }}
+                >
+                  Paid {paidLabel}
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
