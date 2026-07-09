@@ -97,4 +97,24 @@ export function registerMiningStatsRoutes(app) {
       fetchedAt: new Date().toISOString(),
     });
   }));
+
+  app.get("/api/v2/mining-stats/minerstat", asyncHandler(async (req, res) => {
+    const { scrapeMinerstat } = await import("../miners/minerstat.js");
+    try {
+      const data = await scrapeMinerstat();
+      res.json(data);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  }));
+
+  app.get("/api/v2/mining-stats/whattomine", asyncHandler(async (req, res) => {
+    const { scrapeWhatToMine } = await import("../miners/whatToMine.js");
+    try {
+      const data = await scrapeWhatToMine();
+      res.json(data);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  }));
 }

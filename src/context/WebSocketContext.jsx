@@ -14,25 +14,47 @@ export function WebSocketProvider({ children }) {
   const [socket, setSocket] = useState(null);
   const [status, setStatus] = useState('disconnected');
   const listeners = useRef(new Map());
+  const connectTimerRef = useRef(null);
+  const wsRef = useRef(null);
+  const connectInProgressRef = useRef(false);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   const connect = useCallback(() => {
+    // Guard against parallel connect calls
+    if (connectInProgressRef.current) return;
+    if (wsRef.current && (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)) {
+      return;
+    }
+
+    connectInProgressRef.current = true;
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const token = localStorage.getItem('token');
     const wsUrl = `${protocol}//${window.location.host}/api/v2/prices/ws${token ? `?token=${token}` : ''}`;
 
     const ws = new WebSocket(wsUrl);
+    wsRef.current = ws;
     setStatus('connecting');
 
     ws.onopen = () => {
+      if (!mountedRef.current) {
+        ws.close();
+        return;
+      }
       console.log('[WS Provider] Connected');
       setStatus('connected');
       setSocket(ws);
+      connectInProgressRef.current = false;
     };
 
     ws.onmessage = (event) => {
+      if (!mountedRef.current) return;
       try {
         const message = JSON.parse(event.data);
-        // Notify all listeners
         listeners.current.forEach(callback => callback(message));
       } catch (err) {
         console.error('[WS Provider] Failed to parse message:', err);
@@ -40,26 +62,41 @@ export function WebSocketProvider({ children }) {
     };
 
     ws.onclose = () => {
+      connectInProgressRef.current = false;
+      wsRef.current = null;
+      if (!mountedRef.current) return;
       console.log('[WS Provider] Disconnected');
       setStatus('disconnected');
       setSocket(null);
       // Simple reconnect logic
-      setTimeout(connect, 5000);
+      connectTimerRef.current = setTimeout(connect, 5000);
     };
 
     ws.onerror = (err) => {
+      if (!mountedRef.current) return;
       console.error('[WS Provider] Error:', err);
       setStatus('error');
-      ws.close(); // This will trigger onclose and the reconnect logic
+      // onclose will fire next, triggering reconnect
     };
-
-    return ws;
   }, []);
 
   useEffect(() => {
     const ws = connect();
     return () => {
-      ws.close();
+      if (connectTimerRef.current) {
+        clearTimeout(connectTimerRef.current);
+        connectTimerRef.current = null;
+      }
+      if (wsRef.current) {
+        // Only close if the connection is already established or still pending
+        // This avoids the "closed before connection is established" error
+        wsRef.current.onclose = null;
+        wsRef.current.onerror = null;
+        wsRef.current.onopen = null;
+        try { wsRef.current.close(); } catch {}
+        wsRef.current = null;
+      }
+      connectInProgressRef.current = false;
     };
   }, [connect]);
 

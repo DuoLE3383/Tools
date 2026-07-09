@@ -4,49 +4,53 @@ import { parse } from 'url';
 import { verifyToken } from './auth.js';
 
 export function setupWebSocket(server) {
-  const wss = new WebSocketServer({ 
-    server,
-    path: /\/(ws|api\/v2\/prices\/ws)$/,
-    verifyClient: (info, cb) => {
-      const { req } = info;
-      console.log('[WS] Handshake URL:', req.url);
-      const { query } = parse(req.url, true);
-      let token = query.token;
-      const sessionId = query.sessionId;
+  const wss = new WebSocketServer({ noServer: true });
 
-      // Fallback to Authorization header
-      if (!token && req.headers.authorization) {
-        const authHeader = req.headers.authorization;
-        if (authHeader.startsWith('Bearer ')) {
-          token = authHeader.substring(7).trim();
-        }
+  server.on('upgrade', async (request, socket, head) => {
+    const { pathname, query } = parse(request.url, true);
+
+    if (!pathname.match(/^\/ws$/) && !pathname.match(/^\/api\/v2\/prices\/ws$/)) {
+      socket.destroy();
+      return;
+    }
+
+    let token = query.token;
+    if (!token && request.headers.authorization) {
+      const authHeader = request.headers.authorization;
+      if (authHeader.startsWith('Bearer ')) {
+        token = authHeader.substring(7).trim();
       }
+    }
 
-      if (token) {
-        const decoded = verifyToken(token);
-        console.log(`[WS] Verifying client, token present: ${!!decoded}`);
-        if (!decoded) {
-          console.log('[WS] Connection rejected: Invalid token');
-          cb(false, 401, 'Invalid token');
+    if (token) {
+      try {
+        const user = await verifyToken(token);
+        if (user) {
+          request.user = user;
+          wss.handleUpgrade(request, socket, head, (ws) => {
+            wss.emit('connection', ws, request);
+          });
           return;
         }
-        req.user = decoded;
-        console.log(`[WS] Connection verified for user: ${decoded.username || decoded.id || 'unknown'}`);
-        cb(true);
+      } catch (err) {
+        console.error('[WS] Token verification failed during upgrade:', err);
+        socket.write('HTTP/1.1 500 Internal Server Error\r\n\r\n');
+        socket.destroy();
         return;
       }
-
-      if (!sessionId) {
-        console.log('[WS] Connection rejected: No token or sessionId provided');
-        cb(false, 401, 'No token or sessionId provided');
-        return;
-      }
-
-      console.log(`[WS] Verifying client, sessionId present: ${!!sessionId}`);
-      req.sessionId = sessionId;
-      console.log(`[WS] Connection verified for session: ${sessionId}`);
-      cb(true);
     }
+
+    const sessionId = query.sessionId;
+    if (sessionId) {
+      request.sessionId = sessionId;
+      wss.handleUpgrade(request, socket, head, (ws) => {
+        wss.emit('connection', ws, request);
+      });
+      return;
+    }
+
+    socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+    socket.destroy();
   });
 
   wss.on('connection', (ws, req) => {

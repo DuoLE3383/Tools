@@ -13,7 +13,7 @@ export default function DashboardHeader({
   currentView = 'dashboard',
 }) {
   const navItems = [
-    { path: '/', label: 'Pools', view: 'dashboard' },
+    { path: '/', label: 'Dashboard', view: 'dashboard' },
     { path: '/nicehash', label: 'NiceHash', view: 'nicehash' },
     { path: '/mrr', label: 'Rigs', view: 'mrr' },
     { path: '/mining', label: 'Mining', view: 'mining' },
@@ -50,7 +50,10 @@ export default function DashboardHeader({
               <a
                 key={item.path}
                 href={item.path}
-                onClick={onNavigate(item.path)}
+                onClick={(e) => {
+                  e.preventDefault();
+                  onNavigate(item.path);
+                }}
                 className="btn-pro secondary"
                 style={{
                   fontSize: "10px",

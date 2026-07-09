@@ -314,7 +314,7 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "VN", mrr
           nextHashrateNoRows,
           nextNiceHashPrices
         );
-        const nextOpportunities = buildOpportunityRows(nextRoutes, nextNiceHashPrices, nextMrrMarketRows);
+        const nextOpportunities = buildOpportunityRows(nextRoutes, nextNiceHashPrices, nextMrrMarketRows, nextHeroRows);
 
         console.log(`📊 Opportunities: ${nextOpportunities.length}`);
         console.log("🏆 Best opportunity:", nextOpportunities[0]);

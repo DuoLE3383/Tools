@@ -10,7 +10,6 @@ export default defineConfig(({ command }) => ({
     watch: { usePolling: true },
     allowedHosts: ['localhost', 'huyenbao.com', 'api.huyenbao.com', 'api.herominers.com', 'api.mining-dutch.nl', 'api.nicehash.com', 'api.miningrigrentals.com', 'api2.miningrigrentals.com', 'www.huyenbao.com', 'www.herominers.com', 'www.mining-dutch.nl', 'www.nicehash.com', 'www.miningrigrentals.com', 'www2.miningrigrentals.com'],
     proxy: {
-      // ✅ HeroMiners proxy - external site
       '/api/hm': {
         target: 'https://herominers.com',
         changeOrigin: true,
@@ -27,8 +26,6 @@ export default defineConfig(({ command }) => ({
           });
         }
       },
-      
-      // ✅ Mining-Dutch proxy - external site
       '/api/md': {
         target: 'https://www.mining-dutch.nl',
         changeOrigin: true,
@@ -45,12 +42,14 @@ export default defineConfig(({ command }) => ({
           });
         }
       },
-      
-      // ✅ Main API proxy - YOUR BACKEND
+      '/api/v2/prices/ws': {
+        target: 'ws://localhost:3003',
+        ws: true,
+        changeOrigin: true,
+      },
       '/api': {
         target: 'http://localhost:3003',
         changeOrigin: true,
-        ws: true, // ✅ Enable WebSocket proxying
         configure: (proxy) => {
           proxy.on('error', (err) => {
             console.error('[API Proxy] Error:', err.message);
@@ -58,25 +57,25 @@ export default defineConfig(({ command }) => ({
           proxy.on('proxyReq', (proxyReq, req, res) => {
             console.log('[API Proxy] ->', req.url);
           });
-          // ✅ Handle WebSocket upgrade
-          proxy.on('upgrade', (proxyReq, socket, head) => {
+          proxy.on('upgrade', (proxyReq, req, socket, head) => {
             console.log('[WS Proxy] WebSocket upgrade');
           });
         },
-        // ✅ Don't rewrite - keep path as is
-        // rewrite: (path) => path, // This is the default behavior
       },
     },
   },
   build: {
     outDir: 'dist',
     sourcemap: true,
+    // ✅ Option 2: Remove manualChunks entirely and let Vite handle it
     rollupOptions: {
       output: {
-        manualChunks: {
-          vendor: ['react', 'react-dom'],
-        },
+        // Keep it simple - Vite will auto-split
+        assetFileNames: 'assets/[name].[hash].[ext]',
+        chunkFileNames: 'assets/[name].[hash].js',
+        entryFileNames: 'assets/[name].[hash].js',
       },
     },
+    chunkSizeWarningLimit: 1000,
   },
 }))

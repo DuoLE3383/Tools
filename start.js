@@ -61,15 +61,15 @@ function killProcessOnPort(port) {
       console.log(`🔍 Looking for process using port ${port}...`);
       const findCmd = spawn('netstat', ['-ano', '-p', 'TCP'], { shell: true });
       let output = '';
-      
+
       findCmd.stdout.on('data', (data) => {
         output += data.toString();
       });
-      
+
       findCmd.on('close', (code) => {
         const lines = output.split('\n');
         let pids = new Set();
-        
+
         for (const line of lines) {
           if (line.includes(`:${port}`) && line.includes('LISTENING')) {
             const parts = line.trim().split(/\s+/);
@@ -79,12 +79,12 @@ function killProcessOnPort(port) {
             }
           }
         }
-        
+
         if (pids.size > 0) {
           for (const pid of pids) {
             console.log(`🔪 Killing process with PID: ${pid} using port ${port}`);
             try {
-              const killCmd = spawn('taskkill', ['/F', '/PID', pid], { 
+              const killCmd = spawn('taskkill', ['/F', '/PID', pid], {
                 shell: true,
                 stdio: 'pipe'
               });
@@ -106,15 +106,15 @@ function killProcessOnPort(port) {
       console.log(`🔍 Looking for process using port ${port}...`);
       const findCmd = spawn('lsof', ['-i', `:${port}`], { shell: true });
       let output = '';
-      
+
       findCmd.stdout.on('data', (data) => {
         output += data.toString();
       });
-      
+
       findCmd.on('close', (code) => {
         const lines = output.split('\n');
         let pids = new Set();
-        
+
         for (const line of lines) {
           if (line.includes(`:${port}`) && line.includes('LISTEN')) {
             const parts = line.trim().split(/\s+/);
@@ -126,7 +126,7 @@ function killProcessOnPort(port) {
             }
           }
         }
-        
+
         if (pids.size > 0) {
           for (const pid of pids) {
             console.log(`🔪 Killing process with PID: ${pid} using port ${port}`);
@@ -167,7 +167,7 @@ setInterval(checkFrozen, 180000); // 3 minutes
 function cleanup() {
   if (isShuttingDown) return;
   isShuttingDown = true;
-  
+
   console.log('\n🛑 Shutting down...');
   if (heartbeatTimer) {
     clearInterval(heartbeatTimer);
@@ -177,7 +177,7 @@ function cleanup() {
     clearTimeout(startupTimer);
     startupTimer = null;
   }
-  
+
   // Kill processes in reverse order
   const procs = [...processes].reverse();
   procs.forEach(p => {
@@ -187,14 +187,14 @@ function cleanup() {
         setTimeout(() => {
           try {
             if (p && !p.killed) p.kill('SIGKILL');
-          } catch (e) {}
+          } catch (e) { }
         }, 2000);
       }
     } catch (e) {
       // ignore
     }
   });
-  
+
   setTimeout(() => {
     process.exit(0);
   }, 3000);
@@ -212,11 +212,11 @@ function startHeartbeatMonitor() {
   if (heartbeatTimer) {
     clearInterval(heartbeatTimer);
   }
-  
+
   heartbeatTimer = setInterval(() => {
     const now = Date.now();
     const timeSinceHeartbeat = now - lastHeartbeat;
-    
+
     if (backendReady && timeSinceHeartbeat > CONFIG.heartbeatTimeout) {
       console.error(`❌ Backend frozen! No heartbeat for ${timeSinceHeartbeat}ms`);
       restartBackend();
@@ -229,16 +229,16 @@ function startHeartbeatMonitor() {
 async function restartBackend() {
   if (isRestarting || isShuttingDown) return;
   isRestarting = true;
-  
+
   restartCount++;
   if (restartCount > CONFIG.maxRestarts) {
     console.error(`❌ Backend crashed ${restartCount} times. Giving up.`);
     cleanup();
     return;
   }
-  
+
   console.log(`🔄 Restarting backend (attempt ${restartCount}/${CONFIG.maxRestarts})...`);
-  
+
   // Kill existing backend
   if (backendProcess) {
     try {
@@ -248,19 +248,19 @@ async function restartBackend() {
           if (backendProcess && !backendProcess.killed) {
             backendProcess.kill('SIGKILL');
           }
-        } catch (e) {}
+        } catch (e) { }
       }, 1000);
     } catch (e) {
       // ignore
     }
     backendProcess = null;
   }
-  
+
   backendReady = false;
-  
+
   // Kill any process using the port
   await killProcessOnPort(currentPort);
-  
+
   // Wait before restarting
   setTimeout(async () => {
     console.log(`📡 Starting backend on port ${currentPort}...`);
@@ -275,7 +275,7 @@ async function startBackend() {
   if (portInUse) {
     console.log(`⚠️ Port ${currentPort} is already in use. Attempting to free it...`);
     await killProcessOnPort(currentPort);
-    
+
     // Check again after killing
     const stillInUse = await isPortInUse(currentPort);
     if (stillInUse) {
@@ -294,20 +294,20 @@ async function startBackend() {
       console.log(`✅ Port ${currentPort} is now available`);
     }
   }
-  
+
   // Set port in environment
-  const env = { 
+  const env = {
     ...process.env,
     PORT: currentPort.toString(),
     NODE_ENV: process.env.NODE_ENV || 'development'
   };
-  
+
   // Clear any existing startup timer
   if (startupTimer) {
     clearTimeout(startupTimer);
     startupTimer = null;
   }
-  
+
   // Start backend with more robust options
   backendProcess = spawn('node', ['--unhandled-rejections=warn', 'index.js'], {
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -316,49 +316,49 @@ async function startBackend() {
     windowsHide: true,
     detached: false
   });
-  
+
   processes.push(backendProcess);
-  
+
   // Set startup timeout
   startupTimer = setTimeout(() => {
     if (!backendReady && !isShuttingDown) {
-      console.error(`❌ Backend startup timeout (${CONFIG.startupTimeout/1000}s). Restarting...`);
+      console.error(`❌ Backend startup timeout (${CONFIG.startupTimeout / 1000}s). Restarting...`);
       if (backendProcess) {
         try {
           backendProcess.kill();
-        } catch (e) {}
+        } catch (e) { }
       }
       restartBackend();
     }
   }, CONFIG.startupTimeout);
-  
+
   let outputBuffer = '';
-  
+
   backendProcess.stdout.on('data', (data) => {
     const chunk = data.toString();
     outputBuffer += chunk;
     const lines = chunk.split('\n').filter(line => line.trim());
-    
+
     for (const line of lines) {
       const trimmed = line.trim();
       if (trimmed) {
         console.log('[📡]', trimmed);
-        
+
         // Update heartbeat on any output
         lastHeartbeat = Date.now();
-        
+
         // Check if backend is ready
         if (trimmed.includes(`Listening on: http://localhost:${currentPort}`) ||
-            trimmed.includes(`Listening on: http://127.0.0.1:${currentPort}`)) {
+          trimmed.includes(`Listening on: http://127.0.0.1:${currentPort}`)) {
           clearTimeout(startupTimer);
           startupTimer = null;
           backendReady = true;
           restartCount = 0;
           console.log(`✅ Backend ready on port ${currentPort}!`);
-          
+
           // Start heartbeat monitor
           startHeartbeatMonitor();
-          
+
           // Start frontend if not already running and not shutting down
           if (!frontendProcess && !isShuttingDown) {
             console.log('🎨 Starting frontend...');
@@ -368,20 +368,20 @@ async function startBackend() {
       }
     }
   });
-  
+
   backendProcess.stderr.on('data', (data) => {
     const error = data.toString().trim();
     // Filter out noisy errors
-    if (error && 
-        !error.includes('ECONNREFUSED') && 
-        !error.includes('DeprecationWarning') &&
-        !error.includes('node:events') &&
-        !error.includes('Assertion failed') &&
-        !error.includes('UV_HANDLE_CLOSING') &&
-        !error.includes('WebSocket server initialized')) {
+    if (error &&
+      !error.includes('ECONNREFUSED') &&
+      !error.includes('DeprecationWarning') &&
+      !error.includes('node:events') &&
+      !error.includes('Assertion failed') &&
+      !error.includes('UV_HANDLE_CLOSING') &&
+      !error.includes('WebSocket server initialized')) {
       console.error('[Backend Error]', error);
     }
-    
+
     // Check for specific error conditions
     if (error && error.includes('EADDRINUSE')) {
       console.error(`❌ Port ${currentPort} already in use!`);
@@ -392,22 +392,22 @@ async function startBackend() {
       });
     }
   });
-  
+
   backendProcess.on('error', (err) => {
     console.error('❌ Backend process error:', err.message);
     if (!isShuttingDown && backendReady) {
       restartBackend();
     }
   });
-  
+
   backendProcess.on('close', (code) => {
     if (startupTimer) {
       clearTimeout(startupTimer);
       startupTimer = null;
     }
-    
+
     if (isShuttingDown) return;
-    
+
     const exitCode = code || 0;
     if (exitCode !== 0) {
       console.error(`❌ Backend exited with code ${exitCode}`);
@@ -428,63 +428,63 @@ async function startBackend() {
     }
     backendProcess = null;
   });
-  
+
   // Handle uncaught exceptions in the backend process
   backendProcess.on('spawn', () => {
     console.log(`✅ Backend process spawned with PID: ${backendProcess.pid}`);
   });
 }
 
-function startFrontend() {
-  const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-  
-  // Pass the port to frontend
-  const env = { 
-    ...process.env,
-    VITE_API_PORT: currentPort.toString(),
-    VITE_API_URL: `http://localhost:${currentPort}`
-  };
-  
-  // Kill any existing frontend
-  if (frontendProcess) {
-    try {
-      frontendProcess.kill();
-    } catch (e) {}
-    frontendProcess = null;
-  }
-  
-  // Remove any existing frontend from processes list
-  processes = processes.filter(p => p !== frontendProcess);
-  
-  frontendProcess = spawn(npmCmd, ['run', 'dev', '--', '--port', '1757'], {
-    stdio: 'inherit',
-    shell: true,
-    env: env,
-    windowsHide: true
-  });
-  
-  processes.push(frontendProcess);
-  
-  frontendProcess.on('error', (err) => {
-    console.error('❌ Frontend error:', err.message);
-  });
-  
-  frontendProcess.on('close', (code) => {
-    if (code !== 0 && code !== null && !isShuttingDown) {
-      console.error(`❌ Frontend exited with code ${code}`);
-      // Try to restart frontend if backend is still running
-      if (backendReady && !isShuttingDown) {
-        setTimeout(() => {
-          if (backendReady && !frontendProcess && !isShuttingDown) {
-            console.log('🔄 Restarting frontend...');
-            startFrontend();
-          }
-        }, 3000);
-      }
-    }
-    frontendProcess = null;
-  });
-}
+// function startFrontend() {
+//   const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+
+//   // Pass the port to frontend
+//   const env = {
+//     ...process.env,
+//     VITE_API_PORT: currentPort.toString(),
+//     VITE_API_URL: `http://localhost:${currentPort}`
+//   };
+
+//   // Kill any existing frontend
+//   if (frontendProcess) {
+//     try {
+//       frontendProcess.kill();
+//     } catch (e) { }
+//     frontendProcess = null;
+//   }
+
+//   // Remove any existing frontend from processes list
+//   processes = processes.filter(p => p !== frontendProcess);
+
+//   frontendProcess = spawn(npmCmd, ['run', 'dev', '--', '--port', '1757'], {
+//     stdio: 'inherit',
+//     shell: true,
+//     env: env,
+//     windowsHide: true
+//   });
+
+//   processes.push(frontendProcess);
+
+//   frontendProcess.on('error', (err) => {
+//     console.error('❌ Frontend error:', err.message);
+//   });
+
+//   frontendProcess.on('close', (code) => {
+//     if (code !== 0 && code !== null && !isShuttingDown) {
+//       console.error(`❌ Frontend exited with code ${code}`);
+//       // Try to restart frontend if backend is still running
+//       if (backendReady && !isShuttingDown) {
+//         setTimeout(() => {
+//           if (backendReady && !frontendProcess && !isShuttingDown) {
+//             console.log('🔄 Restarting frontend...');
+//             startFrontend();
+//           }
+//         }, 3000);
+//       }
+//     }
+//     frontendProcess = null;
+//   });
+// }
 
 // Add periodic port check
 function startPortMonitor() {
@@ -505,7 +505,7 @@ function startPortMonitor() {
 console.log('📡 Starting application...');
 console.log(`🔍 Checking port ${CONFIG.port}...`);
 console.log('💡 Press Ctrl+C to stop all services.');
-console.log(`💓 Heartbeat monitoring enabled (check every ${CONFIG.heartbeatInterval/1000}s, timeout after ${CONFIG.heartbeatTimeout/1000}s)`);
+console.log(`💓 Heartbeat monitoring enabled (check every ${CONFIG.heartbeatInterval / 1000}s, timeout after ${CONFIG.heartbeatTimeout / 1000}s)`);
 
 // Initialize
 (async () => {

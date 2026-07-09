@@ -365,7 +365,7 @@ export function AutomationControls({
       <div
         style={{
           display: "none",
-          "@media (max-width: 768px)": {
+          "@media (maxWidth: 768px)": {
             display: "flex",
           },
         }}

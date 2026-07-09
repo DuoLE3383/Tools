@@ -86,35 +86,6 @@ export function registerMiscRoutes(app) {
     }
   }));
 
-  // ─── Available Coins ─────────────────────────────────────────
-  app.get("/api/v2/db/available-coins", asyncHandler(async (req, res) => {
-    try {
-      const cmcCoinsPromise = new Promise((resolve, reject) => {
-        db.all('SELECT DISTINCT slug FROM cmc_coins WHERE slug IS NOT NULL', (err, rows) => 
-          err ? reject(err) : resolve(rows.map(r => r.slug.toLowerCase()))
-        );
-      });
-      const coingeckoCoinsPromise = new Promise((resolve, reject) => {
-        db.all('SELECT DISTINCT name FROM coingecko_coins WHERE name IS NOT NULL', (err, rows) => 
-          err ? reject(err) : resolve(rows.map(r => r.name.toLowerCase()))
-        );
-      });
-      const coingeckoIdsPromise = new Promise((resolve, reject) => {
-        db.all('SELECT DISTINCT id FROM coingecko_coins WHERE id IS NOT NULL', (err, rows) => 
-          err ? reject(err) : resolve(rows.map(r => r.id.toLowerCase()))
-        );
-      });
-
-      const [cmcSlugs, coingeckoNames, coingeckoIds] = await Promise.all([cmcCoinsPromise, coingeckoCoinsPromise, coingeckoIdsPromise]);
-      const allCoinIds = [...new Set([...cmcSlugs, ...coingeckoNames, ...coingeckoIds])];
-
-      res.json({ success: true, data: allCoinIds });
-    } catch (err) {
-      console.error('[DB] Failed to fetch available coins:', err.message);
-      res.status(500).json({ success: false, error: 'Could not query available coins from database.' });
-    }
-  }));
-
   // ─── Telegram Status ─────────────────────────────────────────
   app.get("/api/v2/notify/telegram/status", asyncHandler(async (req, res) => {
     const status = await getTelegramStatus();

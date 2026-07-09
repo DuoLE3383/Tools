@@ -2,6 +2,23 @@
  * JavaScript Client for fetching coin prices from CoinGecko.
  * Corrects the invalid Java implementation previously found in this file.
  */
+
+export const COINS = [
+  { id: "bitcoin", symbol: "BTC", name: "Bitcoin" },
+  { id: "ethereum", symbol: "ETH", name: "Ethereum" },
+  { id: "litecoin", symbol: "LTC", name: "Litecoin" },
+  { id: "dogecoin", symbol: "DOGE", name: "Dogecoin" },
+  { id: "bitcoin-cash", symbol: "BCH", name: "Bitcoin Cash" },
+];
+
+export const COIN_ALIASES = {
+  bitcoin: ["bitcoin", "BTC", "btc"],
+  ethereum: ["ethereum", "ETH", "eth"],
+  litecoin: ["litecoin", "LTC", "ltc"],
+  dogecoin: ["dogecoin", "DOGE", "doge"],
+  "bitcoin-cash": ["bitcoin-cash", "bitcoin_cash", "bitcoincash", "BCH", "bch"],
+};
+
 export async function getSimplePrice(ids, vsCurrencies = "usd,btc") {
   const isPro = process.env.COINGECKO_PRO === "true";
   const apiKey = process.env.COINGECKO_API_KEY || "";

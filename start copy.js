@@ -17,7 +17,7 @@ const CONFIG = {
   heartbeatTimeout: 15000,
   maxRestarts: 5,
   restartDelay: 5000,
-  port: 3000,
+  port: 3003,
   maxPortAttempts: 10,
   startupTimeout: 45000,
 };

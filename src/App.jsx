@@ -1,3 +1,5 @@
+// src/App.jsx — centralized state + per-page routing
+
 // App.jsx — centralized state + per-page routing
 
 import { WebSocketProvider } from './components/WebSocketContext';
@@ -21,6 +23,7 @@ const initialView = (() => {
   if (p === '/nicehash') return 'nicehash';
   if (p === '/mrr') return 'mrr';
   if (p === '/cryptorate') return 'cryptorate';
+  if (p === '/') return 'dashboard';
   return 'dashboard';
 })();
 
@@ -44,6 +47,9 @@ const initialState = {
   view: initialView,
   currentUser: null,
   coinPrices: null,
+  permissionsChecked: false,
+  // ✅ Store the current path to prevent unnecessary redirects
+  currentPath: window.location.pathname,
 };
 
 function reducer(state, action) {
@@ -86,6 +92,10 @@ function reducer(state, action) {
       return { ...state, currentUser: action.payload };
     case "SET_COIN_PRICES":
       return { ...state, coinPrices: { ...(state.coinPrices || {}), ...action.payload } };
+    case "SET_PERMISSIONS_CHECKED":
+      return { ...state, permissionsChecked: action.payload };
+    case "SET_CURRENT_PATH":
+      return { ...state, currentPath: action.payload };
     default:
       return state;
   }
@@ -111,6 +121,29 @@ function AppContent({ authToken, onLoginSuccess, onLogout, callApi, setAuthToken
 
   const currentUser = state.currentUser || { username: "Unknown", role: "user" };
   const isAdmin = String(currentUser?.role || "").toLowerCase() === "admin";
+
+  // ── Navigation ──
+  const navigate = useCallback((to) => {
+    const nextPath = String(to || "/").startsWith("/") ? String(to || "/") : `/${String(to || "")}`;
+    dispatch({ type: "SET_CURRENT_PATH", payload: nextPath });
+    if (window.location.pathname !== nextPath) {
+      window.history.pushState({}, "", nextPath);
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    }
+    let view = 'dashboard';
+    if (nextPath === '/mining') view = 'mining';
+    else if (nextPath === '/nicehash') view = 'nicehash';
+    else if (nextPath === '/mrr') view = 'mrr';
+    else if (nextPath === '/cryptorate') view = 'cryptorate';
+    dispatch({ type: "SET_VIEW", payload: view });
+  }, []);
+
+  // ── navigateToHomepage ──
+  const navigateToHomepage = useCallback((userPermissions) => {
+    const firstAllowedView = userPermissions?.[0] || 'dashboard';
+    const path = firstAllowedView === 'dashboard' ? '/' : `/${firstAllowedView}`;
+    navigate(path);
+  }, [navigate]);
 
   // ── Helpers ──
   const toDateTimeLocal = (value) => {
@@ -212,21 +245,6 @@ function AppContent({ authToken, onLoginSuccess, onLogout, callApi, setAuthToken
     return () => clearInterval(interval);
   }, [authToken, callApi]);
 
-  // ── Navigation ──
-  const navigate = useCallback((to) => {
-    const nextPath = String(to || "/").startsWith("/") ? String(to || "/") : `/${String(to || "")}`;
-    if (window.location.pathname !== nextPath) {
-      window.history.pushState({}, "", nextPath);
-      window.dispatchEvent(new PopStateEvent("popstate"));
-    }
-    let view = 'dashboard';
-    if (nextPath === '/mining') view = 'mining';
-    else if (nextPath === '/nicehash') view = 'nicehash';
-    else if (nextPath === '/mrr') view = 'mrr';
-    else if (nextPath === '/cryptorate') view = 'cryptorate';
-    dispatch({ type: "SET_VIEW", payload: view });
-  }, []);
-
   // ── Route handling ──
   useEffect(() => {
     const onPopState = () => {
@@ -237,10 +255,59 @@ function AppContent({ authToken, onLoginSuccess, onLogout, callApi, setAuthToken
       else if (path === '/mrr') view = 'mrr';
       else if (path === '/cryptorate') view = 'cryptorate';
       dispatch({ type: "SET_VIEW", payload: view });
+      dispatch({ type: "SET_CURRENT_PATH", payload: path });
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
+
+  // ── Permission-based routing ──
+  // ✅ Only run once when the component mounts or when the user changes
+  useEffect(() => {
+    // Skip if we've already checked permissions or if we don't have the needed data
+    if (state.permissionsChecked || !currentUser || !callApi) return;
+
+    const checkPermissionsAndRedirect = async () => {
+      try {
+        const permRes = await callApi('/api/auth/permissions', { silent: true });
+        if (permRes?.success && Array.isArray(permRes.permissions)) {
+          const userPermissions = permRes.permissions;
+          
+          // ✅ Get the current path from state, not window.location
+          const currentPath = state.currentPath || window.location.pathname;
+          const currentView = currentPath.replace('/', '') || 'dashboard';
+          
+          console.log(`[Auth] User permissions:`, userPermissions);
+          console.log(`[Auth] Current view:`, currentView);
+          
+          // ✅ Only redirect if the user is on a page they don't have permission for
+          // AND they're not on the dashboard (which is always allowed)
+          if (currentView !== 'dashboard' && !userPermissions.includes(currentView)) {
+            console.log(`[Auth] User lacks permission for ${currentView}, redirecting to:`, userPermissions[0]);
+            navigateToHomepage(userPermissions);
+          } else {
+            // ✅ Make sure the view state matches the URL
+            const viewToSet = currentView === 'cryptorate' ? 'cryptorate' : 
+                            currentView === 'mining' ? 'mining' :
+                            currentView === 'nicehash' ? 'nicehash' :
+                            currentView === 'mrr' ? 'mrr' :
+                            'dashboard';
+            if (state.view !== viewToSet) {
+              dispatch({ type: "SET_VIEW", payload: viewToSet });
+            }
+          }
+        }
+        // ✅ Mark permissions as checked
+        dispatch({ type: "SET_PERMISSIONS_CHECKED", payload: true });
+      } catch (err) {
+        console.error('[Auth] Failed to check permissions:', err);
+        // ✅ Even on error, mark as checked to prevent infinite loops
+        dispatch({ type: "SET_PERMISSIONS_CHECKED", payload: true });
+      }
+    };
+    
+    checkPermissionsAndRedirect();
+  }, [currentUser, callApi, state.permissionsChecked, navigateToHomepage, state.currentPath]);
 
   // ── Force check ──
   const forceCheckStatus = useCallback(() => {
@@ -339,8 +406,6 @@ function AppContent({ authToken, onLoginSuccess, onLogout, callApi, setAuthToken
     return <Login onLoginSuccess={onLoginSuccess} onCall={callApi} />;
   }
 
-  // ✅ Wrap the ENTIRE app with providers
-  // ✅ WebSocketProvider needs a valid token to connect
   return (
     <WebSocketProvider token={authToken}>
       <NiceHashOrderProvider nhClient={state.nhOrderClient} callApi={callApi}>
@@ -370,7 +435,8 @@ function AppContent({ authToken, onLoginSuccess, onLogout, callApi, setAuthToken
             onClose={() => dispatch({ type: "SET_COMPLETION_MODAL", payload: false })}
             title="Rental Completion Calculator"
             maxWidth="1280px"
-            minWidth="800px"          >
+            minWidth="800px"
+          >
             <HashCompletionCalculator {...state.completionCalculatorContext} />
           </Modal>
         </div>
@@ -383,14 +449,16 @@ function AppContent({ authToken, onLoginSuccess, onLogout, callApi, setAuthToken
 export default function App() {
   const [authToken, setAuthToken] = useState(() => localStorage.getItem('token'));
 
-  const callApi = useCallback(createApiClient({
+  const callApi = useCallback(
+    createApiClient({
       onAuthError: () => {
         console.log("[Auth] Auth error detected, logging out.");
         localStorage.removeItem('token');
         setAuthToken(null);
       },
+      token: authToken,
     }),
-    [setAuthToken]
+    [authToken]
   );
 
   const handleLoginSuccess = (token) => {

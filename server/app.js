@@ -1,7 +1,4 @@
-import http from 'http';
 import express from 'express';
-import path from 'path';
-import { setupWebSocket } from './ws.js';
 import { SyncManager } from '../SyncManager.js'; // Assuming SyncManager is in the root
 import { db } from './db.js'; // db is now simpler
 import { initNhConfigs, nhConfigs, getNiceHashApp, resolveNhClient } from './nh.js';
@@ -10,8 +7,7 @@ import { registerRoutes } from './routes.js';
 import { corsMiddleware, logRequestMiddleware } from './utils.js';
 import { runRentalMonitor } from './monitor.js';
 import { startMiningOpportunityScanner } from './miningOpportunityNotifier.js'; 
-import { validateAuthConfig } from './auth.js';
-import authRoutes from './auth.js';
+import authRoutes, { validateAuthConfig } from './auth.js';
 
 export function createApp({ distPath }) {
   const app = express();
@@ -22,13 +18,6 @@ export function createApp({ distPath }) {
 
   // Authentication routes
   app.use('/api/auth', authRoutes);
-
-  // Routes are now registered in the main index.js after app initialization
-
-  // Create HTTP server and attach WebSocket
-  const server = http.createServer(app);
-  setupWebSocket(server);
-  app.server = server;
 
   if (distPath) {
     app.use(express.static(distPath));

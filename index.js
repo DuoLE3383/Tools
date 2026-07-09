@@ -13,7 +13,7 @@ import { setupWebSocket } from "./server/ws.js";
 import { registerRoutes } from "./server/routes.js";
 import { startMiningOpportunityScanner } from "./server/miningOpportunityNotifier.js";
 import { createApp, initializeApp } from "./server/app.js";
-import { verifyToken } from "./server/auth.js";
+import { authMiddleware } from "./server/auth.js";
 import { resolveNhClient, getNiceHashApp, nhConfigs } from "./server/nh.js";
 import {
   mrrApiCall,
@@ -25,8 +25,6 @@ import { migrateOldCsvToDb } from "./server/migrate.js";
 import { initMiningTrainingDb } from "./server/miningTrainingDb.js";
 import { setDb } from "./server/db.js";
 import { fetchAndSaveCoinPrices } from "./server/coinGecko/coinGeckoClient.js";
-import { scrapeMinerstat } from "./server/miners/minerstat.js";
-import { scrapeWhatToMine } from "./server/miners/whatToMine.js";
 import { scrapeHeroMinersGlobal } from "./server/miners/heroMiners.js";
 
 // ============================================================
@@ -80,7 +78,7 @@ const VALID_MRR_CLIENT_TAGS = new Set(["BT", "SL", "LN", "LUCKY", "VN", "ALL"]);
 // CREATE APP
 // ============================================================
 const app = createApp({ distPath });
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT;
 
 // ============================================================
 // MIDDLEWARE
@@ -415,27 +413,24 @@ async function startServer() {
     registerRoutes(app);
     console.log("[Routes] All routes registered");
 
-    // Add mining stats routes
-    app.get("/api/v2/mining-stats/minerstat", async (req, res) => {
+    app.get('/api/v2/db/available-coins', authMiddleware, async (req, res) => {
       try {
-        const data = await scrapeMinerstat();
-        res.json(data);
-      } catch (err) {
-        res.status(500).json({ error: err.message });
+        const coins = await dbAll(`
+          SELECT DISTINCT symbol, name as coin_name, id as coin_id
+          FROM coin_metadata
+          WHERE symbol IS NOT NULL
+          ORDER BY symbol
+        `);
+        res.json({ success: true, coins });
+      } catch (error) {
+        console.error('[DB] Error fetching available coins:', error);
+        res.status(500).json({
+          success: false,
+          error: error.message
+        });
       }
     });
 
-    app.get("/api/v2/mining-stats/whattomine", async (req, res) => {
-      try {
-        const data = await scrapeWhatToMine();
-        res.json(data);
-      } catch (err) {
-        res.status(500).json({ error: err.message });
-      }
-    });
-
-    // The `/api/v2/mining-stats/herominers/global` route is registered
-    // by `server/miners/herominers-routes.js` and should no longer be duplicated here.
 
     // Serve static files
     app.use(express.static(distPath));

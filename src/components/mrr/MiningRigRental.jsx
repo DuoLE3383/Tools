@@ -477,7 +477,11 @@ export default function MiningRigRental({
         <h2 className="section-title" style={{ margin: 0, fontSize: "clamp(1rem, 2vw, 1.25rem)" }}>
           ⛏️ Mining Rig Rentals
         </h2>
+        <button className="btn-pro secondary" onClick={() => openManagementModal("list")} style={{ fontSize: "clamp(10px, 1vw, 12px)", padding: "4px 12px" }}>
+            📋 Rigs
+          </button>
         <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center" }}>
+          
           <select
             className="select-pro"
             value={mrrClient || "VN"}
@@ -490,18 +494,16 @@ export default function MiningRigRental({
             <option value="LN">LN</option>
             <option value="LUCKY">LUCKY</option>
           </select>
-          <button className="btn-pro secondary" onClick={() => openManagementModal("list")} style={{ fontSize: "clamp(10px, 1vw, 12px)", padding: "4px 12px" }}>
-            📋 Rigs
-          </button>
-          <button className="btn-pro secondary" onClick={() => onCall("/api/v2/mrr/balance", { query: { client: mrrClient }, showModal: true })} style={{ fontSize: "clamp(10px, 1vw, 12px)", padding: "4px 12px" }}>
+          
+          {/* <button className="btn-pro secondary" onClick={() => onCall("/api/v2/mrr/balance", { query: { client: mrrClient }, showModal: true })} style={{ fontSize: "clamp(10px, 1vw, 12px)", padding: "4px 12px" }}>
             💰 Balance
-          </button>
-          <TelegramManager onCall={onCall} mrrClient={mrrClient} />
+          </button> */}
+          {/* <TelegramManager onCall={onCall} mrrClient={mrrClient} /> */}
         </div>
       </div>
 
       {/* Quick Stats */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))", gap: "8px", marginBottom: "12px" }}>
+      {/* <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))", gap: "8px", marginBottom: "12px" }}>
         <div style={{ background: "rgba(255,255,255,0.03)", padding: "8px 12px", borderRadius: "6px", textAlign: "center" }}>
           <div style={{ fontSize: "10px", opacity: 0.5 }}>Active</div>
           <div style={{ fontSize: "clamp(16px, 2vw, 20px)", fontWeight: "bold", color: "#a78bfa" }}>{rentals.length}</div>
@@ -518,7 +520,7 @@ export default function MiningRigRental({
           <div style={{ fontSize: "10px", opacity: 0.5 }}>Workers</div>
           <div style={{ fontSize: "clamp(16px, 2vw, 20px)", fontWeight: "bold", color: "#60a5fa" }}>0</div>
         </div>
-      </div>
+      </div> */}
 
       {/* New Rental Notification Modal */}
       <Modal isOpen={!!newRentalFound} onClose={() => setNewRentalFound(null)} title="🚀 New Rig Rented!" maxWidth="500px">
