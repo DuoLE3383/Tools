@@ -8,10 +8,14 @@ import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 import Modal from "./components/Modal";
 import HashCompletionCalculator from "./components/ProfitCompletion.jsx";
 import CryptoRatePage from "../CryptoRatePage.jsx";
+import Modal from './components/Modal';
+import HashCompletionCalculator from './components/ProfitCompletion.jsx';
+import CryptoRatePage from '../CryptoRatePage.jsx';
 import MiningPage from "./components/mining/MiningPage.jsx";
 import { createApiClient } from "./core/apiClient";
 import Login from './components/Login.jsx';
 import DashboardPage from './page/DashboardPage.jsx';
+import DashboardHeader from './components/Dashboard/DashboardHeader.jsx';
 import NiceHashPage from './page/NiceHashPage.jsx';
 import MrrPage from './page/MrrPage.jsx';
 import "./App.css";
@@ -399,6 +403,30 @@ function AppContent({ authToken, onLoginSuccess, onLogout, callApi, setAuthToken
             handleLogout={handleLogout}
             onNavigate={navigate}
           />
+          <div className="page-full">
+            <DashboardHeader
+              state={state}
+              currentUser={currentUser}
+              isAdmin={isAdmin}
+              onForceCheck={forceCheckStatus}
+              onDebugLogs={() => dispatch({ type: "SET_DEBUG_MODAL", payload: true })}
+              onLogout={handleLogout}
+              onUsers={() => dispatch({ type: "SET_USERS_MODAL", payload: true })}
+              onCalculator={() => dispatch({ type: "SET_CALCULATOR_MODAL", payload: true })}
+              onNavigate={navigate}
+              currentView="mining"
+            />
+            <main className="dashboard">
+              <div className="column-stack" style={{ display: "flex", flexDirection: "column", gap: "24px", minWidth: "600px" }}>
+                <MiningPage
+                  onCall={callApi}
+                  state={state}
+                  dispatch={dispatch}
+                />
+              </div>
+              <CryptoRatePage onCall={callApi} coinPrices={state.coinPrices} />
+            </main>
+          </div>
         );
       
       case 'nicehash':

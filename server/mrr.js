@@ -588,11 +588,14 @@ export async function mrrApiCall({ endpoint, method = 'GET', query, body, client
         finalStatus = 401;
       }
 
-      // Only log endpoint calls that are not the frequent pool scans
-      const isFrequentScan = normalizedPath.includes('/pool') || normalizedPath.includes('/rig/');
-      if (!isFrequentScan || process.env.DEBUG_MRR === 'true') {
-        const logTime = new Date().toLocaleTimeString();
-        console.log(`[${logTime}] [mrr:${clientName}] endpoint=${normalizedPath} nonce=${currentNonce} status=${finalStatus} msg=${authMessage || 'OK'}`);
+      if (finalStatus === 401 && isAuthFailureMessage) {
+        const keyHint = clientConfig.apiKey ? clientConfig.apiKey.slice(0, 6) : 'N/A';
+        console.error(`[mrr:${clientName}] 🚨 Authentication failed for key ${keyHint}... (${authMessage}). Please check your API Key and Secret.`);
+      } else {
+        const isFrequentScan = normalizedPath.includes('/pool') || normalizedPath.includes('/rig/');
+        if (!isFrequentScan || process.env.DEBUG_MRR === 'true') {
+          console.log(`[mrr:${clientName}] endpoint=${normalizedPath} nonce=${currentNonce} status=${finalStatus} msg=${authMessage || 'OK'}`);
+        }
       }
 
       if (finalStatus === 200 && normalizedPath.startsWith('/rig/')) {

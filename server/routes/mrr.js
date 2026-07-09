@@ -3,8 +3,7 @@ import { asyncHandler, extractRentalInfo, extractRigInfo } from "../utils.js";
 import { mrrApiCall, mrrRequest, fetchAggregatedRentals, mrrConfigs, defaultMrrClient } from "../mrr.js";
 import { resolveNhClient, isAggregate, getNiceHashApp, normalizeAlgoForNiceHash, getCachedNhPools } from "../nh.js";
 import { getDb } from "../db.js";
-import { saveToDatabase } from "./_helpers.js";
-import { runRentalMonitor } from "../monitor.js"; // Corrected path
+import { runRentalMonitor } from "../monitor.js";
 
 export function registerMrrRoutes(app) {
   // ─── Monitor ──────────────────────────────────────────────────
@@ -91,7 +90,6 @@ export function registerMrrRoutes(app) {
       }));
       const errors = [];
       results.forEach(res => { if (res.rigs) allRigs.push(...res.rigs); if (res.error) errors.push(res.error); });
-      await saveToDatabase('mrr_rigs.csv', allRigs);
       res.json({ success: true, rigs: allRigs, errors: errors.length > 0 ? errors : undefined });
     } else {
       if (targetEndpoint === "/rig/mine") {
@@ -174,7 +172,6 @@ export function registerMrrRoutes(app) {
   app.get("/api/v2/mrr/rentals", asyncHandler(async (req, res) => {
     const { client: clientQuery, ...forwardQuery } = req.query || {};
     const result = await fetchAggregatedRentals(forwardQuery, String(clientQuery || defaultMrrClient).toUpperCase());
-    await saveToDatabase('mrr_rentals.csv', result.data?.data?.rentals || []);
     res.set('X-MRR-Client', result.clientName);
     res.status(result.statusCode).json(result.data);
   }));
@@ -195,7 +192,6 @@ export function registerMrrRoutes(app) {
   app.get("/api/v2/mrr/rental/history", asyncHandler(async (req, res) => {
     const { client: clientQuery, ...forwardQuery } = req.query || {};
     const result = await fetchAggregatedRentals({ ...forwardQuery, history: '1' }, String(clientQuery || defaultMrrClient).toUpperCase());
-    await saveToDatabase('mrr_rental_history.csv', result.data?.data?.rentals || []);
     res.set('X-MRR-Client', result.clientName);
     res.status(result.statusCode).json(result.data);
   }));
@@ -332,7 +328,6 @@ export function registerMrrRoutes(app) {
       query: forwardQuery,
     });
     if (statusCode === 200 && data?.success) {
-      await saveToDatabase('mrr_account_pools.csv', data.data || []);
       const db = await getDb();
       const pools = data.data || [];
       if (pools.length > 0) {

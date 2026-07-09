@@ -9,7 +9,6 @@ import {
 } from "../monitor.js";
 import { saveMiningTrainingSnapshot } from "../miningTrainingDb.js";
 import { getDb } from "../db.js";
-import { saveToDatabase } from "./_helpers.js";
 import fs from "fs/promises";
 import path from "path";
 import { scanMiningOpportunities } from "../miningOpportunityNotifier.js";
@@ -130,7 +129,6 @@ export function registerMiscRoutes(app) {
   app.get("/api/v2/mrr/monitor/snapshot", asyncHandler(async (req, res) => {
     const db = await getDb();
     const rows = await db.all(`SELECT * FROM rentals ORDER BY last_updated DESC`);
-    await saveToDatabase("monitor_snapshot.csv", rows);
     res.json({ success: true, data: rows });
   }));
 

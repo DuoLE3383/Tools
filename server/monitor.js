@@ -349,6 +349,7 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
       const metric = {
         name: acct,
         total: 0,
+        ghost: 0,
         online: 0,
         rented: 0,
         offline: 0,
@@ -482,12 +483,13 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
         // PROCESS RENTALS - SIMPLIFIED
         // ============================================================
         let realRentalCount = 0;
+        const ghostRentalsFound = [];
 
         for (const [rentalId, r] of rentalsMap) {
           // Skip if not a real rental
           const info = extractRentalInfo(r);
           if (!isRealRental(r, info)) {
-            console.log(`[monitor:${acct}] Skipping ghost rental: ${rentalId}`);
+            ghostRentalsFound.push(rentalId);
             continue;
           }
 
@@ -658,7 +660,12 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
           }
         }
 
+        if (ghostRentalsFound.length > 0) {
+          console.log(`[monitor:${acct}] Filtered out ${ghostRentalsFound.length} ghost rentals.`);
+        }
+
         metric.rented = realRentalCount;
+        metric.ghost = ghostRentalsFound.length;
         accountMetrics.push(metric);
         if (!metric.error) successfulAccts.push(acct);
 

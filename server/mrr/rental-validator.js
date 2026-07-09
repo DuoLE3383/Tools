@@ -13,7 +13,8 @@ export function isRealRental(rental, info, now = Date.now()) {
   if (!rental || !info) return false;
 
   // Must have valid ID
-  const hasValidId = rental.id || rental.rentalid || rental.rental_id;
+  const rentalId = rental.id || rental.rentalid || rental.rental_id;
+  const hasValidId = rentalId && String(rentalId) !== '0' && String(rentalId) !== 'false';
   if (!hasValidId) return false;
 
   // Check for activity

@@ -62,17 +62,15 @@ export default function CoinPriceModal({
     
     const coinId = coin.coinId || coin.symbol?.toLowerCase() || coin.name?.toLowerCase();
     
-    // --- Try CoinGecko first (most reliable for 24h high/low) ---
+    // --- Try CoinGecko via backend first ---
     try {
-      const endpoint = "/api/v2/coingecko/coins/markets"; // ✅ Use the full market data endpoint
       const query = { 
-        ids: coinId, // Use 'ids' to match the backend endpoint
+        ids: coinId,
         vs_currency: "usd" 
       };
-      const result = await onCall(endpoint, { query, silent: true });
+      const result = await onCall("/api/v2/prices/coingecko", { query, silent: true });
       const data = Array.isArray(result) ? result[0] : (result?.data?.[0] || result?.[0] || {});
       
-      // CoinGecko response structure
       const price = data.price || data.usd || data.current_price || 0;
       const marketCap = data.marketCap || data.market_cap || 0;
       const volume24h = data.volume24h || data.total_volume || 0;
@@ -82,28 +80,49 @@ export default function CoinPriceModal({
       const supply = data.supply || data.circulating_supply || 0;
       const updatedAt = data.lastUpdated || data.last_updated || new Date().toISOString();
       
-      // Check if we got valid data from CoinGecko
       if (price > 0 || marketCap > 0) {
-        setPriceData({
-          price,
-          marketCap,
-          volume24h,
-          change24h,
-          high24h,
-          low24h,
-          supply,
-          lastUpdated: updatedAt,
-        });
+        setPriceData({ price, marketCap, volume24h, change24h, high24h, low24h, supply, lastUpdated: updatedAt });
         setLastUpdated(updatedAt);
         setSource("coingecko");
         setLoading(false);
         return;
       }
     } catch (cgErr) {
-      console.warn("CoinGecko fetch failed, trying fallback:", cgErr.message);
+      console.warn("CoinGecko backend fetch failed:", cgErr.message);
     }
 
-    // --- Try Database as the PRIMARY fallback ---
+    // --- Try CoinGecko DIRECT (client-side) as primary fallback ---
+    // This works when the backend is not running (e.g. Vite dev only)
+    try {
+      // CoinGecko uses IDs like "ethereum-classic" for ETC, "ravencoin" for RVN
+      const coinGeckoId = COINGECKO_IDS[coin.symbol?.toUpperCase()] || coinId;
+      const url = `https://api.coingecko.com/api/v3/simple/price?ids=${coinGeckoId}&vs_currencies=usd&include_24hr_change=true&include_market_cap=true&include_24hr_vol=true`;
+      const resp = await fetch(url);
+      if (resp.ok) {
+        const json = await resp.json();
+        const cgData = json[coinGeckoId];
+        if (cgData && cgData.usd > 0) {
+          setPriceData({
+            price: cgData.usd,
+            marketCap: cgData.usd_market_cap || 0,
+            volume24h: cgData.usd_24h_vol || 0,
+            change24h: cgData.usd_24h_change || 0,
+            high24h: 0,
+            low24h: 0,
+            supply: 0,
+            lastUpdated: new Date().toISOString(),
+          });
+          setLastUpdated(new Date().toISOString());
+          setSource("coingecko (direct)");
+          setLoading(false);
+          return;
+        }
+      }
+    } catch (directErr) {
+      console.warn("Direct CoinGecko fetch failed:", directErr.message);
+    }
+
+    // --- Try Database as final fallback ---
     const identifiers = [...new Set([
       coinId,
       coin.symbol?.toLowerCase(),
@@ -127,52 +146,57 @@ export default function CoinPriceModal({
           });
           setSource("database");
           setLoading(false);
-          return; // Success, exit the fetch function
+          return;
         }
       } catch (dbErr) {
         console.warn(`DB lookup for '${id}' failed:`, dbErr.message);
       }
     }
 
-    // --- Try CoinMarketCap as fallback ---
-    try {
-      const endpoint = "/api/v2/prices/cmc";
-      const query = { 
-        symbol: coin.symbol?.toUpperCase() || coinId 
-      };
-      const result = await onCall(endpoint, { query, silent: true });
-      const data = result?.data || result || {};
-      
-      // CMC response structure
-      const quote = data.quote?.USD || data.quote || {};
-      const price = quote.price || data.price || 0;
-      const marketCap = quote.market_cap || data.market_cap || 0;
-      const volume24h = quote.volume_24h || data.volume_24h || 0;
-      const change24h = quote.percent_change_24h || data.percent_change_24h || 0;
-      const high24h = quote.high_24h || data.high_24h || 0;
-      const low24h = quote.low_24h || data.low_24h || 0;
-      const supply = quote.circulating_supply || data.circulating_supply || 0;
-      const updatedAt = quote.last_updated || data.last_updated || new Date().toISOString();
-      
-      setPriceData({
-        price,
-        marketCap,
-        volume24h,
-        change24h,
-        high24h,
-        low24h,
-        supply,
-        lastUpdated: updatedAt,
-      });
-      setLastUpdated(updatedAt);
-      setSource("cmc");
-    } catch (cmcErr) {
-      console.warn("CMC fetch failed:", cmcErr.message);
-      setError("Failed to fetch price data from all sources");
-    } finally {
-      setLoading(false);
-    }
+    setError("No price data available. Start the backend or check connection.");
+    setLoading(false);
   }, [coin, onCall]);
+  
+  // CoinGecko ID mapping for client-side fallback
+  const COINGECKO_IDS = {
+    BTC: "bitcoin",
+    ETH: "ethereum",
+    ETC: "ethereum-classic",
+    LTC: "litecoin",
+    DOGE: "dogecoin",
+    RVN: "ravencoin",
+    BCH: "bitcoin-cash",
+    XMR: "monero",
+    KAS: "kaspa",
+    QRL: "qrl",
+    BEAM: "beam",
+    CFX: "conflux",
+    ERGO: "ergo",
+    ZEPH: "zephyr-protocol",
+    IRON: "iron-fish",
+    CLORE: "clore-ai",
+    DYNEX: "dynex",
+    BCN: "bytecoin",
+    AEON: "aeon",
+    XLA: "scala",
+    ARQ: "arqma",
+    WOW: "wownero",
+    XHV: "haven",
+    LOKI: "loki",
+    XWP: "swap",
+    TUBE: "bitcoin-tube",
+    GRFT: "graft",
+    ZANO: "zano",
+    NAH: "northern",
+    SUBS: "substratum",
+    BCO: "bridgecoin",
+    MBC: "micro-bitcoin",
+    DERO: "dero",
+    TON: "tokamak-network",
+    NIM: "nimiq",
+    PPC: "peercoin",
+    SAL: "salvium",
+  };
 
   useEffect(() => {
     if (isOpen && coin) fetchPrice();

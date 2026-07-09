@@ -35,7 +35,9 @@ export const compactNumber = (value, digits = 2) => {
 
 export const btcValue = (value) => {
   const num = numberValue(value);
-  return num > 0 ? num.toFixed(8) : "0.00000000";
+  if (num <= 0) return "0.00000000";
+  if (num >= 0.00000001) return num.toFixed(8);
+  return "0.00000000";
 };
 
 export const percentValue = (value) => {
@@ -301,13 +303,16 @@ export function mergeMiningRoutes(
       const hnBtc = hashrateNoRows.find(r => r.nicehashAlgo === nicehashAlgo)?.btcPerDay || 0;
       const heroBtc = hero?.btcPerDay || 0;
       
+      // Minimum economic threshold: price must be at least 0.0000001 BTC (few cents)
+      // to compute a meaningful spread. Sub-garbage prices are treated as zero.
+      const MIN_PRICE = 1e-7;
       const spread =
-        poolBtc > 0 && nhPrice > 0
+        poolBtc > 0 && nhPrice > MIN_PRICE
           ? ((poolBtc - nhPrice) / nhPrice) * 100
           : null;
       
       const heroSpread =
-        heroBtc > 0 && nhPrice > 0
+        heroBtc > 0 && nhPrice > MIN_PRICE
           ? ((heroBtc - nhPrice) / nhPrice) * 100
           : null;
       
@@ -525,12 +530,13 @@ export function buildOpportunityRows(
         ...candidates.map(c => c.value > 0 ? c.value : Number.POSITIVE_INFINITY)
       );
       
+      const MIN_PRICE = 1e-7;
       const spreadVsNh =
-        nhPrice > 0 ? ((pool - nhPrice) / nhPrice) * 100 : null;
+        nhPrice > MIN_PRICE ? ((pool - nhPrice) / nhPrice) * 100 : null;
       const spreadVsMrr =
-        mrrMarket > 0 ? ((pool - mrrMarket) / mrrMarket) * 100 : null;
+        mrrMarket > MIN_PRICE ? ((pool - mrrMarket) / mrrMarket) * 100 : null;
       const spreadVsHero =
-        heroValue > 0 ? ((pool - heroValue) / heroValue) * 100 : null;
+        heroValue > MIN_PRICE ? ((pool - heroValue) / heroValue) * 100 : null;
       
       // ✅ Determine winner including HeroMiners
       const winner = candidates.sort((a, b) => b.value - a.value)[0];

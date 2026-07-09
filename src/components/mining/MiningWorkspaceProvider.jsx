@@ -280,18 +280,11 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "VN", mrr
                 }
               }
 
-              // ✅ Try 4: Use pool revenue as fallback
+              // No fallback — only real NH prices are shown.
+              // If NH API calls failed, the price stays 0 and spread shows N/A,
+              // rather than polluting the data with fake prices.
               if (!success) {
-                const dutchAlgo = nextDutchRows.find(r => r.nicehashAlgo === algo);
-                if (dutchAlgo && dutchAlgo.btcPerDay > 0) {
-                  price = dutchAlgo.btcPerDay * 0.85; // 85% of pool as fallback
-                  success = true;
-                  method = "pool-proxy";
-                  priceStatus[algo] = `Using pool proxy (${dutchAlgo.btcPerDay})`;
-                  console.log(`🔄 NH fallback ${algo}: ${price} (pool proxy)`);
-                } else {
-                  priceStatus[algo] = "No price available";
-                }
+                priceStatus[algo] = "No price available — backend needed";
               } else {
                 priceStatus[algo] = `OK (${method})`;
               }

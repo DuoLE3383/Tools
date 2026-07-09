@@ -27,8 +27,5 @@ export async function saveToDatabase(filename, items) {
     await db.run('COMMIT');
   } catch (err) {
     console.error(`[db] Failed to save to ${tableName}:`, err.message);
-    // Attempt to rollback on error
-    const db = await getDb().catch(() => null);
-    if (db) await db.run('ROLLBACK').catch(e => console.error(`[db] Rollback failed: ${e.message}`));
   }
 }

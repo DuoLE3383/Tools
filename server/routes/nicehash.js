@@ -10,7 +10,6 @@ const ALGO_MAPPING = (algo) => {
   const mapping = getAlgoMapping(algo);
   return mapping?.unit || 'H';
 };
-import { saveToDatabase } from "./_helpers.js"; // see below
 
 export function registerNiceHashRoutes(app) {
   // Middleware for NiceHash client resolution
@@ -195,8 +194,7 @@ export function registerNiceHashRoutes(app) {
       nhClient: o.nhClient,
       ts: new Date().toISOString(),
     }));
-    await saveToDatabase("nh_order.csv", processedList.filter(o => o.status === "ACTIVE"));
-    res.json(typeof data === "object" && !Array.isArray(data) ? { ...data, list: processedList } : processedList);
+  res.json(typeof data === "object" && !Array.isArray(data) ? { ...data, list: processedList } : processedList);
   }));
   app.get("/api/v2/hashpower/rented-summary", asyncHandler(async (req, res) => {
     const maxPrice = parseFloat(req.query.price);
@@ -398,6 +396,7 @@ export function registerNiceHashRoutes(app) {
   // ─── Pools ──────────────────────────────────────────────────
   app.get("/api/v2/pools", asyncHandler(async (req, res) => {
     const clientParam = String(req.query.client || "BT").toUpperCase();
+    let data;
     if (isAggregate(clientParam)) {
       const nhAccounts = Object.keys(nhConfigs).filter(k => nhConfigs[k].apiKey && nhConfigs[k].apiSecret && nhConfigs[k].orgId && !isAggregate(k));
       const clientMap = new Map();
@@ -409,46 +408,40 @@ export function registerNiceHashRoutes(app) {
       }
       const results = await Promise.all(Array.from(clientMap.entries()).map(async ([clientName, client]) => {
         try {
-          const data = await getNiceHashApp(client).pools.getPools();
-          const pools = (data?.list || []).map(p => ({ ...p, nhClient: clientName }));
+          const d = await getNiceHashApp(client).pools.getPools();
+          const pools = (d?.list || []).map(p => ({ ...p, nhClient: clientName }));
+          // Fire-and-forget DB persist: don't block the response
           if (pools.length > 0) {
-            const db = await getDb();
-            await db.run('BEGIN TRANSACTION');
-            try {
-              const stmt = await db.prepare(`INSERT OR REPLACE INTO nh_pools (id, name, algorithm, stratumHostname, port, username, password, nhClient, last_updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`);
-              for (const p of pools) {
-                await stmt.run(p.id, p.name, p.algorithm, p.stratumHostname, p.port, p.username, p.password, clientName);
-              }
-              await stmt.finalize();
-              await db.run('COMMIT');
-            } catch (e) {
-              await db.run('ROLLBACK');
-            }
+            persistNhPoolsAsync(clientName, pools);
           }
           return pools;
         } catch { return []; }
       }));
-      return res.json({ list: results.flat(), totalCount: results.flat().length });
-    }
-    const data = await req.nhApp.pools.getPools();
-    const pools = data?.list || [];
-    const clientName = res.get("X-NH-Client") || "BT";
-    if (pools.length > 0) {
-      const db = await getDb();
-      await db.run('BEGIN TRANSACTION');
-      try {
-        const stmt = await db.prepare(`INSERT OR REPLACE INTO nh_pools (id, name, algorithm, stratumHostname, port, username, password, nhClient, last_updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`);
-        for (const p of pools) {
-          await stmt.run(p.id, p.name, p.algorithm, p.stratumHostname, p.port, p.username, p.password, clientName);
-        }
-        await stmt.finalize();
-        await db.run('COMMIT');
-      } catch (e) {
-        await db.run('ROLLBACK');
+      data = { list: results.flat(), totalCount: results.flat().length };
+    } else {
+      data = await req.nhApp.pools.getPools();
+      const pools = data?.list || [];
+      const clientName = res.get("X-NH-Client") || "BT";
+      if (pools.length > 0) {
+        persistNhPoolsAsync(clientName, pools);
       }
     }
     res.json(data);
   }));
+  
+  // Fire-and-forget DB persist for pool data
+  function persistNhPoolsAsync(clientName, pools) {
+    getDb().then(db => {
+      db.run('BEGIN TRANSACTION').then(() => {
+        const stmt = db.prepare(`INSERT OR REPLACE INTO nh_pools (id, name, algorithm, stratumHostname, port, username, password, nhClient, last_updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`);
+        const promises = pools.map(p => stmt.run(p.id, p.name, p.algorithm, p.stratumHostname, p.port, p.username, p.password, clientName));
+        return Promise.all(promises).then(() => stmt.finalize()).then(() => db.run('COMMIT'));
+      }).catch(e => {
+        console.error(`[nh:pools] Async persist failed for ${clientName}:`, e.message);
+        db.run('ROLLBACK').catch(() => {});
+      });
+    }).catch(e => console.error(`[nh:pools] DB connection failed:`, e.message));
+  }
   app.get("/api/v2/pool/:poolId", asyncHandler(async (req, res) => {
     const clientParam = String(req.query.client || "BT").toUpperCase();
     if (isAggregate(clientParam)) {
