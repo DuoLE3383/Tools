@@ -27,7 +27,7 @@ process.on('SIGTERM', cleanup);
 // Start backend
 backendProcess = spawn('node', ['index.js'], {
   stdio: 'inherit', // Pipe directly to parent console
-  shell: true,
+  shell: false,
   env: { ...process.env }
 });
 

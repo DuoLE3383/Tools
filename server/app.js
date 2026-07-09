@@ -1,6 +1,6 @@
 import express from 'express';
 import { SyncManager } from '../SyncManager.js'; // Assuming SyncManager is in the root
-import { db } from './db.js'; // db is now simpler
+import { getDb } from './db.js'; // db is now simpler
 import { initNhConfigs, nhConfigs, getNiceHashApp, resolveNhClient } from './nh.js';
 import { initMrrConfigs, mrrConfigs, initNonces, syncMrrClock, mrrApiCall } from './mrr.js';
 import { registerRoutes } from './routes.js';
@@ -44,6 +44,7 @@ export async function initializeApp(env) {
     process.exit(1);
   }
 
+  const db = await getDb();
   const syncManager = new SyncManager({ db, nhConfigs, mrrConfigs, mrrApiCall, resolveNhClient, getNiceHashApp });
   syncManager.run();
 

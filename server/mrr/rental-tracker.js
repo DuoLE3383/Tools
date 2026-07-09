@@ -3,44 +3,33 @@
 //  Manages rental state and database operations
 // ==========================
 
-import { db } from '../db.js';
+import { getDb } from '../db.js';
 import { isRealRental, validateRentals } from './rental-validator.js';
 
 // Database helpers
-function dbGetAsync(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    db.get(sql, params, (err, row) => {
-      if (err) reject(err);
-      else resolve(row);
-    });
-  });
+async function dbGetAsync(sql, params = []) {
+  const db = await getDb();
+  return db.get(sql, params);
 }
 
-function dbRunAsync(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    db.run(sql, params, function (err) {
-      if (err) reject(err);
-      else resolve(this);
-    });
-  });
+async function dbRunAsync(sql, params = []) {
+  const db = await getDb();
+  return db.run(sql, params);
 }
 
-function dbAllAsync(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    db.all(sql, params, (err, rows) => {
-      if (err) reject(err);
-      else resolve(rows);
-    });
-  });
+async function dbAllAsync(sql, params = []) {
+  const db = await getDb();
+  return db.all(sql, params);
 }
 
 /**
  * Initialize rental database tables
  */
 export async function initRentalDatabase() {
-  return new Promise((resolve) => {
-    db.serialize(() => {
-      db.run(`CREATE TABLE IF NOT EXISTS rentals (
+  const db = await getDb();
+  // Tables are now created in db.js, but we can ensure them here if needed.
+  // This function can be simplified or removed if db.js handles all table creation.
+  await db.run(`CREATE TABLE IF NOT EXISTS rentals (
         id TEXT PRIMARY KEY, 
         name TEXT, 
         client TEXT, 
@@ -59,31 +48,29 @@ export async function initRentalDatabase() {
         price_paid TEXT,
         is_real INTEGER DEFAULT 1,
         ghost_reason TEXT
-      )`, (err) => { if (err) console.error(`[rental-tracker] Failed to create rentals table: ${err.message}`); });
+      )`);
 
-      db.run(`CREATE TABLE IF NOT EXISTS rental_history (
+  await db.run(`CREATE TABLE IF NOT EXISTS rental_history (
         id TEXT PRIMARY KEY, 
         start_time INTEGER
-      )`, (err) => { if (err) console.error(`[rental-tracker] Failed to create rental_history table: ${err.message}`); });
+      )`);
 
-      db.run(`CREATE TABLE IF NOT EXISTS ghost_rentals (
+  await db.run(`CREATE TABLE IF NOT EXISTS ghost_rentals (
         id TEXT PRIMARY KEY,
         name TEXT,
         client TEXT,
         detected_at INTEGER,
         reason TEXT,
         cleaned_up INTEGER DEFAULT 0
-      )`, (err) => { if (err) console.error(`[rental-tracker] Failed to create ghost_rentals table: ${err.message}`); });
+      )`);
 
-      db.run(`CREATE TABLE IF NOT EXISTS mrr_algos (
+  await db.run(`CREATE TABLE IF NOT EXISTS mrr_algos (
         id TEXT PRIMARY KEY,
         name TEXT,
         raw_data TEXT
-      )`, (err) => { if (err) console.error(`[rental-tracker] Failed to create mrr_algos table: ${err.message}`); });
+      )`);
 
-      db.run("DELETE FROM rental_history WHERE start_time < ?", [Date.now() - 172800000], () => resolve());
-    });
-  });
+  await db.run("DELETE FROM rental_history WHERE start_time < ?", [Date.now() - 172800000]);
 }
 
 /**
@@ -98,10 +85,11 @@ export async function saveRental(rental, client, info, metrics, isValid) {
 
   const ghostReason = !isValid ? 'No mining activity detected' : null;
 
-  return new Promise((resolve) => {
-    db.serialize(() => {
-      db.run(
-        `INSERT INTO rentals (
+  const db = await getDb();
+  await db.run('BEGIN TRANSACTION');
+  try {
+    await db.run(
+      `INSERT INTO rentals (
           id, name, client, start_time, end_time, algo, 
           target_100, order_diff, last_updated, low_hashrate_start, zero_hashrate_start,
           current_hashrate, average_hashrate, advertised_hashrate, price_paid, 
@@ -119,33 +107,30 @@ export async function saveRental(rental, client, info, metrics, isValid) {
           average_hashrate=excluded.average_hashrate,
           advertised_hashrate=excluded.advertised_hashrate, 
           price_paid=excluded.price_paid, is_real=excluded.is_real`,
-        [
-          String(rental.id), rental.name || rental.id, client, startT, endT, info.algo, 
-          displayTarget, orderDiff, now, lowHashStart, zeroHashStart,
-          currentHash, average, advertised, paidAmount, lastNotified,
-          isValid ? 1 : 0, ghostReason
-        ], 
-        (err) => { 
-          if (err) console.error(`[rental-tracker] Upsert error for ${rental.id}: ${err.message}`); 
-        }
-      );
-      
-      if (startT > 0 && isValid) {
-        db.run("INSERT OR IGNORE INTO rental_history (id, start_time) VALUES (?, ?)", 
-          [String(rental.id), startT]);
-      }
-      
-      if (!isValid) {
-        db.run(
-          `INSERT OR IGNORE INTO ghost_rentals (id, name, client, detected_at, reason) 
+      [
+        String(rental.id), rental.name || rental.id, client, startT, endT, info.algo,
+        displayTarget, orderDiff, Date.now(), lowHashStart, zeroHashStart,
+        currentHash, average, advertised, paidAmount, lastNotified,
+        isValid ? 1 : 0, ghostReason
+      ]
+    );
+
+    if (startT > 0 && isValid) {
+      await db.run("INSERT OR IGNORE INTO rental_history (id, start_time) VALUES (?, ?)", [String(rental.id), startT]);
+    }
+
+    if (!isValid) {
+      await db.run(
+        `INSERT OR IGNORE INTO ghost_rentals (id, name, client, detected_at, reason) 
            VALUES (?, ?, ?, ?, ?)`,
-          [String(rental.id), rental.name || rental.id, client, Date.now(), ghostReason]
-        );
-      }
-      
-      resolve();
-    });
-  });
+        [String(rental.id), rental.name || rental.id, client, Date.now(), ghostReason]
+      );
+    }
+    await db.run('COMMIT');
+  } catch (err) {
+    console.error(`[rental-tracker] Upsert error for ${rental.id}: ${err.message}`);
+    await db.run('ROLLBACK');
+  }
 }
 
 /**

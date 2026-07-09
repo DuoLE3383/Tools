@@ -2,7 +2,7 @@
 import { asyncHandler, extractRentalInfo, extractRigInfo } from "../utils.js";
 import { mrrApiCall, mrrRequest, fetchAggregatedRentals, mrrConfigs, defaultMrrClient } from "../mrr.js";
 import { resolveNhClient, isAggregate, getNiceHashApp, normalizeAlgoForNiceHash, getCachedNhPools } from "../nh.js";
-import { db, getTrendDb } from "../db.js";
+import { getDb } from "../db.js";
 import { saveToDatabase } from "./_helpers.js";
 import { runRentalMonitor } from "../monitor.js"; // Corrected path
 
@@ -36,6 +36,7 @@ export function registerMrrRoutes(app) {
       const allRigs = [];
       const results = await Promise.all(allClientNames.map(async (clientName) => {
         try {
+          const db = await getDb();
           const { data, statusCode } = await mrrApiCall({ endpoint: targetEndpoint, clientNameRaw: clientName });
           const rigs = Array.isArray(data?.data) ? data.data : (Array.isArray(data?.data?.rigs) ? data.data.rigs : []);
           if (targetEndpoint === "/rig/mine" && statusCode === 200 && data.success && rigs.length > 0) {
@@ -44,18 +45,21 @@ export function registerMrrRoutes(app) {
             if (poolsData && poolsData.success) {
               const nhPools = await getCachedNhPools(clientName);
               const poolItems = Array.isArray(poolsData.data) ? poolsData.data : (poolsData.data?.result || []);
-              const poolMap = new Map(poolItems.map(item => {
+              const poolMap = new Map(await Promise.all(poolItems.map(async (item) => {
                 const id = String(item.rigId || item.rigid || item.id || item.rentalid || '');
                 if (Array.isArray(item.pools) && item.pools.length > 0) {
-                  db.serialize(() => {
-                    db.run(`CREATE TABLE IF NOT EXISTS mrr_pools (id TEXT, name TEXT, algo TEXT, host TEXT, port TEXT, user TEXT, mrrClient TEXT, last_updated DATETIME DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (id, mrrClient))`);
+                  try {
+                    await db.run('BEGIN TRANSACTION');
                     const stmt = db.prepare(`INSERT OR REPLACE INTO mrr_pools (id, name, algo, host, port, user, mrrClient, last_updated) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`);
                     item.pools.forEach(p => {
                       const algo = p.algo || p.algorithm || p.type || item.algo || item.algorithm || '';
                       stmt.run(id, p.name || `RigPool-${id}`, algo, p.host || p.stratumHost, p.port || p.stratumPort, p.user || p.username, clientName);
                     });
                     stmt.finalize();
-                  });
+                    await db.run('COMMIT');
+                  } catch (e) {
+                    await db.run('ROLLBACK');
+                  }
                 }
                 if (Array.isArray(item.pools)) {
                   item.pools.forEach(p => {
@@ -65,7 +69,7 @@ export function registerMrrRoutes(app) {
                   });
                 }
                 return [id, item.pools];
-              }).filter(i => i[0]));
+              }).filter(i => i[0])));
               rigs.forEach(rig => {
                 const pools = poolMap.get(String(rig.id));
                 if (pools && pools.length > 0) {
@@ -177,18 +181,14 @@ export function registerMrrRoutes(app) {
 
   app.get("/api/v2/mrr/rentals/cached", asyncHandler(async (req, res) => {
     const limit = parseInt(req.query.limit, 10) || 100;
-    db.all(`SELECT * FROM mrr_rentals ORDER BY rowid DESC LIMIT ?`, [limit], (err, rows) => {
-      if (err) {
-        return res.status(500).json({ success: false, error: err.message });
-      }
-      // Mimic the structure of the live API response for frontend compatibility
-      res.json({
-        success: true,
-        data: {
-          rentals: rows || [],
-        },
-        source: 'cache'
-      });
+    const db = await getDb();
+    const rows = await db.all(`SELECT * FROM mrr_rentals ORDER BY rowid DESC LIMIT ?`, [limit]);
+    res.json({
+      success: true,
+      data: {
+        rentals: rows || [],
+      },
+      source: 'cache'
     });
   }));
 
@@ -333,18 +333,18 @@ export function registerMrrRoutes(app) {
     });
     if (statusCode === 200 && data?.success) {
       await saveToDatabase('mrr_account_pools.csv', data.data || []);
+      const db = await getDb();
       const pools = data.data || [];
       if (pools.length > 0) {
-        db.serialize(() => {
-          db.run(`CREATE TABLE IF NOT EXISTS mrr_pools (
-            id TEXT, name TEXT, algo TEXT, host TEXT, port TEXT, user TEXT, mrrClient TEXT,
-            last_updated DATETIME DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (id, mrrClient)
-          )`);
+        await db.run('BEGIN TRANSACTION');
+        try {
           const stmt = db.prepare(`INSERT OR REPLACE INTO mrr_pools (id, name, algo, host, port, user, mrrClient, last_updated) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`);
           pools.forEach(p => stmt.run(p.id, p.name, p.algo, p.host, p.port, p.user, clientName));
           stmt.finalize();
-        });
+          await db.run('COMMIT');
+        } catch (e) {
+          await db.run('ROLLBACK');
+        }
       }
     }
     res.set('X-MRR-Client', clientName);

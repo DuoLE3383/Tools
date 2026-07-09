@@ -1,7 +1,20 @@
 // routes/coinGecko.js
 import { asyncHandler } from "../utils.js";
-import { db } from "../db.js";
-import { getCoinMetadata } from "../coinGecko/coinGeckoClient.js";
+import { getDb } from "../db.js";
+
+/**
+ * Fetches coin metadata directly from the database.
+ * This avoids loading the problematic coinGeckoClient.js file at startup.
+ */
+async function getCoinMetadata() {
+  try {
+    const db = await getDb();
+    return await db.all(`SELECT coin_id, symbol, coin_name FROM coin_metadata ORDER BY coin_name`);
+  } catch (err) {
+    console.error('[CoinGecko] Failed to get coin metadata from DB:', err.message);
+    return []; // Return empty array on error to prevent crash
+  }
+}
 
 let coinGeckoCache = {
   data: null,
@@ -29,29 +42,26 @@ async function getCachedCoinPrices(ids) {
     ) WHERE rn = 1
   `;
 
-  return new Promise((resolve, reject) => {
-    db.all(sql, requestedIds, (err, rows) => {
-      if (err) return reject(new Error('DB query failed'));
-      const priceData = rows.reduce((acc, row) => {
-        acc[row.coin_id] = {
-          usd: row.price_usd,
-          price_btc: row.price_btc,
-          source: row.source,
-          last_updated: row.captured_at,
-        };
-        return acc;
-      }, {});
+  const db = await getDb();
+  const rows = await db.all(sql, requestedIds);
+  const priceData = rows.reduce((acc, row) => {
+    acc[row.coin_id] = {
+      usd: row.price_usd,
+      price_btc: row.price_btc,
+      source: row.source,
+      last_updated: row.captured_at,
+    };
+    return acc;
+  }, {});
 
-      const combinedData = { ...(coinGeckoCache.data || {}), ...priceData };
-      const allFound = requestedIds.every(id => combinedData[id]);
+  const combinedData = { ...(coinGeckoCache.data || {}), ...priceData };
+  const allFound = requestedIds.every(id => combinedData[id]);
 
-      if (allFound) {
-        coinGeckoCache.data = combinedData;
-        coinGeckoCache.timestamp = now;
-      }
-      resolve(combinedData);
-    });
-  });
+  if (allFound) {
+    coinGeckoCache.data = combinedData;
+    coinGeckoCache.timestamp = now;
+  }
+  return combinedData;
 }
 
 export function registerCoinGeckoRoutes(app) {

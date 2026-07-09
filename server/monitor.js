@@ -1,6 +1,5 @@
 // server/monitor.js - SIMPLIFIED WORKING VERSION
 
-import { db } from './db.js';
 import fs from 'fs';
 import { mrrApiCall, mrrConfigs, markGhostRental, mrrGetCache } from './mrr.js';
 import { resolveNhClient, getNiceHashApp, isAggregate, nhConfigs } from './nh.js';
@@ -8,21 +7,10 @@ import { extractRentalInfo, extractRigInfo } from './utils.js';
 import { TELEGRAM_CONFIG, TelegramTemplates } from '../src/core/telegram.js';
 import { ALGO_DISPLAY_NAMES } from '../src/core/mapping.js';
 
-// Import utilities
-import { 
-  getRentalIdFromRig, 
-  getRigLookupKeys, 
-  isRentalActive, 
-  isLiveRigCurrentlyRented,
-  resolveRentalAlgo,
-  parseUtcDate
-} from './mrr/rental-utils.js';
-
-import { 
-  isRealRental, 
-  splitRentals as validateRentals,
-} from './mrr/rental-validator.js';
-
+import { getDb } from './db.js';
+// Import utilities (assuming these files exist and are correct)
+import { getRentalIdFromRig, getRigLookupKeys, isRentalActive, isLiveRigCurrentlyRented, resolveRentalAlgo, parseUtcDate } from './mrr/rental-utils.js';
+import { isRealRental, splitRentals as validateRentals } from './mrr/rental-validator.js';
 import { 
   cleanHashrateUnit, 
   convertHashrateValue, 
@@ -41,14 +29,7 @@ import {
   buildGroupedMessages 
 } from './mrr/telegram-utils.js';
 
-import { 
-  dbGetAsync, 
-  dbRunAsync, 
-  dbAllAsync, 
-  initRentalTables 
-} from './mrr/db-utils.js';
-
-import { Cache, TTLMap } from './mrr/cache-utils.js';
+import { TTLMap } from './mrr/cache-utils.js';
 
 // ==========================
 //  CONFIGURATION
@@ -149,9 +130,10 @@ export async function getTelegramHealth() {
  * Get Telegram notification status
  */
 export async function getTelegramStatus() {
+  const db = await getDb();
   try {
-    await dbRunAsync(db, "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)");
-    const row = await dbGetAsync(db, "SELECT value FROM settings WHERE key = 'telegram_enabled'");
+    await db.run("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)");
+    const row = await db.get("SELECT value FROM settings WHERE key = 'telegram_enabled'");
     return { enabled: row ? row.value === 'true' : true };
   } catch (err) {
     console.warn('[monitor:db] Failed to fetch telegram status:', err.message);
@@ -163,10 +145,10 @@ export async function getTelegramStatus() {
  * Set Telegram notification status
  */
 export async function setTelegramStatus(enabled) {
+  const db = await getDb();
   const val = enabled ? 'true' : 'false';
-  await dbRunAsync(db, "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)");
-  await dbRunAsync(
-    db,
+  await db.run("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)");
+  await db.run(
     "INSERT INTO settings (key, value) VALUES ('telegram_enabled', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
     [val]
   );
@@ -271,7 +253,7 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
 
   try {
     await maybeDelay('runRentalMonitor');
-    await initRentalTables(db);
+    const db = await getDb(); // Get DB instance
 
     const requestedScope = String(clientScope || 'ALL').trim().toUpperCase();
     const scopeList = requestedScope.split(',').map(s => s.trim());
@@ -338,19 +320,8 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
     };
 
     // Initialize database
-    await new Promise((resolve) => {
-      db.serialize(() => {
-        db.run(`CREATE TABLE IF NOT EXISTS rentals (
-          id TEXT PRIMARY KEY, name TEXT, client TEXT, start_time INTEGER, end_time INTEGER, algo TEXT,
-          target_100 REAL, order_diff REAL, last_updated INTEGER, last_notified INTEGER,
-          low_hashrate_start INTEGER, zero_hashrate_start INTEGER, current_hashrate TEXT,
-          average_hashrate TEXT, advertised_hashrate TEXT, price_paid TEXT
-        )`, (err) => { if (err) console.error(`[monitor:db] Failed to create rentals table: ${err.message}`); });
-        db.run(`CREATE TABLE IF NOT EXISTS rental_history (id TEXT PRIMARY KEY, start_time INTEGER)`,
-          (err) => { if (err) console.error(`[monitor:db] Failed to create rental_history table: ${err.message}`); });
-        db.run("DELETE FROM rental_history WHERE start_time < ?", [Date.now() - 172800000], () => resolve());
-      });
-    });
+    // Tables are created in db.js, just run cleanup.
+    await db.run("DELETE FROM rental_history WHERE start_time < ?", [Date.now() - 172800000]);
 
     const todayStart = new Date();
     todayStart.setUTCHours(0, 0, 0, 0);
@@ -456,7 +427,7 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
           successfulAccts.push(acct);
         } else if (rigsRes && rigsRes.data) {
           const errMsg = rigsRes.data.data?.message || rigsRes.data.message || rigsRes.data.error || 'Unknown';
-          console.warn(`[${new Date().toLocaleTimeString()}] Account ${acct} rig list failed: ${errMsg}`);
+          console.warn(`[${new Date().toLocaleTimeString()}] Account ${acct} rig list failed: ${errMsg}. Please check API keys for this account.`);
           metric.error = true;
         }
 
@@ -547,7 +518,7 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
           // Skip if finished
           if (remainingMs <= 0) {
             console.log(`[monitor:${acct}] Skipping finished rental: ${rentalId}`);
-            await dbRunAsync(`DELETE FROM rentals WHERE id = ?`, [String(r.id)]).catch(() => {});
+            await db.run(`DELETE FROM rentals WHERE id = ?`, [String(r.id)]).catch(() => {});
             continue;
           }
 
@@ -614,7 +585,7 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
           }
 
           // Save to database
-          await dbRunAsync(
+          await db.run(
             `INSERT INTO rentals (
               id, name, client, start_time, end_time, algo, target_100, order_diff, 
               last_updated, current_hashrate, average_hashrate, advertised_hashrate, price_paid
@@ -662,7 +633,7 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
           ));
 
           // Send new rental notification if new
-          const row = await dbGetAsync(`SELECT last_notified FROM rentals WHERE id = ?`, [String(r.id)]).catch(() => null);
+          const row = await db.get(`SELECT last_notified FROM rentals WHERE id = ?`, [String(r.id)]).catch(() => null);
           const lastNotified = row?.last_notified || 0;
           const isNew = lastNotified === 0;
 
@@ -677,7 +648,7 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
               type: hbType,
               label: `${hbType} ${acct} ${r.id}`,
               onSuccess: async () => {
-                await dbRunAsync(`UPDATE rentals SET last_notified = ? WHERE id = ?`, [now, String(r.id)]);
+                await db.run(`UPDATE rentals SET last_notified = ? WHERE id = ?`, [now, String(r.id)]);
                 notifications.push({ id: r.id, client: acct, status: 'Sent' });
               },
               onFailure: (err) => {
@@ -709,12 +680,12 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
       // Delete rentals not in active list
       if (currentActiveRentalIds.size > 0) {
         const activePlaceholders = Array.from(currentActiveRentalIds).map(() => '?').join(',');
-        await dbRunAsync(
+        await db.run(
           `DELETE FROM rentals WHERE client IN (${placeholders}) AND id NOT IN (${activePlaceholders})`,
           [...successfulAcctList, ...Array.from(currentActiveRentalIds)]
         ).catch((err) => console.warn(`[monitor:db] Failed to prune stale rentals: ${err.message}`));
       } else {
-        await dbRunAsync(
+        await db.run(
           `DELETE FROM rentals WHERE client IN (${placeholders})`,
           successfulAcctList
         ).catch((err) => console.warn(`[monitor:db] Failed to clear stale rentals: ${err.message}`));
@@ -785,8 +756,9 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
 // ==========================
 
 export async function getGhostRentals(client) {
+  const db = await getDb();
   try {
-    return await dbAllAsync(db, 
+    return await db.all(
       `SELECT * FROM ghost_rentals_log WHERE client = ? ORDER BY detected_at DESC`,
       [client]
     );
@@ -797,8 +769,9 @@ export async function getGhostRentals(client) {
 }
 
 export async function clearGhostRentals(client) {
+  const db = await getDb();
   try {
-    await dbRunAsync(db,
+    await db.run(
       `UPDATE ghost_rentals_log SET cleaned_up = 1 WHERE client = ?`,
       [client]
     );

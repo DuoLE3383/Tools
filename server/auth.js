@@ -2,7 +2,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 import express from 'express';
 import { randomUUID } from 'crypto';
-import { db } from './db.js';
+import { getDb } from './db.js';
 
 // ---------- Configuration ----------
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-for-dev-only';
@@ -37,6 +37,7 @@ const VALID_ROLES = new Set(Object.keys(PERMISSIONS));
 const DEFAULT_ADMIN_ROLE = ROLES.ADMIN;
 const DEFAULT_USER_ROLE = ROLES.USER;
 const PUBLIC_API_PATHS = [
+  '/api/auth/login',
   '/api/v2/time',
   '/api/v2/prices/coingecko',
   '/api/v2/prices/ws',
@@ -45,36 +46,6 @@ const PUBLIC_API_PATHS = [
 
 if (!process.env.JWT_SECRET) {
   console.error('❌ FATAL: JWT_SECRET is not defined.');
-}
-
-function dbRun(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    if (!db) return reject(new Error('Database not initialized'));
-    db.run(sql, params, function (err) {
-      if (err) reject(err);
-      else resolve(this);
-    });
-  });
-}
-
-function dbGet(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    if (!db) return reject(new Error('Database not initialized'));
-    db.get(sql, params, (err, row) => {
-      if (err) reject(err);
-      else resolve(row);
-    });
-  });
-}
-
-function dbAll(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    if (!db) return reject(new Error('Database not initialized'));
-    db.all(sql, params, (err, rows) => {
-      if (err) reject(err);
-      else resolve(rows);
-    });
-  });
 }
 
 function getExpiresInMs() {
@@ -103,12 +74,13 @@ export function validateAuthConfig() {
 }
 
 export async function initAuthStore() {
-  if (!db) return;
-  await dbRun(`CREATE TABLE IF NOT EXISTS auth_state (
+  const db = await getDb();
+  if (!db) return; // Should not happen if getDb is correct
+  await db.run(`CREATE TABLE IF NOT EXISTS auth_state (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
   )`);
-  await dbRun(`CREATE TABLE IF NOT EXISTS auth_users (
+  await db.run(`CREATE TABLE IF NOT EXISTS auth_users (
     username TEXT PRIMARY KEY,
     password_hash TEXT NOT NULL,
     role TEXT NOT NULL DEFAULT 'user',
@@ -116,7 +88,7 @@ export async function initAuthStore() {
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
   )`);
-  await dbRun(`CREATE TABLE IF NOT EXISTS auth_sessions (
+  await db.run(`CREATE TABLE IF NOT EXISTS auth_sessions (
     username TEXT PRIMARY KEY,
     session_id TEXT NOT NULL,
     token_jti TEXT NOT NULL,
@@ -131,15 +103,17 @@ export async function initAuthStore() {
 }
 
 async function getAuthEpoch() {
-  await initAuthStore();
-  const row = await dbGet(`SELECT value FROM auth_state WHERE key = ?`, [AUTH_EPOCH_KEY]);
+  const db = await getDb();
+  await initAuthStore(); // Ensures tables exist
+  const row = await db.get(`SELECT value FROM auth_state WHERE key = ?`, [AUTH_EPOCH_KEY]);
   const current = Number.parseInt(row?.value || '0', 10);
   return Number.isFinite(current) ? current : 0;
 }
 
 async function setAuthEpoch(value) {
-  await initAuthStore();
-  await dbRun(
+  const db = await getDb();
+  await initAuthStore(); // Ensures tables exist
+  await db.run(
     `INSERT INTO auth_state (key, value) VALUES (?, ?)
      ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
     [AUTH_EPOCH_KEY, String(value)],
@@ -163,7 +137,8 @@ async function ensureBootstrapAdminUser() {
   const adminPassword = getBootstrapAdminPassword();
   if (!adminUsername || !adminPassword) return;
 
-  const existing = await dbGet(`SELECT username FROM auth_users WHERE username = ?`, [adminUsername]);
+  const db = await getDb();
+  const existing = await db.get(`SELECT username FROM auth_users WHERE username = ?`, [adminUsername]);
   if (existing) return;
 
   const passwordHash = adminPassword.startsWith('$2')
@@ -171,7 +146,7 @@ async function ensureBootstrapAdminUser() {
     : await hashPassword(adminPassword);
 
   const now = Date.now();
-  await dbRun(
+  await db.run(
     `INSERT INTO auth_users (username, password_hash, role, active, created_at, updated_at)
      VALUES (?, ?, ?, 1, ?, ?)`,
     [adminUsername, passwordHash, DEFAULT_ADMIN_ROLE, now, now],
@@ -180,13 +155,15 @@ async function ensureBootstrapAdminUser() {
 }
 
 async function getUserByUsername(username) {
-  await initAuthStore();
-  return dbGet(`SELECT * FROM auth_users WHERE username = ? LIMIT 1`, [normalizeUsername(username)]);
+  const db = await getDb();
+  await initAuthStore(); // Ensures tables exist
+  return db.get(`SELECT * FROM auth_users WHERE username = ? LIMIT 1`, [normalizeUsername(username)]);
 }
 
 async function listUsers() {
-  await initAuthStore();
-  return dbAll(
+  const db = await getDb();
+  await initAuthStore(); // Ensures tables exist
+  return db.all(
     `SELECT username, role, active, created_at, updated_at
      FROM auth_users
      ORDER BY role DESC, username ASC`,
@@ -194,7 +171,8 @@ async function listUsers() {
 }
 
 async function createUser({ username, password, role = DEFAULT_USER_ROLE }) {
-  await initAuthStore();
+  const db = await getDb();
+  await initAuthStore(); // Ensures tables exist
   const safeUsername = normalizeUsername(username);
   if (!safeUsername) {
     const err = new Error('Username is required.');
@@ -222,7 +200,7 @@ async function createUser({ username, password, role = DEFAULT_USER_ROLE }) {
 
   const now = Date.now();
   const passwordHash = await hashPassword(String(password));
-  await dbRun(
+  await db.run(
     `INSERT INTO auth_users (username, password_hash, role, active, created_at, updated_at)
      VALUES (?, ?, ?, 1, ?, ?)`,
     [safeUsername, passwordHash, finalRole, now, now],
@@ -232,18 +210,20 @@ async function createUser({ username, password, role = DEFAULT_USER_ROLE }) {
 }
 
 export async function invalidateAllSessions(reason = 'startup') {
-  await initAuthStore();
+  const db = await getDb();
+  await initAuthStore(); // Ensures tables exist
   const nextEpoch = (await getAuthEpoch()) + 1;
   await setAuthEpoch(nextEpoch);
-  await dbRun(`DELETE FROM auth_sessions`);
+  await db.run(`DELETE FROM auth_sessions`);
   console.log(`[auth] Invalidated all sessions (${reason}); auth_epoch=${nextEpoch}`);
   return nextEpoch;
 }
 
 async function saveSession({ username, sessionId, tokenJti, expiresAt, userAgent, ip }) {
-  await initAuthStore();
+  const db = await getDb();
+  await initAuthStore(); // Ensures tables exist
   const now = Date.now();
-  await dbRun(
+  await db.run(
     `INSERT INTO auth_sessions (
       username, session_id, token_jti, issued_at, expires_at, active, last_seen, user_agent, ip
     ) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)
@@ -261,16 +241,18 @@ async function saveSession({ username, sessionId, tokenJti, expiresAt, userAgent
 }
 
 async function getActiveSession(username) {
-  await initAuthStore();
-  return dbGet(
+  const db = await getDb();
+  await initAuthStore(); // Ensures tables exist
+  return db.get(
     `SELECT * FROM auth_sessions WHERE username = ? AND active = 1 LIMIT 1`,
     [username],
   );
 }
 
 async function touchSession(username, sessionId) {
-  await initAuthStore();
-  await dbRun(
+  const db = await getDb();
+  await initAuthStore(); // Ensures tables exist
+  await db.run(
     `UPDATE auth_sessions SET last_seen = ? WHERE username = ? AND session_id = ? AND active = 1`,
     [Date.now(), username, sessionId],
   );
@@ -386,7 +368,8 @@ export const hashPassword = async (plain) => bcrypt.hash(plain, BCRYPT_ROUNDS);
 export const verifyPassword = async (plain, hash) => bcrypt.compare(plain, hash);
 
 async function issueTokenForUser(username, req) {
-  await initAuthStore();
+  const db = await getDb();
+  await initAuthStore(); // Ensures tables exist
   const user = await getUserByUsername(username);
   if (!user) {
     const err = new Error(`User "${username}" not found.`);
@@ -420,7 +403,7 @@ async function issueTokenForUser(username, req) {
 const router = express.Router();
 
 // Login route (using the utilities above)
-router.post('/login', async (req, res) => {
+router.post('/login', (req, res, next) => { next(); }, async (req, res) => {
   try {
     const { username, password } = req.body;
 
@@ -449,9 +432,10 @@ router.post('/login', async (req, res) => {
 
 router.post('/logout', authMiddleware, async (req, res) => {
   try {
-    await initAuthStore();
+    const db = await getDb();
+    await initAuthStore(); // Ensures tables exist
     if (req.user?.username) {
-      await dbRun(`UPDATE auth_sessions SET active = 0 WHERE username = ?`, [req.user.username]);
+      await db.run(`UPDATE auth_sessions SET active = 0 WHERE username = ?`, [req.user.username]);
     }
     res.json({ success: true });
   } catch (error) {
@@ -505,7 +489,8 @@ router.put('/users/:username/role', authMiddleware, requireAdmin, async (req, re
       return res.status(400).json({ success: false, error: `Invalid role specified. Must be one of: ${Array.from(VALID_ROLES).join(', ')}` });
     }
 
-    const result = await dbRun(
+    const db = await getDb();
+    const result = await db.run(
       `UPDATE auth_users SET role = ?, updated_at = ? WHERE username = ?`,
       [role, Date.now(), normalizeUsername(username)],
     );
@@ -527,15 +512,16 @@ router.put('/users/:username/disable', authMiddleware, requireAdmin, async (req,
     if (!username) {
       return res.status(400).json({ success: false, error: 'Username is required.' });
     }
-    await initAuthStore();
-    const result = await dbRun(
+    const db = await getDb();
+    await initAuthStore(); // Ensures tables exist
+    const result = await db.run(
       `UPDATE auth_users SET active = 0, updated_at = ? WHERE username = ?`,
       [Date.now(), username],
     );
     if (!result.changes) {
       return res.status(404).json({ success: false, error: `User "${username}" not found.` });
     }
-    await dbRun(`UPDATE auth_sessions SET active = 0 WHERE username = ?`, [username]);
+    await db.run(`UPDATE auth_sessions SET active = 0 WHERE username = ?`, [username]);
     res.json({ success: true, username });
   } catch (error) {
     res.status(error.statusCode || 500).json({ success: false, error: error.message || 'Failed to disable user.' });

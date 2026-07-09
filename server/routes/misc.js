@@ -8,7 +8,7 @@ import {
   getTelegramHealth 
 } from "../monitor.js";
 import { saveMiningTrainingSnapshot } from "../miningTrainingDb.js";
-import { db } from "../db.js";
+import { getDb } from "../db.js";
 import { saveToDatabase } from "./_helpers.js";
 import fs from "fs/promises";
 import path from "path";
@@ -60,15 +60,10 @@ export function registerMiscRoutes(app) {
     }
 
     try {
-      db.get(
-        `SELECT * FROM coin_prices WHERE coin_id = ? ORDER BY captured_at DESC LIMIT 1`,
-        [coinId],
-        (err, row) => {
-          if (err) return res.status(500).json({ success: false, error: err.message });
-          if (!row) return res.status(404).json({ success: false, error: "Price not found in database." });
-          res.json({ success: true, data: row });
-        }
-      );
+      const db = await getDb();
+      const row = await db.get(`SELECT * FROM coin_prices WHERE coin_id = ? ORDER BY captured_at DESC LIMIT 1`, [coinId]);
+      if (!row) return res.status(404).json({ success: false, error: "Price not found in database." });
+      res.json({ success: true, data: row });
     } catch (err) {
       res.status(500).json({ success: false, error: `Database query failed: ${err.message}` });
     }
@@ -133,19 +128,17 @@ export function registerMiscRoutes(app) {
 
   // ─── Monitor Snapshot ────────────────────────────────────────
   app.get("/api/v2/mrr/monitor/snapshot", asyncHandler(async (req, res) => {
-    db.all(`SELECT * FROM rentals ORDER BY last_updated DESC`, [], (err, rows) => {
-      if (err) return res.status(500).json({ error: err.message });
-      saveToDatabase("monitor_snapshot.csv", rows);
-      res.json({ success: true, data: rows });
-    });
+    const db = await getDb();
+    const rows = await db.all(`SELECT * FROM rentals ORDER BY last_updated DESC`);
+    await saveToDatabase("monitor_snapshot.csv", rows);
+    res.json({ success: true, data: rows });
   }));
 
   app.delete("/api/v2/mrr/monitor/snapshot/:id", asyncHandler(async (req, res) => {
     const { id } = req.params;
-    db.run(`DELETE FROM rentals WHERE id = ?`, [id], function(err) {
-      if (err) return res.status(500).json({ error: err.message });
-      res.json({ success: true, changes: this.changes });
-    });
+    const db = await getDb();
+    const result = await db.run(`DELETE FROM rentals WHERE id = ?`, [id]);
+    res.json({ success: true, changes: result.changes });
   }));
 
   app.patch("/api/v2/mrr/monitor/snapshot/:id", asyncHandler(async (req, res) => {
@@ -153,10 +146,9 @@ export function registerMiscRoutes(app) {
     const fields = Object.keys(req.body).filter(k => k !== 'id').map(k => `${k} = ?`).join(', ');
     if (!fields) return res.status(400).json({ success: false, error: 'No fields provided for update' });
     const values = [...Object.keys(req.body).filter(k => k !== 'id').map(k => req.body[k]), id];
-    db.run(`UPDATE rentals SET ${fields} WHERE id = ?`, values, function(err) {
-      if (err) return res.status(500).json({ error: err.message });
-      res.json({ success: true, changes: this.changes });
-    });
+    const db = await getDb();
+    const result = await db.run(`UPDATE rentals SET ${fields} WHERE id = ?`, values);
+    res.json({ success: true, changes: result.changes });
   }));
 
   // ─── Extracted Pools ─────────────────────────────────────────

@@ -305,7 +305,7 @@ async function startBackend() {
   // Start backend with more robust options
   backendProcess = spawn('node', ['--unhandled-rejections=warn', 'index.js'], {
     stdio: ['pipe', 'pipe', 'pipe'],
-    shell: true,
+    shell: false,
     env: env,
     windowsHide: true,
     detached: false
@@ -452,7 +452,7 @@ function startFrontend() {
   
   frontendProcess = spawn(npmCmd, ['run', 'dev', '--', '--port', '5173'], {
     stdio: 'inherit',
-    shell: true,
+    shell: false,
     env: env,
     windowsHide: true
   });

@@ -1,5 +1,5 @@
 // server/routes/_helpers.js
-import { db } from "../db.js";
+import { getDb } from "../db.js";
 import path from "path";
 
 const DATA_DIR = path.resolve(process.cwd(), "data");
@@ -12,19 +12,23 @@ export async function saveToDatabase(filename, items) {
   const placeholders = columns.map(() => "?").join(", ");
   const columnDefs = columns.map(c => c === "id" ? '"id" TEXT PRIMARY KEY' : `"${c}" TEXT`).join(", ");
   try {
-    db.serialize(() => {
-      db.run(`CREATE TABLE IF NOT EXISTS ${tableName} (${columnDefs})`);
-      const stmt = db.prepare(`INSERT OR REPLACE INTO ${tableName} (${quotedColumns.join(", ")}) VALUES (${placeholders})`);
-      items.forEach(item => {
-        const values = columns.map(c => {
-          const v = item[c];
-          return typeof v === "object" ? JSON.stringify(v) : String(v ?? "");
-        });
-        stmt.run(...values);
+    const db = await getDb();
+    await db.run(`CREATE TABLE IF NOT EXISTS ${tableName} (${columnDefs})`);
+    await db.run('BEGIN TRANSACTION');
+    const stmt = await db.prepare(`INSERT OR REPLACE INTO ${tableName} (${quotedColumns.join(", ")}) VALUES (${placeholders})`);
+    for (const item of items) {
+      const values = columns.map(c => {
+        const v = item[c];
+        return typeof v === "object" ? JSON.stringify(v) : String(v ?? "");
       });
-      stmt.finalize();
-    });
+      await stmt.run(values);
+    }
+    await stmt.finalize();
+    await db.run('COMMIT');
   } catch (err) {
     console.error(`[db] Failed to save to ${tableName}:`, err.message);
+    // Attempt to rollback on error
+    const db = await getDb().catch(() => null);
+    if (db) await db.run('ROLLBACK').catch(e => console.error(`[db] Rollback failed: ${e.message}`));
   }
 }

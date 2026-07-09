@@ -1,7 +1,7 @@
 import { NiceHashClient } from '../NiceHashClient.js';
 import { NICEHASH_ALGO_MAP, normalizeAlgoForNiceHash } from '../src/core/mapping.js';
 import { normalizeCredential } from './utils.js';
-import { db } from './db.js';
+import { getDb } from './db.js';
 
 export const AGGREGATE_CLIENT = 'VN';
 const poolCache = new Map();
@@ -172,27 +172,21 @@ export async function getCachedNhPools(clientNameRaw) {
 
     // Persistence: Sync fetched NiceHash pools to database
     if (allPools.length > 0) {
-      db.serialize(() => {
-        db.run(`CREATE TABLE IF NOT EXISTS nh_pools (
-          id TEXT,
-          name TEXT,
-          algorithm TEXT,
-          stratumHostname TEXT,
-          port TEXT,
-          username TEXT,
-          password TEXT,
-          nhClient TEXT,
-          last_updated DATETIME DEFAULT CURRENT_TIMESTAMP,
-          PRIMARY KEY (id, nhClient)
-        )`);
-        const stmt = db.prepare(`INSERT OR REPLACE INTO nh_pools 
+      const db = await getDb();
+      await db.run('BEGIN TRANSACTION');
+      try {
+        const stmt = await db.prepare(`INSERT OR REPLACE INTO nh_pools 
           (id, name, algorithm, stratumHostname, port, username, password, nhClient, last_updated) 
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`);
-        allPools.forEach(p => {
-          stmt.run(p.id, p.name, p.algorithm, p.stratumHostname, p.port, p.username, p.password, clientName);
-        });
-        stmt.finalize();
-      });
+        for (const p of allPools) {
+          await stmt.run(p.id, p.name, p.algorithm, p.stratumHostname, p.port, p.username, p.password, clientName);
+        }
+        await stmt.finalize();
+        await db.run('COMMIT');
+      } catch (e) {
+        console.error(`[nh:pools] DB sync failed for ${clientName}:`, e.message);
+        await db.run('ROLLBACK');
+      }
     }
 
     return allPools;

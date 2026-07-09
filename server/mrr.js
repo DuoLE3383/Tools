@@ -4,8 +4,8 @@
 import fs from 'fs/promises';
 import path from 'path';
 import express from 'express';
-import { createHash, createHmac } from 'crypto';
-import { db } from './db.js';
+import { createHash, createHmac } from 'node:crypto';
+import { getDb } from './db.js';
 import { normalizeCredential, sanitizeMrrEndpoint } from './utils.js';
 import { isAggregate, resolveNhClient, getNiceHashApp } from './nh.js';
 
@@ -186,19 +186,27 @@ export function initMrrConfigs(env) {
 // NONCE MANAGEMENT
 // ============================================
 export async function initNonces() {
-  return new Promise((resolve) => {
-    db.all('SELECT client, last_nonce FROM mrr_nonces', [], (err, rows) => {
-      if (!err && rows) {
-        rows.forEach(row => {
-          try {
-            if (row.client.length > 10) {
-              mrrLastNonceByClient.set(row.client, BigInt(row.last_nonce));
-              console.log(`[mrr:init] Loaded nonce baseline for Key ${row.client.slice(0, 8)}...: ${row.last_nonce}`);
-            }
-          } catch (e) { }
-        });
-      }
-
+  try {
+    const db = await getDb();
+    const rows = await db.all('SELECT client, last_nonce FROM mrr_nonces');
+    if (rows) {
+      rows.forEach(row => {
+        try {
+          if (row.client && row.client.length > 10 && row.last_nonce) {
+            mrrLastNonceByClient.set(row.client, BigInt(row.last_nonce));
+            console.log(`[mrr:init] Loaded nonce baseline for Key ${row.client.slice(0, 8)}...: ${row.last_nonce}`);
+          }
+        } catch (e) {
+          // Ignore BigInt parsing errors for invalid data
+        }
+      });
+    }
+  } catch (e) {
+    // The table might not exist on the first run, which is fine.
+    if (!e.message.includes('no such table')) {
+      console.warn(`[mrr:init] Could not load nonces from DB: ${e.message}`);
+    }
+  }
       Object.values(mrrConfigs).forEach(cfg => {
         if (cfg.nonceOverride && cfg.apiKey) {
           const current = mrrLastNonceByClient.get(cfg.apiKey) || 0n;
@@ -208,10 +216,6 @@ export async function initNonces() {
           }
         }
       });
-
-      resolve();
-    });
-  });
 }
 
 export function nextMrrNonce(apiKey, clientLabel) {
@@ -233,13 +237,16 @@ export function nextMrrNonce(apiKey, clientLabel) {
 
   mrrLastNonceByClient.set(apiKey, nonce);
   
-  new Promise((resolve) => {
-    db.run(
-      `INSERT INTO mrr_nonces (client, last_nonce) VALUES (?, ?)
-       ON CONFLICT(client) DO UPDATE SET last_nonce=excluded.last_nonce`,
-      [apiKey, nonce.toString()],
-      () => resolve(),
-    );
+  new Promise(async (resolve) => {
+    try {
+      const db = await getDb();
+      await db.run(
+        `INSERT INTO mrr_nonces (client, last_nonce) VALUES (?, ?)
+         ON CONFLICT(client) DO UPDATE SET last_nonce=excluded.last_nonce`,
+        [apiKey, nonce.toString()]
+      );
+    } catch (e) { /* ignore db errors in this fire-and-forget promise */ }
+    resolve();
   });
 
   return nonce.toString();
@@ -393,13 +400,14 @@ export async function runMrrCallInOrder(clientName, task) {
 // DATABASE HELPERS
 // ============================================
 async function saveRigEndpointToDb(endpoint, client) {
-  const ts = new Date().toISOString();
-  db.serialize(() => {
-    db.run(`CREATE TABLE IF NOT EXISTS mrr_rig_logs (timestamp TEXT, client TEXT, endpoint TEXT)`);
-    db.run(`INSERT INTO mrr_rig_logs (timestamp, client, endpoint) VALUES (?, ?, ?)`, [ts, client, endpoint], (err) => {
+  try {
+    const db = await getDb();
+    const ts = new Date().toISOString();
+    await db.run(`CREATE TABLE IF NOT EXISTS mrr_rig_logs (timestamp TEXT, client TEXT, endpoint TEXT)`);
+    await db.run(`INSERT INTO mrr_rig_logs (timestamp, client, endpoint) VALUES (?, ?, ?)`, [ts, client, endpoint]);
+  } catch (err) {
       if (err) console.error(`[mrr:db] Error saving to mrr_rig_logs: ${err.message}`);
-    });
-  });
+  }
 }
 
 // ============================================
@@ -625,6 +633,7 @@ export async function mrrApiCall({ endpoint, method = 'GET', query, body, client
 // ============================================
 export async function mrrRequest(endpoint, req, res, method = 'GET', body = undefined) {
   const { client: clientQuery, endpoint: _internalPath, ts: _ts, ...forwardQuery } = req.query || {};
+  const db = await getDb();
   const targetClient = isAggregate(clientQuery) ? defaultMrrClient : clientQuery;
   const { statusCode, data, clientName } = await mrrApiCall({
     endpoint,

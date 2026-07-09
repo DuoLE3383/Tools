@@ -7,7 +7,6 @@ import cors from "cors";
 import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
-import sqlite3 from "sqlite3";
 
 import { setupWebSocket } from "./server/ws.js";
 import { registerRoutes } from "./server/routes.js";
@@ -23,8 +22,7 @@ import {
 } from "./server/mrr.js";
 import { migrateOldCsvToDb } from "./server/migrate.js";
 import { initMiningTrainingDb } from "./server/miningTrainingDb.js";
-import { setDb } from "./server/db.js";
-import { fetchAndSaveCoinPrices } from "./server/coinGecko/coinGeckoClient.js";
+import { getDb } from "./server/db.js";
 import { scrapeHeroMinersGlobal } from "./server/miners/heroMiners.js";
 
 // ============================================================
@@ -124,132 +122,24 @@ app.get("/", (req, res) => {
 // ============================================================
 // DATABASE SETUP
 // ============================================================
-let dbInstance;
-
-function initDatabase() {
-  return new Promise((resolve, reject) => {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-
-    dbInstance = new sqlite3.Database(STATS_DB_PATH, (dbErr) => {
-      if (dbErr) return reject(dbErr);
-
-      dbInstance.serialize(() => {
-        dbInstance.run("PRAGMA journal_mode = WAL;", (err) => {
-          if (err) console.warn("[db] Failed to enable WAL mode:", err.message);
-        });
-        dbInstance.run("PRAGMA busy_timeout = 5000;", (err) => {
-          if (err) console.warn("[db] Failed to set busy timeout:", err.message);
-        });
-        dbInstance.run("PRAGMA synchronous = NORMAL;", (err) => {
-          if (err) console.warn("[db] Failed to set synchronous mode:", err.message);
-        });
-        dbInstance.run("PRAGMA cache_size = -20000;", (err) => {
-          if (err) console.warn("[db] Failed to set cache_size:", err.message);
-        });
-      });
-
-      dbInstance.run(
-        `CREATE TABLE IF NOT EXISTS stats_cache (
-        key TEXT PRIMARY KEY, 
-        data TEXT, 
-        ts INTEGER
-      )`,
-        (err) => { if (err) reject(err); },
-      );
-
-      dbInstance.run(
-        `CREATE TABLE IF NOT EXISTS api_errors (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        timestamp TEXT, 
-        source TEXT, 
-        content_type TEXT, 
-        content TEXT
-      )`,
-        (err) => {
-          if (err) console.error(`[db] Failed to create api_errors table: ${err.message}`);
-        },
-      );
-
-      dbInstance.run(
-        `CREATE TABLE IF NOT EXISTS mrr_nonces (
-        client TEXT PRIMARY KEY, 
-        last_nonce TEXT
-      )`,
-        (err) => { if (err) reject(err); },
-      );
-
-      dbInstance.run(
-        `CREATE TABLE IF NOT EXISTS settings (
-        key TEXT PRIMARY KEY, 
-        value TEXT
-      )`,
-        (err) => {
-          if (err) console.error(`[db] Failed to create settings table: ${err.message}`);
-        },
-      );
-
-      dbInstance.run(
-        `CREATE INDEX IF NOT EXISTS idx_stats_cache_ts ON stats_cache(ts)`,
-        (err) => {
-          if (err) console.error("[db] Failed to create stats_cache index:", err.message);
-        },
-      );
-
-      // Ensure coin_metadata table exists for available-coins endpoint
-      dbInstance.run(
-        `CREATE TABLE IF NOT EXISTS coin_metadata (
-          coin_id TEXT PRIMARY KEY,
-          coin_name TEXT,
-          symbol TEXT,
-          last_updated TEXT,
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        )`,
-        (err) => { if (err) console.error("[db] Failed to create coin_metadata table:", err.message); }
-      );
-
-      setDb(dbInstance);
-      resolve();
-    });
-  });
-}
 
 async function cleanAllCache() {
   console.info("[init] Wiping persistent cache for fresh start...");
   try {
-    await new Promise((resolve, reject) => {
-      dbInstance.run("DELETE FROM stats_cache", (err) => {
-        if (err) return reject(err);
-        console.info("✨ Persistent cache (stats_cache) cleared.");
-        resolve();
-      });
-    });
+    const db = await getDb();
+    await db.run("DELETE FROM stats_cache");
+    console.info("✨ Persistent cache (stats_cache) cleared.");
   } catch (err) {
     console.error(`[init] Failed to clean persistent cache: ${err.message}`);
   }
 }
 
-function loadStats() {
-  return new Promise((resolve) => {
-    if (!dbInstance) {
-      console.log("[db] Database not initialized, skipping stats load.");
-      return resolve();
-    }
-    dbInstance.all(`SELECT key, data, ts FROM stats_cache`, [], (err, rows) => {
-      if (err) {
-        console.log("[db] No existing stats database found or failed to read, starting fresh.");
-        return resolve();
-      }
-      if (rows && rows.length > 0) {
-        rows.forEach((row) => {
-          try { JSON.parse(row.data); } catch (e) { console.error(`[db] Failed to parse row ${row.key}:`, e.message); }
-        });
-        console.log(`[db] Loaded ${rows.length} cached stats from SQLite database`);
-      }
-      resolve();
-    });
-  });
+async function loadStats() {
+  const db = await getDb();
+  const rows = await db.all(`SELECT key, data, ts FROM stats_cache`);
+  if (rows && rows.length > 0) {
+    console.log(`[db] Loaded ${rows.length} cached stats from SQLite database`);
+  }
 }
 
 function normalizeStoredClientTag(value, fallback, allowedTags) {
@@ -260,30 +150,9 @@ function normalizeStoredClientTag(value, fallback, allowedTags) {
   return allowedTags.has("BT") ? "BT" : allowedTags.values().next().value || "BT";
 }
 
-function dbRun(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    dbInstance.run(sql, params, function (err) {
-      if (err) return reject(err);
-      resolve(this);
-    });
-  });
-}
-
-function dbAll(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    dbInstance.all(sql, params, (err, rows) => {
-      if (err) return reject(err);
-      resolve(rows);
-    });
-  });
-}
-
 async function cleanupStoredClientTags() {
-  if (!dbInstance) return;
-
-  const tables = new Set(
-    (await dbAll(`SELECT name FROM sqlite_master WHERE type='table'`)).map((row) => row.name),
-  );
+  const db = await getDb();
+  const tables = new Set((await db.all(`SELECT name FROM sqlite_master WHERE type='table'`)).map((row) => row.name));
 
   const configuredNhClients = new Set([
     ...VALID_NH_CLIENT_TAGS,
@@ -303,11 +172,11 @@ async function cleanupStoredClientTags() {
 
   for (const plan of tablePlans) {
     if (!tables.has(plan.table)) continue;
-    const columns = await dbAll(`PRAGMA table_info(${plan.table})`);
+    const columns = await db.all(`PRAGMA table_info(${plan.table})`);
     if (!columns.some((column) => column.name === plan.column)) continue;
     const allowedList = Array.from(plan.allowed);
     const placeholders = allowedList.map(() => "?").join(", ");
-    const result = await dbRun(
+    const result = await db.run(
       `UPDATE ${plan.table} SET ${plan.column} = ? WHERE ${plan.column} IS NOT NULL AND TRIM(UPPER(${plan.column})) NOT IN (${placeholders})`,
       [plan.fallback, ...allowedList],
     );
@@ -323,7 +192,7 @@ async function cleanupStoredClientTags() {
 async function startServer() {
   try {
     console.log("[init] Initializing database...");
-    await initDatabase();
+    await getDb(); // This initializes and connects to the database.
 
     console.log("[init] Merging databases into stats.db...");
     try {
@@ -357,7 +226,8 @@ async function startServer() {
     // Register available-coins route BEFORE registerRoutes (must be before the /api 404 catch-all)
     app.get('/api/v2/db/available-coins', authMiddleware, async (req, res) => {
       try {
-        const rows = await dbAll(`
+        const db = await getDb();
+        const rows = await db.all(`
           SELECT DISTINCT symbol, name as coin_name, id as coin_id
           FROM coin_metadata
           WHERE symbol IS NOT NULL AND symbol != ''
@@ -446,4 +316,4 @@ if (process.env.RUN_MAIN !== "false") {
   startServer().catch((err) => { console.error("❌ Failed to start server:", err); process.exit(1); });
 }
 
-export { app, dbInstance, startServer };
+export { app, startServer };

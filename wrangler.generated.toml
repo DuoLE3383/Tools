@@ -1,0 +1,45 @@
+name = "tools"
+compatibility_date = "2026-07-08"
+main = "worker/index.js"
+
+[assets]
+directory = "./dist"
+
+[vars]
+TUNNEL_URL = "https://api.huyenbao.com"
+
+[[kv_namespaces]]
+binding = "KV"
+id = "0f1ddf5ff91d400dad8cfb3c316bfa1e"
+
+[[kv_namespaces]]
+binding = "server"
+id = "745efbcddb5f42008027d3396114ff3a"
+
+[[routes]]
+pattern = "app.huyenbao.com/*"
+zone_name = "huyenbao.com"
+
+[vars]
+NICEHASH_API_KEY = "69189c7f-33af-4996-8ef6-6730cd6bd9c9"
+NICEHASH_API_SECRET = "820968ce-481c-441e-bdf0-8c752283a6b2b9f80090-5039-4906-aee9-0eb600473671"
+NICEHASH_ORG_ID = "d3042368-b00e-4308-93bd-ec8c930b7b0d"
+NICEHASH_API_KEY_PH = "02c68c5d-d85e-4d3b-9296-84e718bac36a"
+NICEHASH_API_SECRET_PH = "18748e8d-3a74-4c74-a67c-1f71a95058eed3cd4473-0eab-4cbb-a05a-7addce0f33a9"
+NICEHASH_ORG_ID_PH = "806de471-7ae3-4411-8aae-f784f82fda5e"
+NICEHASH_ENVIRONMENT_VN = "production"
+NICEHASH_ENVIRONMENT_PH = "production"
+NICEHASH_ENVIRONMENT = "production"
+MRR_KEY_RIG_BT = "92086be2613f0cdc26cad9bb4b656d93ebdc9b632f15b3901e269e041e9a9650"
+MRR_SECRET_RIG_BT = "c113f791ce680cc9df5fe5e2ea9e6584b4ea13a12c2a9bd2ea2c7e4c53df1e6a"
+MRR_KEY_RIG_SL = "26a32e6a0a60233eb09840acbe7bd4eb6299c80f32e88d7cf449743304b085f5"
+MRR_SECRET_RIG_SL = "e68900f5bba7d48517f38ff2b26198d8aad034f6f9fce60d3ba28ad58054ab67"
+MRR_KEY_RIG_LN = "e7b0d9994390c0b29bed634b3be1c0e250fb27557baaaa94a1b8664f1d8b908e"
+MRR_SECRET_RIG_LN = "608003e7ad85d3ab88f9654cd528c8b23c97f1d0eef4da9a1b0cb200bb37b3de"
+MRR_KEY_RIG_LUCKY = "f36cce5f660857a4915a2cb1346ed84029f69494ec3121bd2161a0c05d0f714c"
+MRR_SECRET_RIG_LUCKY = "d74a677f22ae9c6d1879a6e4f96ac807d91d88c9675cd56d39972124d93a6325"
+MRR_NONCE_OVERRIDE_LUCKY = "9223372036854775807"
+MRR_NONCE_OVERRIDE_LN = "9223372036854775807"
+MRR_NONCE_OVERRIDE_SL = "9223372036854775807"
+MRR_NONCE_OVERRIDE_BT = "9223372036854775807"
+TUNNEL_URL = "https://see-pci-advertisements-diploma.trycloudflare.com"
