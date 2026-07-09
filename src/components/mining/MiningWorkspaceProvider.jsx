@@ -14,6 +14,7 @@ import {
   mergeMiningRoutes,
   normalizeHeroRows,
   normalizeMrrMarketRows,
+  normalize2MinersRows,
   normalizeMiningDutchRows,
 } from "./miningWorkspaceData";
 import { getNiceHashPriceValue } from "../../core/mrrUtils";
@@ -36,6 +37,7 @@ const ALGO_MAPPING = {
 export function MiningWorkspaceProvider({ children, onCall, nhClient = "VN" }) {
   const [heroStats, setHeroStats] = useState(null);
   const [dutchStats, setDutchStats] = useState(null);
+  const [twoMinersStats, setTwoMinersStats] = useState(null);
   const [mrrMarketStats, setMrrMarketStats] = useState(null);
   const [niceHashPrices, setNiceHashPrices] = useState({});
   const [loading, setLoading] = useState(false);
@@ -44,6 +46,7 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "VN" }) {
   const [priceFetchStatus, setPriceFetchStatus] = useState({});
   const heroStatsRef = useRef(null);
   const dutchStatsRef = useRef(null);
+  const twoMinersStatsRef = useRef(null);
   const mrrMarketStatsRef = useRef(null);
 
   useEffect(() => {
@@ -53,6 +56,10 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "VN" }) {
   useEffect(() => {
     dutchStatsRef.current = dutchStats;
   }, [dutchStats]);
+
+  useEffect(() => {
+    twoMinersStatsRef.current = twoMinersStats;
+  }, [twoMinersStats]);
 
   useEffect(() => {
     mrrMarketStatsRef.current = mrrMarketStats;
@@ -65,55 +72,23 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "VN" }) {
       setPriceFetchStatus({});
 
       try {
-        // 1. FETCH HERO MINERS DATA
-        const heroResult = await fetchMiningStats(
-          "herominers",
-          "VN",
-          null,
-          null,
-          20000,
-          force,
-        ).catch(err => {
-          console.warn("HeroMiners fetch failed:", err);
-          return null;
-        });
+        const [heroResult, dutchResult, twoMinersResult, mrrResult] = await Promise.allSettled([
+            fetchMiningStats("herominers", "VN", null, null, 20000, force),
+            fetchMiningStats("miningdutch", "VN", null, null, 20000, force),
+            fetchMiningStats("2miners", "VN", null, null, 20000, force),
+            typeof onCall === 'function' ? onCall("/api/v2/mrr/rentals", { query: { client: nhClient, type: "sold", limit: 100 }, silent: true }) : Promise.resolve(null)
+        ]);
 
-        // 2. FETCH MINING-DUTCH DATA
-        const dutchResult = await fetchMiningStats(
-          "miningdutch",
-          "VN",
-          null,
-          null,
-          20000,
-          force,
-        ).catch(err => {
-          console.warn("Mining-Dutch fetch failed:", err);
-          return null;
-        });
-
-        // 3. FETCH MRR MARKET DATA
-        let mrrResult = null;
-        if (typeof onCall === "function") {
-          try {
-            mrrResult = await onCall("/api/v2/mrr/rentals", {
-              query: { client: nhClient, type: "sold", limit: 100 },
-              silent: true,
-            });
-            console.log("✅ MRR API Response:", mrrResult);
-          } catch (err) {
-            console.warn("MRR fetch failed:", err);
-          }
-        }
-
-        // 4. FETCH NICEHASH PRICES
-        const hero = heroResult || heroStatsRef.current;
-        const dutch = dutchResult || dutchStatsRef.current;
-        const mrrMarket = mrrResult || mrrMarketStatsRef.current;
+        const hero = heroResult.status === 'fulfilled' ? heroResult.value : heroStatsRef.current;
+        const dutch = dutchResult.status === 'fulfilled' ? dutchResult.value : dutchStatsRef.current;
+        const twoMiners = twoMinersResult.status === 'fulfilled' ? twoMinersResult.value : twoMinersStatsRef.current;
+        const mrrMarket = mrrResult.status === 'fulfilled' ? mrrResult.value : mrrMarketStatsRef.current;
 
         // Set states
         if (hero) setHeroStats(hero);
         if (dutch) setDutchStats(dutch);
-        if (mrrResult) setMrrMarketStats(mrrResult);
+        if (twoMiners) setTwoMinersStats(twoMiners);
+        if (mrrMarket) setMrrMarketStats(mrrMarket);
 
         if (!hero && !dutch) {
           throw new Error("Failed to load mining workspace data");
@@ -122,9 +97,10 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "VN" }) {
         // Normalize data
         const nextHeroRows = normalizeHeroRows(hero);
         const nextDutchRows = normalizeMiningDutchRows(dutch);
+        const nextTwoMinersRows = normalize2MinersRows(twoMiners);
         const nextMrrMarketRows = normalizeMrrMarketRows(mrrMarket);
 
-        console.log(`📊 Data counts: Hero=${nextHeroRows.length}, Dutch=${nextDutchRows.length}, MRR=${nextMrrMarketRows.length}`);
+        console.log(`📊 Data counts: Hero=${nextHeroRows.length}, Dutch=${nextDutchRows.length}, 2Miners=${nextTwoMinersRows.length}, MRR=${nextMrrMarketRows.length}`);
         console.log("🔍 MRR Market Rows:", nextMrrMarketRows);
 
         // Get all unique algos
@@ -132,6 +108,7 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "VN" }) {
           new Set([
             ...nextHeroRows.map((row) => row.nicehashAlgo),
             ...nextDutchRows.map((row) => row.nicehashAlgo),
+            ...nextTwoMinersRows.map((row) => row.nicehashAlgo),
           ])
         ).filter((algo) => algo && algo !== "UNKNOWN");
 
@@ -219,7 +196,7 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "VN" }) {
         }
 
         // Merge and build opportunities
-        const nextRoutes = mergeMiningRoutes(nextDutchRows, nextHeroRows, nextNiceHashPrices);
+        const nextRoutes = mergeMiningRoutes(nextDutchRows, nextHeroRows, nextTwoMinersRows, nextNiceHashPrices);
         const nextOpportunities = buildOpportunityRows(nextRoutes, nextNiceHashPrices, nextMrrMarketRows);
 
         console.log(`📊 Opportunities: ${nextOpportunities.length}`);
@@ -276,13 +253,17 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "VN" }) {
     () => normalizeMiningDutchRows(dutchStats),
     [dutchStats],
   );
+  const twoMinersRows = useMemo(
+    () => normalize2MinersRows(twoMinersStats),
+    [twoMinersStats],
+  );
   const mrrMarketRows = useMemo(
     () => normalizeMrrMarketRows(mrrMarketStats),
     [mrrMarketStats],
   );
   const routes = useMemo(
-    () => mergeMiningRoutes(miningDutchRows, heroRows, niceHashPrices),
-    [heroRows, miningDutchRows, niceHashPrices],
+    () => mergeMiningRoutes(miningDutchRows, heroRows, twoMinersRows, niceHashPrices),
+    [heroRows, miningDutchRows, twoMinersRows, niceHashPrices],
   );
   const opportunities = useMemo(
     () => buildOpportunityRows(routes, niceHashPrices, mrrMarketRows),
@@ -294,6 +275,7 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "VN" }) {
       heroStats,
       dutchStats,
       mrrMarketStats,
+      twoMinersStats,
       heroRows,
       miningDutchRows,
       routes,
@@ -313,6 +295,7 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "VN" }) {
       lastUpdated,
       loading,
       miningDutchRows,
+      twoMinersStats,
       mrrMarketStats,
       niceHashPrices,
       opportunities,

@@ -46,6 +46,43 @@ function normalizeMiningStatsResponse(data, type) {
     };
   }
 
+  // ─── New pool providers ─────────────────────────────────────
+  if (data["2miners"]) {
+    const poolData = data["2miners"];
+    return {
+      ...data,
+      coinStats: Array.isArray(poolData.coinStats) ? poolData.coinStats : [],
+      miners: poolData.miners || 0,
+      fetchedAt: poolData.fetchedAt || data.fetchedAt || new Date().toISOString(),
+      success: poolData.success !== false,
+      pool: "2Miners",
+    };
+  }
+
+  if (data.k1pool) {
+    const poolData = data.k1pool;
+    return {
+      ...data,
+      coinStats: Array.isArray(poolData.coinStats) ? poolData.coinStats : [],
+      miners: poolData.miners || 0,
+      fetchedAt: poolData.fetchedAt || data.fetchedAt || new Date().toISOString(),
+      success: poolData.success !== false,
+      pool: "K1Pool",
+    };
+  }
+
+  if (data.kryptex) {
+    const poolData = data.kryptex;
+    return {
+      ...data,
+      coinStats: Array.isArray(poolData.coinStats) ? poolData.coinStats : [],
+      miners: poolData.miners || 0,
+      fetchedAt: poolData.fetchedAt || data.fetchedAt || new Date().toISOString(),
+      success: poolData.success !== false,
+      pool: "Kryptex",
+    };
+  }
+
   if (Array.isArray(data)) {
     return {
       success: true,

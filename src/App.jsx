@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Modal from "./components/Modal";
+import NavBar from "./components/NavBar";
 import HashCompletionCalculator from "./components/ProfitCompletion";
 import CryptoRatePage from "./components/CryptoRatePage";
 import MiningPage from "./components/mining/MiningPage.jsx";

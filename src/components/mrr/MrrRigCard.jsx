@@ -1,174 +1,28 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
+import React from 'react';
 import { CountdownTimer } from "./MiningRigRental";
-import {
-  getClientBadgeStyle,
-  getRawHashrate,
-  getPriceDataLocal,
-  parsePriceValueLocal,
-  formatRentalStartTime,
-  getStatusClass,
-  getRoiColor,
-  getNiceHashPriceValue,
-} from "../../core/mrrUtils.js";
-import {
-  HASHRATE_SUFFIXES,
-  getAlgoDisplayName,
-  normalizeAlgoForNiceHash,
-  getAlgorithmUnit,
-  getMrrAlgorithmUnit,
-  calculatePriceComparison,
-  getMrrAlgoKey,
-  isAsicBoost,
-} from "../../core/mapping.js";
+import { getRoiColor } from "../../core/mrrUtils.js";
+import { formatRentalStartTime } from "../../core/mrrUtils.js";
 
-// ─── Helper: Format hashrate with unit ──────────────────────────────────
-function formatHashrateWithUnit(value, unit) {
-  if (!value || value <= 0) return "0H";
-  const cleanUnit = cleanHashrateUnit(unit || "H");
-  const multiplier = HASHRATE_SUFFIXES[cleanUnit] || 1;
-  const rawH = value * multiplier;
-  const units = ["H", "K", "M", "G", "T", "P", "E"];
-  const mults = [1, 1e3, 1e6, 1e9, 1e12, 1e15, 1e18];
-  let idx = 0;
-  for (let i = mults.length - 1; i >= 0; i--) {
-    if (rawH >= mults[i]) {
-      idx = i;
-      break;
-    }
-  }
-  const val = rawH / mults[idx];
-  return `${val.toFixed(2)}${units[idx]}`;
-}
+// Hooks
+import { useMrrRate } from "./hooks/useMrrRate";
+import { useRigTimers } from "./hooks/useRigTimers";
+import { useRigMetrics } from "./hooks/useRigMetrics";
+import { useNiceHashPrice } from "./hooks/useNiceHashPrice";
+import { useRoiCalculation } from "./hooks/useRoiCalculation";
 
-// ─── Other helpers ──────────────────────────────────────────────────────
-const formatPercent = (value) => {
-  const num = Number(value);
-  if (!Number.isFinite(num)) return "N/A";
-  return `${num > 0 ? "+" : ""}${num.toFixed(2)}%`;
-};
+// Components
+import RigHeader from "./components/RigHeader";
+import RoiBadge from "./components/RoiBadge";
+import RigRates from "./components/RigRates";
+import { RigMetrics } from "./components/RigMetrics";
+import RigPoolInfo from "./components/RigPoolInfo";
+import RigActions from "./components/RigActions";
 
-const normalizeOrderAlgo = (order) => {
-  const rawOrder = order?.rawOrder || order;
-  const pick = (value) => {
-    if (!value) return "";
-    if (typeof value === "object")
-      return value.algorithm || value.displayName || value.name || "";
-    return value;
-  };
-  return normalizeAlgoForNiceHash(
-    order?.algo ||
-      pick(order?.algorithm) ||
-      rawOrder?.algo ||
-      pick(rawOrder?.algorithm) ||
-      rawOrder?.type,
-  );
-};
+// Utils
+import { resolveAlgo } from "./utils/algorithmUtils";
+import { getRigStatus, getRentalTimes, getHashrateInfo } from "./utils/rigUtils";
+import { getRigStyles } from "./styles/rigCardStyles";
 
-const COINGECKO_BY_CURRENCY = {
-  BTC: "bitcoin",
-  LTC: "litecoin",
-  DOGE: "dogecoin",
-  BCH: "bitcoin-cash",
-  ETH: "ethereum",
-  ETC: "ethereum-classic",
-};
-const PRICE_CURRENCIES = ["BTC", "ETH", "LTC", "DOGE", "BCH"];
-const FALLBACK_BTC_RATES = { // Last resort if CoinGecko fails
-  ETH: 0.052,
-  LTC: 0.00078,
-  DOGE: 0.0000018,
-  BCH: 0.00042,
-  ETC: 0.00042,
-};
-
-const resolvePaidPrice = (priceSource, convertedSource, algo) => {
-  // For SHA256 variants, ALWAYS prioritize BTC and never fall back to other currencies.
-  // This logic must run FIRST to prevent other currencies from being picked up.
-  const isSha256Family = String(algo || "").toUpperCase().includes("SHA256");
-  if (isSha256Family) {
-    if (priceSource?.BTC) {
-      const btcPriceData = getPriceDataLocal(priceSource.BTC);
-      if (btcPriceData.value > 0) return { amount: btcPriceData.value, currency: 'BTC' };
-    }
-    // Also check the root of the price object for a direct BTC price
-    if (String(priceSource?.currency).toUpperCase() === 'BTC' && priceSource?.paid > 0) {
-      return { amount: priceSource.paid, currency: 'BTC' };
-    }
-    return { amount: 0, currency: 'BTC' }; // Explicitly return 0 BTC if no valid BTC price is found
-  }
-
-  // For all other algorithms, find the first available price.
-  if (priceSource && typeof priceSource === "object") {
-    for (const currency of PRICE_CURRENCIES) {
-      const nested = priceSource[currency];
-      if (nested && getPriceDataLocal(nested).value > 0) return { amount: getPriceDataLocal(nested).value, currency };
-    }
-  }
-
-  const primary = getPriceDataLocal(priceSource || convertedSource);
-  if (primary.value > 0) return { amount: primary.value, currency: String(primary.currency || 'BTC').toUpperCase() };
-
-  return { amount: 0, currency: "BTC" };
-};
-
-const convertPaidToBtc = (
-  amount,
-  currency,
-  coinPrices = {},
-  fallbackBtc = 0,
-) => {
-  const upperCurrency = String(currency || "BTC").toUpperCase();
-  if (!amount || amount <= 0) return 0;
-  if (upperCurrency === "BTC") return amount;
-  const coinId = COINGECKO_BY_CURRENCY[upperCurrency];
-  const apiBtcRate = coinId
-    ? Number.parseFloat(coinPrices?.[coinId]?.btc || 0)
-    : 0;
-  if (apiBtcRate > 0) return amount * apiBtcRate;
-  const fallbackRate = FALLBACK_BTC_RATES[upperCurrency];
-  if (fallbackRate !== undefined) return amount * fallbackRate;
-  return Number.isFinite(fallbackBtc) && fallbackBtc > 0 ? fallbackBtc : 0;
-};
-
-const cleanHashrateUnit = (unit) => {
-  const match = String(unit || "")
-    .toUpperCase()
-    .match(/GSOL|MSOL|KSOL|SOL|E|P|T|G|M|K|H/);
-  return match?.[0] || "H";
-};
-
-const convertHashrateValue = (value, fromUnit, toUnit) => {
-  const fromMultiplier = HASHRATE_SUFFIXES[cleanHashrateUnit(fromUnit)] || 1;
-  const toMultiplier = HASHRATE_SUFFIXES[cleanHashrateUnit(toUnit)] || 1;
-  return (value * fromMultiplier) / toMultiplier;
-};
-
-const resolveAlgoLookupKeys = (...values) => {
-  const keys = new Set();
-
-  const addKey = (value) => {
-    if (!value) return;
-    const raw = String(value).trim();
-    if (!raw) return;
-    keys.add(raw);
-    keys.add(raw.toUpperCase());
-    keys.add(raw.toLowerCase());
-
-    const normalized = normalizeAlgoForNiceHash(raw);
-    if (normalized && normalized !== "UNKNOWN") {
-      keys.add(normalized);
-      keys.add(normalized.toLowerCase());
-      if (normalized === "SHA256ASICBOOST") {
-        keys.add("SHA256AB");
-      }
-    }
-  };
-
-  values.forEach(addKey);
-  return Array.from(keys);
-};
-
-// ─── Main Component ──────────────────────────────────────────────────────
 const MrrRigCard = ({
   rig,
   algoName,
@@ -190,1251 +44,144 @@ const MrrRigCard = ({
   onCall,
   mrrClient,
 }) => {
-  // ── Basic state ──
-  const statusStr = String(
-    typeof rig.status === "object" ? rig.status.status : rig.status || "",
-  ).toLowerCase();
-  const rentalId = rig.rentalid || rig.current_rental_id || rig.rental_id;
-  const isRented =
-    statusStr.includes("rented") ||
-    statusStr.includes("active") ||
-    Boolean(rentalId);
-  const displayId = isRented && rentalId ? rentalId : rig.id;
-  const idLabel = isRented && rentalId ? "Rental" : "Rig";
-  const [nowMs, setNowMs] = useState(0);
-  const rawCur = info?.rawCur || rig.hashrate?.current || 0;
-  const cur = Number.isFinite(parseFloat(rawCur)) ? parseFloat(rawCur) : 0;
-
-  // ── Algorithm & units ──
-  const rawAlgo =
-    info?.algo ||
-    info?.normalized?.algo ||
-    rig.algo ||
-    rig.algorithm ||
-    rig.type ||
-    algoName;
-  const normalizedAlgo = normalizeAlgoForNiceHash(rawAlgo);
-  const mrrUnit = getMrrAlgorithmUnit(normalizedAlgo || rawAlgo);
-  const mrrApiKey = getMrrAlgoKey(normalizedAlgo);
-  const isAsicBoostAlgo = isAsicBoost(normalizedAlgo);
-
-  // ── MRR rate state ──
-  const [mrrMarketRate, setMrrMarketRate] = useState(0);
-  const [isLoadingMrrRate, setIsLoadingMrrRate] = useState(false);
-  const [mrrRateError, setMrrRateError] = useState(null);
-  const [mrrUsedKey, setMrrUsedKey] = useState("");
-
-  // ── USD price helper ──
-  const getUsdPrice = useCallback(
-    (currency) => {
-      const map = {
-        BTC: "bitcoin",
-        ETH: "ethereum",
-        LTC: "litecoin",
-        DOGE: "dogecoin",
-        BCH: "bitcoin-cash",
-      };
-      const id = map[String(currency).toUpperCase()];
-      return coinPrices?.[id]?.usd || 0;
-    },
-    [coinPrices],
+  // Status & IDs
+  const { statusStr, isRented, rentalId, displayId } = getRigStatus(rig);
+  
+  // Algorithm
+  const algo = resolveAlgo(rig, info, algoName);
+  
+  // Rental Times
+  const { startTime, endTime } = getRentalTimes(info, rig);
+  
+  // Calculate explicit duration from info and rig
+  const explicitDuration = parseFloat(
+    info?.duration ?? 
+    info?.hours ?? 
+    rig.duration ?? 
+    rig.hours ?? 
+    rig.length ?? 
+    0
+  );
+  
+  // Timers - pass explicit duration
+  const timers = useRigTimers(
+    isRented, 
+    startTime, 
+    endTime, 
+    explicitDuration
+  );
+  
+  // Hashrate Info
+  const hashrate = getHashrateInfo(info, rig);
+  
+  // Metrics
+  const metrics = useRigMetrics(rig, info, algo, coinPrices);
+  
+  // MRR Rate
+  const mrrRate = useMrrRate(algoName, info, rig, onCall, coinPrices);
+  
+  // NiceHash Price
+  const nhPrice = useNiceHashPrice(nhOrders, algo, algoMarketPrices);
+  
+  // ROI Calculation
+  const { roiPercent, roiLabel } = useRoiCalculation(
+    mrrRate.finalMrrRate,
+    algo.mrrUnit,
+    nhPrice.niceHashSourcePrice,
+    algo.nhUnit,
+    mrrRate.isLoadingMrrRate
   );
 
-  // ── Timer ──
-  useEffect(() => {
-    if (!isRented) return undefined;
-    const updateNow = () => setNowMs(Date.now());
-    updateNow();
-    const timer = setInterval(updateNow, 30000);
-    return () => clearInterval(timer);
-  }, [isRented]);
-
-  // ── MRR rate fetch ──
-  useEffect(() => {
-    // Prioritize the most specific algo info from the rig/info objects first.
-    // The `algoName` prop is a fallback for when the rig object is generic.
-    const specificRawAlgo =
-      info?.algo || rig.algo || rig.algorithm || rig.type || algoName;
-    const normalizedAlgo = normalizeAlgoForNiceHash(specificRawAlgo);
-
-    // Fallback to a calculated rate if we can't determine the algorithm.
-    if (!normalizedAlgo || normalizedAlgo === "UNKNOWN") {
-      if (info?.price?.paid && info?.hashrate?.advertised) {
-        const paid = parseFloat(info.price.paid);
-        const advertised = parseFloat(info.hashrate.advertised);
-        const duration = parseFloat(info.duration || 0);
-        if (paid > 0 && advertised > 0 && duration > 0) {
-          const calculatedRate = paid / (duration / 24) / advertised;
-          setMrrMarketRate(calculatedRate);
-          setMrrUsedKey("calculated");
-        }
-      }
-      return;
-    }
-
-    const fetchRate = async () => {
-      setIsLoadingMrrRate(true);
-      setMrrRateError(null);
-
-      const primaryKey = getMrrAlgoKey(normalizedAlgo);
-      if (!primaryKey || primaryKey === 'unknown') {
-        return; // No valid key to fetch
-      }
-
-      let foundRate = 0;
-      let usedKey = "";
-
-      const fetchForKey = async (key) => {
-        try {
-          // Use the correct MRR API endpoint: /info/algos/{key}
-          const data = await onCall(`/api/v2/mrr/info/algos/${key}`, {
-            silent: true,
-          });
-
-          if (!data) {
-            console.warn(`[MrrRigCard] No data returned for key "${key}"`);
-            return;
-          }
-
-          if (data.error || data.success === false) {
-            console.warn(`[MrrRigCard] API error for key "${key}":`, data.message || 'Unknown error');
-            return;
-          }
-
-          let rate = 0;
-          // Parse the response according to the official MRR API structure
-          if (data.data?.suggested_price?.amount)
-            rate = parseFloat(data.data.suggested_price.amount);
-          else if (data.data?.stats?.prices?.lowest?.amount)
-            rate = parseFloat(data.data.stats.prices.lowest.amount);
-          else if (data.data?.stats?.prices?.average?.amount)
-            rate = parseFloat(data.data.stats.prices.average.amount);
-          else if (data.data?.stats?.prices?.last?.amount)
-            rate = parseFloat(data.data.stats.prices.last.amount);
-          else if (data.data?.stats?.prices?.last_10?.amount)
-            rate = parseFloat(data.data.stats.prices.last_10.amount);
-          else if (data.data?.price) rate = parseFloat(data.data.price);
-          else if (data.data?.BTC) rate = parseFloat(data.data.BTC);
-          else if (data.price) rate = parseFloat(data.price);
-          else if (data.BTC) rate = parseFloat(data.BTC);
-          
-          if (rate > 0) {
-            foundRate = rate;
-            usedKey = key;
-            console.log(`[MrrRigCard] Found rate ${rate} for key "${key}"`);
-          } else {
-            console.warn(`[MrrRigCard] No valid rate found for key "${key}"`);
-          }
-        } catch (err) {
-          console.warn(`[MrrRigCard] Could not fetch MRR rate for key "${key}". Error: ${err.message}`);
-        }
-      };
-
-      const isShaFamily = String(normalizedAlgo).toUpperCase() === "SHA256ASICBOOST";
- 
-      if (isShaFamily) {
-        // For AsicBoost, always try 'sha256ab' first. The logic in getMrrAlgoKey should handle this,
-        // but we can be explicit here for clarity.
-        const primaryShaKey = isAsicBoost(normalizedAlgo) ? 'sha256ab' : 'sha256ab';
-        await fetchForKey(primaryShaKey);
-      }
-
-      
-
-      if (foundRate > 0) {
-        setMrrMarketRate(foundRate);
-        setMrrUsedKey(usedKey);
-        setMrrRateError(null);
-      } else {
-        // Fallback to calculated
-        if (info?.price?.paid && info?.hashrate?.advertised) {
-          const paid = parseFloat(info.price.paid);
-          const advertised = parseFloat(info.hashrate.advertised);
-          const duration = parseFloat(info.duration || 0);
-          if (paid > 0 && advertised > 0 && duration > 0) {
-            const calculatedRate = paid / (duration / 24) / advertised;
-            setMrrMarketRate(calculatedRate);
-            setMrrUsedKey("calculated");
-            setMrrRateError(null);
-          } else {
-            setMrrRateError("No rate available");
-          }
-        } else {
-          setMrrRateError("No rate available");
-        }
-      }
-      setIsLoadingMrrRate(false);
-    };
-
-    fetchRate();
-  }
-  , [
-    info?.algo,
-    info?.price?.paid,
-    info?.hashrate?.advertised,
-    info?.duration,
-    rig.algo,
-    rig.algorithm,
-    rig.type,
-    algoName,
-    mrrUnit,
-    info?.rawAds,
-    rig.hashrate?.advertised,
-  ]);
-
-  // ── Computed values ──
-  const adsVal = useMemo(
-    () =>
-      info?.rawAds ||
-      getRawHashrate(rig.hashrate?.advertised || rig.advertised) ||
-      0,
-    [info?.rawAds, rig.hashrate?.advertised, rig.advertised],
-  );
-  const avgVal = useMemo(
-    () =>
-      info?.rawAvg ||
-      getRawHashrate(rig.hashrate?.average || rig.average || rig.hash) ||
-      0,
-    [info?.rawAvg, rig.hashrate?.average, rig.average, rig.hash],
-  );
-
-  const rentalStartTime = info?.startTime || rig.start;
-  const rentalEndTime =
-    info?.endTime ||
-    rig.end ||
-    (typeof rig.status === "object" ? rig.status.end : null);
-  const startT = new Date(
-    rentalStartTime +
-      (String(rentalStartTime || "").endsWith("UTC") ? "" : " UTC"),
-  ).getTime();
-  const endT = new Date(
-    rentalEndTime + (String(rentalEndTime || "").endsWith("UTC") ? "" : " UTC"),
-  ).getTime();
-  const totalMs =
-    Number.isNaN(startT) || Number.isNaN(endT) ? 0 : Math.max(0, endT - startT);
-  const durationHoursFromDates = totalMs > 0 ? totalMs / 3600000 : 0;
-  const durationHoursExplicit = parseFloat(
-    info?.duration ??
-      info?.hours ??
-      rig.duration ??
-      rig.hours ??
-      rig.length ??
-      0,
-  );
-  const durationHours =
-    durationHoursExplicit > 0 ? durationHoursExplicit : durationHoursFromDates;
-
-  const rawEffValue =
-    info?.percent ??
-    rig.hashrate?.average?.percent ??
-    rig.percent ??
-    (adsVal > 0 ? (avgVal / adsVal) * 100 : 0);
-  const effNum = Number.parseFloat(rawEffValue);
-  const eff = Number.isFinite(effNum) ? effNum.toFixed(2) : "0.00";
-
-  const paidPrice = resolvePaidPrice(
-    info?.normalized?.price || info?.price || rig.price,
-    info?.price_converted || rig.price_converted,
-    normalizedAlgo, // Pass algo to help resolve currency
-  );
-  const paidAmount = Number(paidPrice.amount || 0);
-  const paidCurrency =
-    paidPrice.currency || info?.currency || rig.currency || "BTC";
-  const paidLabel =
-    paidAmount > 0 && paidCurrency
-      ? `${paidAmount.toFixed(8)} ${String(paidCurrency).toUpperCase()}`
-      : null;
-  const fallbackBtc = parsePriceValueLocal(
-    info?.price_converted?.price ?? rig.price_converted?.price ?? 0,
-  );
-  const paidBtcAmount = convertPaidToBtc(
-    paidAmount,
-    paidCurrency,
-    coinPrices,
-    fallbackBtc,
-  );
-
-  const usdValue = useMemo(() => {
-    if (!paidAmount || paidAmount <= 0) return 0;
-    const price = getUsdPrice(paidCurrency);
-    return paidAmount * price;
-  }, [paidAmount, paidCurrency, getUsdPrice]);
-
-  const getUsdtAmountDirect = (amount, currency, coinPrices) => {
-    const upperCurrency = String(currency || "").toUpperCase();
-    if (upperCurrency === "USDT") return 0;
-    const coinId = COINGECKO_BY_CURRENCY[upperCurrency];
-    if (!coinId) return 0;
-    const usdPrice = coinPrices?.[coinId]?.usd;
-    if (typeof usdPrice !== "number" || usdPrice <= 0) return 0;
-    return amount * usdPrice;
-  };
-  const paidUsdtAmount = useMemo(
-    () => getUsdtAmountDirect(paidAmount, paidCurrency, coinPrices),
-    [paidAmount, paidCurrency, coinPrices],
-  );
-
-  const advertisedUnit =
-    rig.hashrate?.suffix ||
-    rig.hashrate?.advertised?.type ||
-    info?.hashrate?.suffix ||
-    info?.hashrate_unit ||
-    info?.unit ||
-    mrrUnit;
-  const adsInMrrUnit =
-    adsVal > 0 ? convertHashrateValue(adsVal, advertisedUnit, mrrUnit) : 0;
-  const durationDays = durationHours > 0 ? durationHours / 24 : 0;
-
-  const mrrDailyRate = mrrMarketRate > 0 ? mrrMarketRate : 0;
-
-  const calculatedMrrRate = useMemo(() => {
-    if (paidBtcAmount > 0 && adsInMrrUnit > 0 && durationDays > 0) {
-      return paidBtcAmount / durationDays / adsInMrrUnit;
-    }
-    return 0;
-  }, [paidBtcAmount, adsInMrrUnit, durationDays]);
-
-  const infoMrrRate = useMemo(
-    () => info?.mrrRate || info?.price?.rate || 0,
-    [info],
-  );
-
-  const finalMrrRate = useMemo(() => {
-    if (mrrMarketRate > 0) return mrrMarketRate;
-    if (calculatedMrrRate > 0) return calculatedMrrRate;
-    if (infoMrrRate > 0) return infoMrrRate;
-    return 0;
-  }, [mrrMarketRate, calculatedMrrRate, infoMrrRate]);
-
-  const mrrDailyRateSource =
-    mrrMarketRate > 0
-      ? `MRR API (${mrrUsedKey || mrrApiKey})`
-      : calculatedMrrRate > 0
-        ? ""
-        : infoMrrRate > 0
-          ? "From rental info"
-          : isLoadingMrrRate
-            ? "Loading MRR API..."
-            : "No MRR rate available";
-
-  const normalizedCardAlgo = normalizeAlgoForNiceHash(algoName || rawAlgo);
-  const nhOrder = [...(nhOrders || [])]
-    .sort(
-      (a, b) =>
-        Number(
-          b?.isActive ||
-            b?.rawOrder?.status?.code === "ACTIVE" ||
-            b?.rawOrder?.status === "ACTIVE",
-        ) -
-        Number(
-          a?.isActive ||
-            a?.rawOrder?.status?.code === "ACTIVE" ||
-            a?.rawOrder?.status === "ACTIVE",
-        ),
-    )
-    .find((order) => normalizeOrderAlgo(order) === normalizedCardAlgo);
-
-  const orderNhPrice = getNiceHashPriceValue(
-    nhOrder?.price ?? nhOrder?.rawOrder?.price ?? nhOrder,
-  );
-  const buyNhPrice = nhOrder && orderNhPrice > 0 ? orderNhPrice : 0;
-  const buyNhPriceWithFee =
-    buyNhPrice > 0
-      ? Number.parseFloat(nhOrder?.add_fee ?? nhOrder?.priceWithFee ?? 0) > 0
-        ? Number.parseFloat(nhOrder.add_fee ?? nhOrder.priceWithFee)
-        : buyNhPrice
-      : 0;
-  const myNhUnit = getAlgorithmUnit(
-    normalizeAlgoForNiceHash(algoName || rawAlgo),
-  );
-
-  const marketPriceData = algoMarketPrices?.[algoName];
-  const marketPriceValue = marketPriceData
-    ? getNiceHashPriceValue(marketPriceData)
+  // Computed values
+  const effNum = info?.percent ?? 
+    rig.hashrate?.average?.percent ?? 
+    rig.percent ?? 
+    (metrics.adsVal > 0 ? (metrics.avgVal / metrics.adsVal) * 100 : 0);
+  const efficiency = Number.isFinite(Number(effNum)) ? Number(effNum) : 0;
+  
+  const targetHashrate = timers.totalMs - timers.elapsedMs > 0
+    ? (metrics.adsVal * (timers.totalMs / 1000) - metrics.avgVal * (timers.elapsedMs / 1000)) / ((timers.totalMs - timers.elapsedMs) / 1000)
     : 0;
-  const niceHashSourcePrice =
-    marketPriceValue > 0 ? marketPriceValue : buyNhPriceWithFee;
+  const isBehind = targetHashrate > metrics.adsVal;
 
-  const fromMultiplier = HASHRATE_SUFFIXES[cleanHashrateUnit(myNhUnit)] || 1;
-  const toMultiplier = HASHRATE_SUFFIXES[cleanHashrateUnit(mrrUnit)] || 1;
-  const niceHashPriceInMrrUnit =
-    niceHashSourcePrice > 0
-      ? niceHashSourcePrice * (toMultiplier / fromMultiplier)
-      : 0;
+  // Use the final duration from timers
+  const finalDurationHours = timers.durationHours;
 
-  const roiPercent = useMemo(() => {
-    if (niceHashSourcePrice > 0 && finalMrrRate > 0) {
-      return calculatePriceComparison(
-        finalMrrRate,
-        mrrUnit,
-        niceHashSourcePrice,
-        myNhUnit,
-      );
-    }
-    return null;
-  }, [finalMrrRate, mrrUnit, niceHashSourcePrice, myNhUnit]);
-
-  const roiLabel = useMemo(() => {
-    if (roiPercent !== null) return formatPercent(roiPercent);
-    if (niceHashSourcePrice > 0) {
-      if (finalMrrRate <= 0)
-        return isLoadingMrrRate ? "Loading..." : "No MRR rate";
-      return "Waiting for data";
-    }
-    return "No NH price";
-  }, [roiPercent, niceHashSourcePrice, finalMrrRate, isLoadingMrrRate]);
-
-  const displayAlgo = getAlgoDisplayName(normalizedAlgo || rawAlgo);
-
-  const elapsedMs =
-    nowMs > 0 && totalMs > 0
-      ? Math.max(0, Math.min(nowMs - startT, totalMs))
-      : 0;
-  const timeProgress = totalMs > 0 ? (elapsedMs / totalMs) * 100 : 0;
-  const targetHashrate =
-    totalMs - elapsedMs > 0
-      ? (adsVal * (totalMs / 1000) - avgVal * (elapsedMs / 1000)) /
-        ((totalMs - elapsedMs) / 1000)
-      : 0;
-  const isBehind = targetHashrate > adsVal;
-  const hSuffix =
-    info?.hashrate?.suffix ||
-    rig.hashrate?.advertised?.type ||
-    info?.hashrate_unit ||
-    info?.unit ||
-    mrrUnit ||
-    myNhUnit ||
-    "";
-
-  const getEfficiencyAccent = (efficiency) => {
-    if (!Number.isFinite(efficiency)) return "rgba(148, 163, 184, 0.18)";
-    if (efficiency >= 98) return "rgba(197, 34, 238, 0.3)";
-    if (efficiency >= 70) return "rgba(23, 185, 131, 0.3)";
-    if (efficiency >= 50) return "rgba(251, 191, 36, 0.30)";
-    if (efficiency >= 30) return "rgba(251, 36, 36, 0.3)";
-    return "rgba(239, 68, 68, 0.30)";
-  };
-
-  const accent = getEfficiencyAccent(effNum);
-
-  // ── Styles ──
-  const shellStyle = {
-    background: `radial-gradient(circle at top right, ${accent} 0%, transparent 88%)`,
-    border: `1.5px solid ${accent}`,
-    borderTop: `2px solid ${getRoiColor(effNum)}`,
-    borderRight: `3px solid ${getRoiColor(effNum)}`,
-    borderBottom: `2px solid ${getRoiColor(effNum)}`,
-    borderLeft: `1px solid ${getRoiColor(effNum)}`,
-    borderRadius: "16px",
-    padding: "8px",
-    position: "relative",
-    display: "flex",
-    flexDirection: "column",
-    gap: "6px",
-    boxShadow: "0 10px 22px rgba(0, 0, 0, 0.16)",
-    overflow: "hidden",
-  };
-
-  const sectionStyle = {
-    background: "rgba(255,255,255,0.035)",
-    border: "1px solid rgba(255,255,255,0.06)",
-    borderRadius: "8px",
-    padding: "2px",
-  };
-
-  const asicBoostBadge = isAsicBoostAlgo ? (
-    <span
-      style={{
-        background: "rgba(245, 158, 11, 0.2)",
-        color: "#fbbf24",
-        fontSize: "7px",
-        padding: "1px 6px",
-        borderRadius: "999px",
-        fontWeight: "700",
-        marginLeft: "4px",
-        border: "1px solid rgba(245, 158, 11, 0.3)",
-      }}
-    ></span>
-  ) : null;
+  // Styles
+  const styles = getRigStyles(efficiency);
 
   return (
-    <article className="rig-card" style={shellStyle}>
-      {/* ─── Header ─── */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-start",
-          gap: "8px",
-          flexWrap: "wrap",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: "4px",
-            minWidth: 0,
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "5px",
-              flexWrap: "wrap",
-            }}
-          >
-            <span
-              style={{
-                background: isMine
-                  ? "rgba(37, 99, 235, 0.18)"
-                  : "rgba(255,255,255,0.08)",
-                color: "white",
-                fontSize: "8px",
-                padding: "2px 6px",
-                borderRadius: "999px",
-                fontWeight: "700",
-                letterSpacing: "0.04em",
-                textTransform: "uppercase",
-              }}
-            >
-              {idLabel}: #{displayId}
-            </span>
-            {rig.mrrClient && (
-              <span
-                style={{
-                  ...getClientBadgeStyle(rig.mrrClient),
-                  fontSize: "8px",
-                  padding: "2px 6px",
-                  borderRadius: "999px",
-                  fontWeight: "700",
-                }}
-              >
-                {rig.mrrClient.toUpperCase()}
-              </span>
-            )}
-            <span
-              style={{
-                fontSize: "8px",
-                padding: "2px 6px",
-                borderRadius: "999px",
-                fontWeight: "700",
-                ...getStatusClass(rig.status),
-              }}
-            >
-              {String(
-                typeof rig.status === "object"
-                  ? rig.status.status
-                  : rig.status || "",
-              ).toUpperCase()}
-            </span>
-          </div>
-          <strong
-            title={rig.name}
-            style={{
-              fontSize: "13px",
-              lineHeight: 1.15,
-              color: "#f8fafc",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {rig.name.length > 20 ? rig.name.substring(0, 20) + "..." : rig.name}
-          </strong>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "5px",
-              flexWrap: "wrap",
-              color: "#94a3b8",
-              fontSize: "9px",
-            }}
-          >
-            <span
-              style={{
-                fontSize: "14px",
-                fontWeight: 900,
-                color: "#38bdf8",
-                textShadow: "0 0 18px rgba(56, 189, 248, 0.22)",
-              }}
-            >
-              {displayAlgo}
-            </span>
-            |
-            {paidLabel && (
-              <span
-                style={{ color: "#fbbf24", fontWeight: 900, fontSize: "11px" }}
-              >
-                Paid {paidLabel}
-              </span>
-            )}
-          </div>
-          {/* ❌ Removed the error message block */}
-        </div>
-
-        {/* ROI Badge */}
-        <div
-          style={{
-            display: "flex",
-            gap: "4px",
-            minWidth: "142px",
-            textAlign: "right",
-            marginLeft: "auto",
-            flexWrap: "wrap",
-            justifyContent: "flex-end",
-          }}
-        >
-          <div
-            style={{
-              padding: "6px 8px",
-              borderRadius: "10px",
-              background:
-                roiPercent === null
-                  ? "rgba(255,255,255,0.04)"
-                  : roiPercent >= 0
-                    ? "rgba(16,185,129,0.10)"
-                    : "rgba(239,68,68,0.10)",
-              border: `1px solid ${roiPercent === null ? "rgba(255,255,255,0.08)" : roiPercent >= 0 ? "rgba(16,185,129,0.22)" : "rgba(239,68,68,0.22)"}`,
-            }}
-          >
-            <div
-              style={{
-                fontSize: "8px",
-                opacity: 0.7,
-                textTransform: "uppercase",
-                letterSpacing: "0.06em",
-              }}
-            >
-              ROI
-            </div>
-            <div
-              style={{
-                fontSize: "18px",
-                lineHeight: 1,
-                fontWeight: 900,
-                color: getRoiColor(roiPercent ?? 0),
-              }}
-            >
-              {roiLabel}
-            </div>
-          </div>
-        </div>
+    <article className="rig-card" style={styles.shell}>
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <RigHeader 
+          rig={rig}
+          isMine={isMine}
+          isRented={isRented}
+          rentalId={rentalId}
+          displayId={displayId}
+          displayAlgo={algo.display}
+          paidLabel={metrics.paidLabel}
+          statusStr={statusStr}
+        />
+        
+        <RoiBadge roiPercent={roiPercent} roiLabel={roiLabel} />
       </div>
 
-      {/* ─── Main Grid ─── */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 0.85fr",
-          gap: "6px",
-        }}
-      >
-        {/* ─── Left Column: Price & Rates ─── */}
-        <section style={sectionStyle}>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "baseline",
-              gap: "6px",
-              marginBottom: "4px",
-            }}
-          >
-            <div style={{ fontSize: "8px", color: "#94a3b8" }}>
-              {mrrDailyRateSource}
-            </div>
-            {isLoadingMrrRate && (
-              <span style={{ fontSize: "7px", color: "#60a5fa" }}>
-                loading...
-              </span>
-            )}
-          </div>
-
-          {/* Rental Paid */}
-          <div
-            style={{
-              marginBottom: "6px",
-              padding: "7px",
-              borderRadius: "10px",
-              background:
-                "linear-gradient(135deg, rgba(245, 158, 11, 0.16), rgba(16, 185, 129, 0.10))",
-              border: "1px solid rgba(251, 191, 36, 0.20)",
-            }}
-          >
-            <div
-              style={{
-                opacity: 0.72,
-                textTransform: "uppercase",
-                fontSize: "8px",
-                letterSpacing: "0.08em",
-              }}
-            >
-              Rental Paid
-            </div>
-            <div
-              style={{
-                color: "#fbbf24",
-                fontWeight: 900,
-                fontSize: "11px",
-                lineHeight: 1.1,
-                marginTop: "3px",
-              }}
-            >
-              {paidLabel || "N/A"}
-            </div>
-            {paidBtcAmount > 0 &&
-              String(paidCurrency || "").toUpperCase() !== "BTC" && (
-                <div
-                  style={{
-                    color: "#86efac",
-                    fontWeight: 700,
-                    fontSize: "9px",
-                    marginTop: "3px",
-                  }}
-                >
-                  ~ {paidBtcAmount.toFixed(8)} BTC
-                </div>
-              )}
-            {usdValue > 0 &&
-              String(paidCurrency || "").toUpperCase() !== "USD" && (
-                <div
-                  style={{
-                    color: "#86efac",
-                    fontWeight: 700,
-                    fontSize: "9px",
-                    marginTop: "3px",
-                  }}
-                >
-                  ~ ${usdValue.toFixed(2)} USD
-                </div>
-              )}
-          </div>
-
-          {/* MRR & NiceHash Rates */}
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: "5px",
-              fontSize: "9px",
-            }}
-          >
-            <div
-              style={{
-                background: "rgba(255,255,255,0.03)",
-                borderRadius: "9px",
-                padding: "6px",
-              }}
-            >
-              <div
-                style={{
-                  opacity: 0.6,
-                  textTransform: "uppercase",
-                  fontSize: "8px",
-                }}
-              >
-                MRR Rate
-              </div>
-              <div
-                style={{ color: "#fbbf24", fontWeight: 800, marginTop: "3px" }}
-              >
-                {finalMrrRate > 0 ? (
-                  <>
-                    {finalMrrRate.toFixed(8)}
-                    <span style={{ opacity: 0.5, fontSize: "8px" }}>
-                      {" "}
-                      BTC/{mrrUnit}/Day
-                    </span>
-                    {mrrMarketRate > 0 && (
-                      <span
-                        style={{
-                          marginLeft: "4px",
-                          fontSize: "6px",
-                          opacity: 0.4,
-                          fontFamily: "monospace",
-                        }}
-                      >
-                        ({mrrUsedKey || mrrApiKey})
-                      </span>
-                    )}
-                  </>
-                ) : isLoadingMrrRate ? (
-                  "Loading..."
-                ) : (
-                  "N/A"
-                )}
-              </div>
-            </div>
-            <div
-              style={{
-                background: "rgba(255,255,255,0.03)",
-                borderRadius: "9px",
-                padding: "6px",
-              }}
-            >
-              <div
-                style={{
-                  opacity: 0.6,
-                  textTransform: "uppercase",
-                  fontSize: "8px",
-                }}
-              >
-                NiceHash
-              </div>
-              <div
-                style={{ color: "#60a5fa", fontWeight: 800, marginTop: "3px" }}
-              >
-                {niceHashPriceInMrrUnit > 0 ? (
-                  <>
-                    {niceHashPriceInMrrUnit.toFixed(8)}
-                    <span style={{ opacity: 0.5, fontSize: "8px" }}>
-                      {" "}
-                      BTC/{myNhUnit}/Day
-                    </span>
-                  </>
-                ) : (
-                  "N/A"
-                )}
-              </div>
-            </div>
-          </div>
-          {/* Time Start*/}
-          <span
-            style={{
-              alignItems: "flex-end",
-              marginTop: "5px",
-              display: "flex",
-              justifyContent: "space-between",
-              fontSize: "10px",
-              color: "#94a3b8",
-              padding: "3px 0",
-            }}
-          >
-            🕐 Started: {formatRentalStartTime(rentalStartTime)}
-          </span>
-        </section>
-
-        {/* ─── Right Column: Efficiency & Hashrates ─── */}
-        <section style={sectionStyle}>
-          <div style={{ display: "grid", gap: "4px" }}>
-            <div>
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  fontSize: "8px",
-                  marginBottom: "2px",
-                }}
-              >
-                <span style={{ opacity: 0.55, textTransform: "uppercase" }}>
-                  Efficiency
-                </span>
-                <span
-                  style={{
-                    fontSize: "20px",
-                    fontWeight: 800,
-                    color:
-                      effNum >= 95
-                        ? "#00ff00"
-                        : effNum > 70
-                          ? "#10b948"
-                          : effNum > 50
-                          ? "#107bb9"
-                          : effNum > 10
-                            ? "#cc7400"
-                            : "#ff0000",
-                  }}
-                >
-                  {eff}%
-                </span>
-              </div>
-              <div
-                style={{
-                  width: "100%",
-                  height: "4px",
-                  background: "rgba(255,255,255,0.08)",
-                  borderRadius: "999px",
-                  overflow: "hidden",
-                }}
-              >
-                <div
-                  style={{
-                    width: `${Math.min(100, Math.max(0, effNum || 0))}%`,
-                    height: "100%",
-                    background: getRoiColor(effNum),
-                    borderRadius: "999px",
-                  }}
-                />
-              </div>
-            </div>
-            <div>
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  fontSize: "8px",
-                  marginBottom: "2px",
-                }}
-              >
-                <span style={{ opacity: 0.55, textTransform: "uppercase" }}>
-                  Progress
-                </span>
-                <span
-                  style={{
-                    fontSize: "16px",
-                    fontWeight: 800,
-                    color: timeProgress > 90 ? "#f87171" : "#8b5cf6",
-                  }}
-                >
-                  {timeProgress.toFixed(2)}%
-                </span>
-              </div>
-              {/* Time End */}
-              <span
-                style={{
-                  alignItems: "flex-end",
-                  marginTop: "5px",
-                  display: "flex",
-                  justifyContent: "end",
-                  fontSize: "10px",
-                  color: "#94a3b8",
-                  padding: "3px 0",
-                }}
-              >
-                <CountdownTimer endTime={info?.endTime || rig.end} />
-              </span>
-
-              <div
-                style={{
-                  width: "100%",
-                  height: "4px",
-                  background: "rgba(255,255,255,0.08)",
-                  borderRadius: "999px",
-                  overflow: "hidden",
-                }}
-              >
-                <div
-                  style={{
-                    width: `${Math.min(100, Math.max(0, timeProgress || 0))}%`,
-                    height: "100%",
-                    background: "linear-gradient(90deg, #3b82f6, #cdb8ff)",
-                    borderRadius: "999px",
-                  }}
-                />
-              </div>
-            </div>
-            {/* Hashrates Grid: Current, Average, Advertised, Target */}
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: "4px",
-                marginTop: "4px",
-              }}
-            >
-              <div
-                style={{
-                  background: "rgba(255,255,255,0.03)",
-                  borderRadius: "6px",
-                  padding: "4px 6px",
-                }}
-              >
-                <div
-                  style={{
-                    opacity: 0.55,
-                    textTransform: "uppercase",
-                    fontSize: "7px",
-                  }}
-                >
-                  Current
-                </div>
-                <div
-                  style={{
-                    color: "#e2e8f0",
-                    fontWeight: 700,
-                    fontSize: "10px",
-                  }}
-                >
-                  {info?.current ||
-                    (cur > 0
-                      ? formatHashrateWithUnit(
-                          cur,
-                          rig.hashrate?.suffix ||
-                            rig.hashrate?.current?.type ||
-                            "H",
-                        )
-                      : "0 H/s")}
-                </div>
-              </div>
-              <div
-                style={{
-                  background: "rgba(255,255,255,0.03)",
-                  borderRadius: "6px",
-                  padding: "4px 6px",
-                }}
-              >
-                <div
-                  style={{
-                    opacity: 0.55,
-                    textTransform: "uppercase",
-                    fontSize: "7px",
-                  }}
-                >
-                  Average
-                </div>
-                <div
-                  style={{
-                    color: "#e2e8f0",
-                    fontWeight: 700,
-                    fontSize: "10px",
-                  }}
-                >
-                  {info?.average ||
-                    (avgVal > 0
-                      ? formatHashrateWithUnit(
-                          avgVal,
-                          rig.hashrate?.suffix ||
-                            rig.hashrate?.average?.type ||
-                            "H",
-                        )
-                      : "0 N/A")}
-                </div>
-              </div>
-              <div
-                style={{
-                  background: "rgba(63, 82, 255, 0.34)",
-                  borderRadius: "6px",
-                  padding: "4px 6px",
-                }}
-              >
-                <div
-                  style={{
-                    opacity: 0.55,
-                    textTransform: "uppercase",
-                    fontSize: "7px",
-                  }}
-                >
-                  Advertised
-                </div>
-                <div
-                  style={{
-                    color: "#ffca1d",
-                    fontWeight: 700,
-                    fontSize: "11px",
-                  }}
-                >
-                  {info?.advertised ||
-                    (adsVal > 0
-                      ? formatHashrateWithUnit(
-                          adsVal,
-                          rig.hashrate?.suffix ||
-                            rig.hashrate?.advertised?.type ||
-                            "H",
-                        )
-                      : "0 N/A")}
-                </div>
-              </div>
-              <div
-                style={{
-                  background: "rgba(255,255,255,0.03)",
-                  borderRadius: "6px",
-                  padding: "4px 6px",
-                }}
-              >
-                <div
-                  style={{
-                    opacity: 0.55,
-                    textTransform: "uppercase",
-                    fontSize: "7px",
-                  }}
-                >
-                  Target
-                </div>
-                <div
-                  style={{
-                    color: isBehind ? "#f87171" : "#34d399",
-                    fontWeight: 700,
-                    fontSize: "10px",
-                  }}
-                >
-                  {Math.max(0, targetHashrate).toFixed(2)}{" "}
-                  <small style={{ opacity: 0.5, fontSize: "8px" }}>
-                    {String(hSuffix).toUpperCase()}
-                  </small>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
+      {/* Main Grid */}
+      <div style={styles.grid}>
+        <RigRates
+          mrrRate={mrrRate}
+          nhPrice={nhPrice}
+          paidLabel={metrics.paidLabel}
+          paidBtcAmount={metrics.paidBtcAmount}
+          paidCurrency={metrics.paidCurrency}
+          usdValue={metrics.usdValue}
+          rentalStartTime={startTime}
+          mrrUnit={algo.mrrUnit}
+          isLoading={mrrRate.isLoadingMrrRate}
+          mrrRateSource={mrrRate.source}
+          mrrUsedKey={mrrRate.mrrUsedKey}
+        />
+        
+        <RigMetrics
+          efficiency={efficiency}
+          progress={timers.timeProgress}
+          currentHashrate={hashrate.current}
+          averageHashrate={hashrate.average}
+          advertisedHashrate={hashrate.advertised}
+          targetHashrate={targetHashrate}
+          isBehind={isBehind}
+          hashUnit={hashrate.suffix || algo.mrrUnit}
+          endTime={endTime}
+        />
       </div>
 
-      {/* ─── Pools (unchanged) ─── */}
+      {/* Pool Info */}
       {expandedPools.has(rig.id) && (info || rig.host) && (
-        <div
-          className="rig-pool-summary"
-          style={{
-            background: "rgba(255,255,255,0.04)",
-            padding: "10px",
-            borderRadius: "12px",
-            fontSize: "10px",
-            border: "1px solid rgba(255,255,255,0.06)",
-          }}
-        >
-          <div
-            style={{
-              marginBottom: "8px",
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-            }}
-          >
-            <div
-              style={{
-                opacity: 0.55,
-                textTransform: "uppercase",
-                letterSpacing: "0.05em",
-              }}
-            >
-              Current Pool
-            </div>
-            <button
-              className="text-button"
-              style={{ fontSize: "10px", color: "#60a5fa", padding: 0 }}
-              onClick={() => onOpenPool?.(rig, info)}
-            >
-              Edit
-            </button>
-          </div>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: "6px",
-            }}
-          >
-            <div style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
-              <span style={{ opacity: 0.65 }}>Host:</span>{" "}
-              {rig.host || info?.stratumHost || "N/A"}
-            </div>
-            <div>
-              <span style={{ opacity: 0.65 }}>Port:</span>{" "}
-              {rig.port || info?.stratumPort || "N/A"}
-            </div>
-            <div
-              style={{
-                gridColumn: "span 2",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-              }}
-            >
-              <span style={{ opacity: 0.65 }}>User:</span>{" "}
-              {rig.user || info?.username || "N/A"}
-            </div>
-          </div>
-        </div>
+        <RigPoolInfo rig={rig} info={info} onOpenPool={onOpenPool} />
       )}
 
-      {/* ─── Buttons (unchanged) ─── */}
-      <div
-        style={{
-          display: "flex",
-          gap: "8px",
-          marginTop: "auto",
-          flexWrap: "wrap",
-        }}
-      >
-        {(isMine || isRented) && (
-          <button
-            className="btn-pro secondary"
-            style={{
-              flex: "1 1 120px",
-              fontSize: "10px",
-              background: isRented
-                ? "rgba(139, 92, 246, 0.16)"
-                : "rgba(255,255,255,0.05)",
-              color: isRented ? "#a78bfa" : "#94a3b8",
-            }}
-            onClick={() => {
-              togglePoolInfo(rig.id);
-              onOpenPool?.(rig, info);
-            }}
-          >
-            {expandedPools.has(rig.id) ? "Hide Pools" : "Pools"}
-          </button>
-        )}
-        {isMine && !isRented && (
-          <>
-            <button
-              className="btn-pro secondary"
-              style={{
-                flex: "1 1 90px",
-                fontSize: "10px",
-                color: statusStr === "disabled" ? "#10b981" : "#f87171",
-              }}
-              onClick={() =>
-                handleRigStatus(
-                  rig,
-                  statusStr === "disabled" ? "available" : "disabled",
-                )
-              }
-            >
-              {statusStr === "disabled" ? "Enable" : "Disable"}
-            </button>
-            <button
-              className="btn-pro secondary"
-              style={{ flex: "1 1 90px", fontSize: "10px" }}
-              onClick={() => handlePriceChange(rig)}
-            >
-              Price
-            </button>
-          </>
-        )}
-        {isRented && info && onOpenCompletionCalculator && (
-          <button
-            className="btn-pro secondary"
-            style={{ flex: "1 1 90px", fontSize: "10px" }}
-            onClick={() => onOpenCompletionCalculator(rig, info)}
-          >
-            Calc
-          </button>
-        )}
-        <button
-          className="btn-pro"
-          style={{ flex: "1 1 90px", fontSize: "10px" }}
-          onClick={() => fetchRigDetailInfo(rig)}
-          disabled={loadingInfoIds.has(rig.id)}
-        >
-          {loadingInfoIds.has(rig.id) ? "..." : "More"}
-        </button>
-        <button
-          className="btn-pro secondary"
-          style={{
-            width: "36px",
-            fontSize: "12px",
-            padding: 0,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-          onClick={() => {
-            setEnrichedInfo((prev) => {
-              const next = { ...prev };
-              delete next[rig.id];
-              return next;
-            });
-            fetchRigDetailInfo(rig);
-          }}
-          disabled={loadingInfoIds.has(rig.id)}
-          title="Reload Rig Details"
-        >
-          {loadingInfoIds.has(rig.id) ? "..." : "↻"}
-        </button>
-      </div>
+      {/* Actions */}
+      <RigActions
+        rig={rig}
+        info={info}
+        isMine={isMine}
+        isRented={isRented}
+        statusStr={statusStr}
+        expandedPools={expandedPools}
+        loadingInfoIds={loadingInfoIds}
+        onTogglePool={togglePoolInfo}
+        onOpenPool={onOpenPool}
+        onOpenCompletionCalculator={onOpenCompletionCalculator}
+        onFetchDetail={fetchRigDetailInfo}
+        onHandleStatus={handleRigStatus}
+        onHandlePrice={handlePriceChange}
+        onReload={fetchRigDetailInfo}
+        setEnrichedInfo={setEnrichedInfo}
+      />
     </article>
   );
 };
 
-export default MrrRigCard;
+export default React.memo(MrrRigCard);

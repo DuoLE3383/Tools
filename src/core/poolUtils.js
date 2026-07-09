@@ -1,7 +1,7 @@
 import * as XLSX from "xlsx";
 
 const DEFAULT_VERIFICATION_LOCATION = "ANY";
-const KNOWN_NH_CLIENTS = new Set(["BT", "PH", "LN", "NHATLINH", "VN", "ALL"]);
+const KNOWN_NH_CLIENTS = new Set(["BT", "PH", "PH3", "LN", "NHATLINH", "VN", "ALL"]);
 
 export function sanitizeNhClientTag(value, fallback = "BT") {
   const candidate = String(value || "").trim().toUpperCase();

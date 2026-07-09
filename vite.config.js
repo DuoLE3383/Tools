@@ -39,7 +39,28 @@ export default defineConfig(({ command }) => ({
       '/api': {
         target: 'http://127.0.0.1:3003',
         configure: (proxy) => {
-          proxy.on('error', (err) => console.error('Proxy error:', err));
+          // Log errors
+          proxy.on('error', (err, req, res) => {
+            console.error('Proxy error:', err);
+            // Send a 500 response to the client if the proxy fails
+            if (!res.headersSent) {
+              res.writeHead(500, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ message: 'Proxy Error', error: err.message }));
+            }
+          });
+
+          // Handle cookies in the response
+          proxy.on('proxyRes', (proxyRes, req, res) => {
+            const originalCookies = proxyRes.headers['set-cookie'];
+            if (originalCookies) {
+              const modifiedCookies = originalCookies.map(cookie => {
+                // Remove the 'Secure' flag to allow cookies on HTTP localhost
+                // Remove the 'Domain' attribute to make it a host-only cookie for localhost
+                return cookie.replace(/; Secure/gi, '').replace(/; Domain=[^;]*/gi, '');
+              });
+              proxyRes.headers['set-cookie'] = modifiedCookies;
+            }
+          });
         },
         changeOrigin: true,
       },

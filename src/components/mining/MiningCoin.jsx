@@ -23,8 +23,7 @@ export default function MiningCoin({ onCall, nhClient = "VN" }) {
       if (
         onlyProfitable &&
         !(
-          row.spread > 0 ||
-          (row.miningDutchBtcPerDay > 0 && !row.niceHashPrice)
+          row.spread > 0 || (row.poolBtcPerDay > 0 && !row.niceHashPrice)
         )
       ) {
         return false;
@@ -248,16 +247,15 @@ export default function MiningCoin({ onCall, nhClient = "VN" }) {
                   <BodyCell>
                     <strong
                       style={{
-                        color:
-                          row.miningDutchBtcPerDay > 0 ? "#34d399" : "#64748b",
+                        color: row.poolBtcPerDay > 0 ? "#34d399" : "#64748b",
                       }}
                     >
-                      {btcValue(row.miningDutchBtcPerDay)}
+                      {btcValue(row.poolBtcPerDay)}
                     </strong>
                     <div style={{ color: "#64748b", marginTop: "2px" }}>
-                      {row.miningDutchMiners
-                        ? `${compactNumber(row.miningDutchMiners, 0)} MD miners`
-                        : row.miningDutchHashrate}
+                      {row.poolMiners
+                        ? `${compactNumber(row.poolMiners, 0)} miners (${row.bestSource})`
+                        : row.poolHashrate}
                     </div>
                   </BodyCell>
                   <BodyCell>{btcValue(row.niceHashPrice)}</BodyCell>
@@ -316,7 +314,7 @@ export default function MiningCoin({ onCall, nhClient = "VN" }) {
                                 "rgba(96,165,250,0.22)";
                             }}
                           >
-                            {coin} 💰
+                            {coin} $
                           </button>
                         ))
                       ) : (

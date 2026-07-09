@@ -5,7 +5,8 @@ import TelegramManager, { useTelegram } from "../TelegramManager";
 import { calculateRemainingTime, toUtcTimestamp } from "../../core/time";
 import ErrorBoundary from "../ErrorBoundary";
 import CryptoRatePage from "../CryptoRatePage";
-// import {NiceHashOrderCard} from "../nicehash/NiceHashOrdersCard.jsx";
+import NiceHashOrderCard from "../nicehash/NiceHashOrdersCard";
+import { useNiceHashOrders } from "../nicehash/NiceHashContext";
 
 /** Safely extracts an array from various MRR API response shapes */
 function extractArray(
@@ -35,6 +36,94 @@ function extractArray(
   }
 
   return [];
+}
+
+/** Active NiceHash orders summary bar with refresh button */
+function NiceHashActiveOrdersBar() {
+  const { nicehashOrders, summary, loading, refresh } = useNiceHashOrders();
+
+  const activeOrders = useMemo(() => {
+    // Deduplicate by composite key (id + account) to prevent duplicate renders
+    const seen = new Set();
+    return nicehashOrders.filter((o) => {
+      if (!o.isActive) return false;
+      const key = `${o.id || ''}::${o.account || ''}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [nicehashOrders]);
+
+  return (
+    <section
+      style={{
+        margin: "10px 0",
+        padding: "12px 16px",
+        background: "rgba(255,255,255,0.02)",
+        border: "1px solid rgba(148,163,184,0.12)",
+        borderRadius: "12px",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: "10px",
+          flexWrap: "wrap",
+          gap: "8px",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+          <h4 style={{ margin: 0, fontSize: "0.85rem", color: "#fbbf24" }}>
+            ⚡ NiceHash Orders
+          </h4>
+          {activeOrders.length > 0 && (
+            <span style={{ fontSize: "11px", opacity: 0.6 }}>
+              {activeOrders.length} active{" "}
+              <span style={{ color: "#f3ba2f", fontWeight: "bold" }}>
+                {summary.totalPaid} BTC
+              </span>
+            </span>
+          )}
+        </div>
+        <button
+          className="btn-pro secondary"
+          onClick={refresh}
+          disabled={loading}
+          style={{
+            fontSize: "11px",
+            padding: "4px 10px",
+            minHeight: "30px",
+          }}
+        >
+          {loading ? "Refreshing..." : "Refresh Orders"}
+        </button>
+      </div>
+      <div
+        style={{
+          display: "flex",
+          gap: "8px",
+          overflowX: "auto",
+          paddingBottom: "4px",
+        }}
+      >
+        {loading && activeOrders.length === 0 && (
+          <span style={{ opacity: 0.5, fontSize: "11px" }}>
+            Loading orders...
+          </span>
+        )}
+        {!loading && activeOrders.length === 0 && (
+          <span style={{ opacity: 0.4, fontSize: "11px" }}>
+            No active NiceHash orders.
+          </span>
+        )}
+        {activeOrders.map((order) => (
+          <NiceHashOrderCard key={`${order.id}-${order.account}`} order={order} />
+        ))}
+      </div>
+    </section>
+  );
 }
 
 function isCurrentRental(rental) {
@@ -217,6 +306,9 @@ function MrrRentalsTable({ data, onOpenPools, onNotice, mrrClient }) {
                 key={r.id}
                 style={{
                   borderLeft: avg < ads * 0.9 ? "3px solid #f87171" : "none",
+                  borderTop: "none",
+                  borderRight: "none",
+                  borderBottom: "none",
                 }}
               >
                 <td
@@ -832,6 +924,9 @@ export default function MiningRigRental({
         </button>
         {/* <CryptoRatePage /> */}
       </div>
+
+      {/* ── NiceHash Active Orders Section ── */}
+      <NiceHashActiveOrdersBar />
 
       {/* New Rental Notification Modal */}
       <Modal

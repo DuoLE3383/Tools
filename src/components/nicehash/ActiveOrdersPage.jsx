@@ -1,8 +1,10 @@
 import { useMemo } from "react";
 import NiceHashOrderCard from "./NiceHashOrdersCard.jsx";
 import { NiceHashOrderProvider, useNiceHashOrders } from "./NiceHashContext";
+import NavBar from "../NavBar";
 
 function ActiveOrdersView({ nhClient, setNhClient, onNavigateHome }) {
+  const pathname = window.location.pathname || "/";
   const { nicehashOrders, summary, loading, refresh } = useNiceHashOrders();
 
   const activeOrders = useMemo(
@@ -12,6 +14,7 @@ function ActiveOrdersView({ nhClient, setNhClient, onNavigateHome }) {
 
   return (
     <main className="miner-page">
+      <NavBar currentPath={pathname} />
       <header className="miner-page-header">
         <div>
           <h1>Active Orders</h1>
@@ -27,6 +30,7 @@ function ActiveOrdersView({ nhClient, setNhClient, onNavigateHome }) {
             <option value="VN">VN (All)</option>
             <option value="BT">BT</option>
             <option value="PH">PH</option>
+            <option value="PH3">PH3</option>
             <option value="NHATLINH">NhatLinh</option>
             <option value="LN">LN</option>
           </select>

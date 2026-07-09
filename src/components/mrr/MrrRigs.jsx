@@ -36,10 +36,10 @@ export default function MrrRigs({
   const [userRigIds, setUserRigIds] = useState(new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [enrichedInfo, setEnrichedInfo] = useState({}); // rigId -> details object
+  const [enrichedInfo, setEnrichedInfo] = useState({});
   const [loadingInfoIds, setLoadingInfoIds] = useState(new Set());
-  const [algoMarketPrices, setAlgoMarketPrices] = useState({}); // algoName -> priceData
-  const [coinPrices, setCoinPrices] = useState({}); // coinId -> CoinGecko price data
+  const [algoMarketPrices, setAlgoMarketPrices] = useState({});
+  const [coinPrices, setCoinPrices] = useState({});
 
   const [expandedPools, setExpandedPools] = useState(new Set());
   const togglePoolInfo = (rigId) => {
@@ -51,18 +51,14 @@ export default function MrrRigs({
     });
   };
 
-  const [expandedAlgos, setExpandedAlgos] = useState({}); // algoKey -> boolean
-  // More granular status filtering: 'available', 'rented', or 'all'
+  const [expandedAlgos, setExpandedAlgos] = useState({});
   const [statusFilter, setStatusFilter] = useState(
     endpoint === "/rig" ? initialStatus : "rented",
   );
 
   const filteredRigs = useMemo(() => {
     return rigs.filter((rig) => {
-      // Hide rigs that do not have a designated client handle to prevent signature errors,
-      // unless we are specifically browsing the public Marketplace.
       if (endpoint !== "/rig" && !rig.mrrClient && !rig.client) return false;
-
       if (statusFilter === "all") return true;
       const statusValue =
         typeof rig.status === "object" ? rig.status.status : rig.status;
@@ -122,7 +118,6 @@ export default function MrrRigs({
   }, [rigs]);
 
   const fullSummaryData = useMemo(() => {
-    // Generate summary from full rig list, ignoring current UI status filters
     const onlineRigs = rigs.filter((r) => {
       const s = String(
         typeof r.status === "object" ? r.status.status : r.status || "",
@@ -137,11 +132,11 @@ export default function MrrRigs({
           info?.rawAds ||
           getRawHashrate(rig.hashrate?.advertised || rig.advertised) ||
           0;
-        if (!info || rawAds <= 0) return false; // Ensure we have details and valid hashrate before including
+        if (!info || rawAds <= 0) return false;
         const endT = rig.end
           ? new Date(
-              rig.end + (String(rig.end).endsWith("UTC") ? "" : " UTC"),
-            ).getTime()
+            rig.end + (String(rig.end).endsWith("UTC") ? "" : " UTC"),
+          ).getTime()
           : 0;
         const hasFutureEnd = endT > Date.now();
         const s = String(
@@ -152,7 +147,6 @@ export default function MrrRigs({
       })
       .map((rig) => {
         const info = enrichedInfo[rig.id];
-        // Provide fallbacks if enriched info is still loading
         const algo =
           info?.algo || rig.algo || rig.algorithm || rig.type || "N/A";
         const rawEffNum =
@@ -160,11 +154,9 @@ export default function MrrRigs({
         const effNum = Number.isFinite(parseFloat(rawEffNum))
           ? parseFloat(rawEffNum)
           : 0;
-
-        const efficiency = effNum; // Pass as number to avoid .toFixed errors in template
+        const efficiency = effNum;
         const rawRoi = 100 - effNum;
         const roi = Number.isFinite(rawRoi) ? rawRoi : 0;
-
         const rawAvg =
           info?.rawAvg ||
           getRawHashrate(rig.hashrate?.average || rig.average || rig.hash) ||
@@ -184,16 +176,15 @@ export default function MrrRigs({
           ? parseFloat(rawCur)
           : 0;
 
-        // Improved target hashrate calculation with manual fallback for summary accuracy
         const startT = rig.start
           ? new Date(
-              rig.start + (String(rig.start).endsWith("UTC") ? "" : " UTC"),
-            ).getTime()
+            rig.start + (String(rig.start).endsWith("UTC") ? "" : " UTC"),
+          ).getTime()
           : 0;
         const endT = rig.end
           ? new Date(
-              rig.end + (String(rig.end).endsWith("UTC") ? "" : " UTC"),
-            ).getTime()
+            rig.end + (String(rig.end).endsWith("UTC") ? "" : " UTC"),
+          ).getTime()
           : 0;
         const totalMs = endT - startT;
         const remainingMs = Math.max(0, endT - Date.now());
@@ -201,12 +192,12 @@ export default function MrrRigs({
         const rawCalcTarget =
           remainingMs > 0 && totalMs > 0
             ? (ads * (totalMs / 1000) - avg * (elapsedMs / 1000)) /
-              (remainingMs / 1000)
+            (remainingMs / 1000)
             : 0;
         const rawTarget = info?.targetHashrate || rawCalcTarget || 0;
         const target = Number.isFinite(parseFloat(rawTarget))
           ? parseFloat(rawTarget)
-          : 0; // Ensure target is always a number
+          : 0;
 
         const remaining =
           info?.remainingTimeStr ||
@@ -217,7 +208,6 @@ export default function MrrRigs({
               : "");
         const account = rig.mrrClient || rig.client || mrrClient || "ALL";
 
-        // Ensure rig.price exists before calling the template function
         let perfEmoji = "⚪";
         if (effNum >= 100) perfEmoji = "✅";
         else if (effNum >= 95) perfEmoji = "🟢";
@@ -235,14 +225,14 @@ export default function MrrRigs({
           ads,
           cur,
           target,
-          "", // extra
-          account, // client
+          "",
+          account,
           {
             price: {
               paid: (rig.price?.paid || 0).toFixed(8),
               currency: rig.price?.currency || "BTC",
             },
-          }, // info
+          },
         );
       })
       .filter(Boolean);
@@ -278,10 +268,8 @@ export default function MrrRigs({
     if (onSummaryUpdate) onSummaryUpdate(fullSummaryData);
   }, [fullSummaryData, onSummaryUpdate]);
 
-  // Debug count to see if items are being filtered out
   const totalFetchedCount = rigs.length;
 
-  // Fetch CoinGecko prices for mining coins periodically
   useEffect(() => {
     const fetchCoinPrices = async () => {
       try {
@@ -390,13 +378,10 @@ export default function MrrRigs({
     setLoading(true);
     setError("");
     try {
-      // 1. Prepare parameters for Marketplace
       const params = { endpoint };
 
       if (endpoint === "/rig") {
         if (algo) params.algo = String(algo).trim();
-
-        // Server-side status filtering for the Marketplace
         if (statusFilter !== "all") {
           params.status = statusFilter;
         }
@@ -407,14 +392,12 @@ export default function MrrRigs({
       if (result.ok) {
         const rigList = findRigArray(result.data);
 
-        // Ensure rigs are tagged with the current client handle in non-aggregate views
         if (mrrClient && mrrClient !== "VN" && mrrClient !== "ALL") {
           rigList.forEach((r) => {
             if (!r.mrrClient) r.mrrClient = mrrClient;
           });
         }
 
-        // 2. Identify "My Rigs" if in Marketplace view
         if (endpoint === "/rig") {
           const myRigsResult = await poolApi.mrrRigs(mrrClient, "/rig/mine");
           if (myRigsResult.ok) {
@@ -446,153 +429,287 @@ export default function MrrRigs({
   };
 
   const fetchRigDetailInfo = async (rig) => {
-    const statusStr = String(
-      typeof rig.status === "object" ? rig.status.status : rig.status || "",
-    ).toLowerCase();
-    const isRented =
-      statusStr.includes("rented") || statusStr.includes("active");
+  const statusStr = String(
+    typeof rig.status === "object" ? rig.status.status : rig.status || "",
+  ).toLowerCase();
+  const isRented =
+    statusStr.includes("rented") || statusStr.includes("active");
 
-    // Extract physical Rig ID and Rental ID correctly for fetching detailed info
-    const rigId =
-      rig.rigid || rig.rig_id || rig.rig?.id || (isRented ? "" : rig.id);
-    const rentalId =
-      rig.rentalid ||
-      rig.current_rental_id ||
-      rig.rental_id ||
-      (isRented ? rig.id : "");
+  const rigId =
+    rig.rigid || rig.rig_id || rig.rig?.id || (isRented ? "" : rig.id);
+  const rentalId =
+    rig.rentalid ||
+    rig.current_rental_id ||
+    rig.rental_id ||
+    (isRented ? rig.id : "");
 
-    const effectiveClient = rig.mrrClient || rig.client || mrrClient;
+  if (typeof onCall !== "function") {
+    console.error("fetchRigDetailInfo: onCall is not a function");
+    return;
+  }
 
-    if (typeof onCall !== "function") {
-      console.error(
-        "fetchRigDetailInfo: onCall is not a function. Check prop passing in parent component.",
-      );
-      return;
-    }
+  setLoadingInfoIds((prev) => new Set(prev).add(rig.id));
+  try {
+    const path =
+      isRented && rentalId
+        ? `/api/v2/mrr/rental/${encodeURIComponent(rentalId)}`
+        : `/api/v2/mrr/rig/${encodeURIComponent(rigId || rig.id)}/info`;
 
-    setLoadingInfoIds((prev) => new Set(prev).add(rig.id));
-    try {
-      const path =
-        isRented && rentalId
-          ? `/api/v2/mrr/rental/${encodeURIComponent(rentalId)}`
-          : `/api/v2/mrr/rig/${encodeURIComponent(rigId || rig.id)}/info`;
+    const data = await onCall(path, {
+      query: { client: rig.mrrClient || mrrClient },
+      silent: true,
+      background: true,
+    });
 
-      const data = await onCall(path, {
-        query: { client: rig.mrrClient || mrrClient },
-        silent: true,
-        background: true, // Use background mode to avoid interrupting the user
-      });
+    if (data && !data.error) {
+      let infoBoxData;
+      if (isRented && rentalId) {
+        const rental = data.data || data;
+        const pools = rental.pools || [];
+        const firstPool = pools[0];
+        const normalized = rental.normalized || {};
 
-      if (data && !data.error) {
-        let infoBoxData;
-        if (isRented && rentalId) {
-          const rental = data.data || data;
-          const pools = rental.pools || [];
-          const firstPool = pools[0];
-          const normalized = rental.normalized;
+        // --- CRITICAL FIX: Extract price for SHA256 rentals ---
+        let pricePaid = 0;
+        let priceCurrency = 'BTC';
 
-          // Normalize NH data if present in rental info
-          const nhPriceData =
-            rental.nicehashPrice?.price || rental.nicehashPrice;
+        // Log the rental data to see what we're getting
+        console.log(`[MrrRigs] Rental ${rentalId} data:`, rental);
+        console.log(`[MrrRigs] Rental price object:`, rental.price);
+        console.log(`[MrrRigs] Normalized price:`, normalized.price);
 
-          infoBoxData = {
-            stratumHost:
-              firstPool?.host ||
-              firstPool?.stratumHost ||
-              firstPool?.stratumHostname ||
+        // Try multiple price sources for SHA256
+        const priceSources = [
+          // Source 1: rental.price (most common for MRR API)
+          () => {
+            if (rental.price) {
+              if (typeof rental.price === 'object') {
+                // Check for BTC nested
+                if (rental.price.BTC?.price !== undefined) {
+                  return { amount: parseFloat(rental.price.BTC.price || 0), currency: 'BTC' };
+                }
+                if (rental.price.BTC?.paid !== undefined) {
+                  return { amount: parseFloat(rental.price.BTC.paid || 0), currency: 'BTC' };
+                }
+                // Direct price/paid
+                if (rental.price.paid !== undefined) {
+                  return { amount: parseFloat(rental.price.paid || 0), currency: rental.price.currency || 'BTC' };
+                }
+                if (rental.price.price !== undefined) {
+                  return { amount: parseFloat(rental.price.price || 0), currency: rental.price.currency || 'BTC' };
+                }
+                // Check for amount
+                if (rental.price.amount !== undefined) {
+                  return { amount: parseFloat(rental.price.amount || 0), currency: rental.price.currency || 'BTC' };
+                }
+              } else {
+                return { amount: parseFloat(rental.price), currency: rental.currency || 'BTC' };
+              }
+            }
+            return null;
+          },
+          // Source 2: normalized.price
+          () => {
+            if (normalized.price) {
+              if (typeof normalized.price === 'object') {
+                if (normalized.price.BTC?.price !== undefined) {
+                  return { amount: parseFloat(normalized.price.BTC.price || 0), currency: 'BTC' };
+                }
+                if (normalized.price.paid !== undefined) {
+                  return { amount: parseFloat(normalized.price.paid || 0), currency: normalized.price.currency || 'BTC' };
+                }
+                if (normalized.price.price !== undefined) {
+                  return { amount: parseFloat(normalized.price.price || 0), currency: normalized.price.currency || 'BTC' };
+                }
+              } else {
+                return { amount: parseFloat(normalized.price), currency: normalized.currency || 'BTC' };
+              }
+            }
+            return null;
+          },
+          // Source 3: rental.btc_amount (sometimes used for SHA256)
+          () => {
+            if (rental.btc_amount !== undefined) {
+              const val = parseFloat(rental.btc_amount);
+              if (val > 0) return { amount: val, currency: 'BTC' };
+            }
+            return null;
+          },
+          // Source 4: rental.btc
+          () => {
+            if (rental.btc !== undefined) {
+              const val = parseFloat(rental.btc);
+              if (val > 0) return { amount: val, currency: 'BTC' };
+            }
+            return null;
+          },
+          // Source 5: rental.amount
+          () => {
+            if (rental.amount !== undefined) {
+              const val = parseFloat(rental.amount);
+              if (val > 0) return { amount: val, currency: rental.currency || 'BTC' };
+            }
+            return null;
+          },
+          // Source 6: rental.total
+          () => {
+            if (rental.total !== undefined) {
+              const val = parseFloat(rental.total);
+              if (val > 0) return { amount: val, currency: rental.currency || 'BTC' };
+            }
+            return null;
+          },
+          // Source 7: rental.cost
+          () => {
+            if (rental.cost !== undefined) {
+              const val = parseFloat(rental.cost);
+              if (val > 0) return { amount: val, currency: rental.currency || 'BTC' };
+            }
+            return null;
+          },
+          // Source 8: Check raw rental data for any numeric value that could be price
+          () => {
+            // Look for any field that contains "price", "paid", "amount", "btc"
+            for (const key of Object.keys(rental)) {
+              const lowerKey = key.toLowerCase();
+              if (lowerKey.includes('price') || lowerKey.includes('paid') || 
+                  lowerKey.includes('amount') || lowerKey.includes('btc')) {
+                const val = parseFloat(rental[key]);
+                if (val > 0 && val < 100) { // Reasonable BTC price range
+                  return { amount: val, currency: rental.currency || 'BTC' };
+                }
+              }
+            }
+            return null;
+          }
+        ];
+
+        // Try each price source
+        for (const source of priceSources) {
+          const result = source();
+          if (result && result.amount > 0) {
+            pricePaid = result.amount;
+            priceCurrency = result.currency;
+            console.log(`[MrrRigs] Found price: ${pricePaid} ${priceCurrency}`);
+            break;
+          }
+        }
+
+        // If still no price, try to calculate from the rate
+        if (pricePaid === 0 && rental.price_rate) {
+          pricePaid = parseFloat(rental.price_rate);
+          priceCurrency = 'BTC';
+          console.log(`[MrrRigs] Using price_rate: ${pricePaid}`);
+        }
+
+        const nhPriceData = rental.nicehashPrice?.price || rental.nicehashPrice;
+        const rawAds = normalized?.hashrate?.advertised || rental.hashrate?.advertised || 0;
+        const rawAvg = normalized?.hashrate?.average || rental.hashrate?.average || 0;
+        const rawCur = normalized?.hashrate?.current || rental.hashrate?.current || 0;
+
+        infoBoxData = {
+          stratumHost:
+            firstPool?.host ||
+            firstPool?.stratumHost ||
+            firstPool?.stratumHostname ||
+            rental.rig?.stratumHost ||
+            rental.rig?.host ||
+            rental.rig?.stratumHostname ||
+            "N/A",
+          stratumPort:
+            firstPool?.port ||
+            firstPool?.stratumPort ||
+            rental.rig?.stratumPort ||
+            rental.rig?.port ||
+            "",
+          username:
+            firstPool?.user ||
+            firstPool?.username ||
+            rental.rig?.username ||
+            rental.rig?.user ||
+            "N/A",
+          algo: normalized?.algo || getRentalAlgorithm(rental),
+          percent: normalized?.percent || getRentalEfficiency(rental),
+          startTime:
+            normalized?.startTime || rental.start || rental.start_time || "",
+          endTime: normalized?.endTime || rental.end || rental.end_time || "",
+          advertised:
+            normalized?.niceAdvertisedHashrate ||
+            getRentalAdvertisedHashrate(rental),
+          average:
+            normalized?.niceAverageHashrate ||
+            getRentalAverageHashrate(rental),
+          current: normalized?.niceHashrate || "0 N/A",
+          last5m: normalized?.nice5mHashrate || "0 N/A",
+          last15m: normalized?.nice15mHashrate || "0 N/A",
+          rawAds: parseFloat(rawAds) || 0,
+          rawAvg: parseFloat(rawAvg) || 0,
+          rawCur: parseFloat(rawCur) || 0,
+          targetHashrate: normalized?.hashrate?.target || 0,
+          hashrate: { suffix: normalized?.hashrate?.suffix || rental.hashrate?.suffix || "" },
+          pools: pools.map((p) => ({
+            host:
+              p.host ||
+              p.stratumHost ||
+              p.stratumHostname ||
               rental.rig?.stratumHost ||
               rental.rig?.host ||
-              rental.rig?.stratumHostname ||
               "N/A",
-            stratumPort:
-              firstPool?.port ||
-              firstPool?.stratumPort ||
+            port:
+              p.port ||
+              p.stratumPort ||
               rental.rig?.stratumPort ||
               rental.rig?.port ||
-              "",
+              "N/A",
             username:
-              firstPool?.user ||
-              firstPool?.username ||
+              p.user ||
+              p.username ||
               rental.rig?.username ||
               rental.rig?.user ||
               "N/A",
-            algo: normalized?.algo || getRentalAlgorithm(rental),
-            percent: normalized?.percent || getRentalEfficiency(rental),
-            startTime:
-              normalized?.startTime || rental.start || rental.start_time || "",
-            endTime: normalized?.endTime || rental.end || rental.end_time || "",
-            advertised:
-              normalized?.niceAdvertisedHashrate ||
-              getRentalAdvertisedHashrate(rental), // For display
-            average:
-              normalized?.niceAverageHashrate ||
-              getRentalAverageHashrate(rental), // For display
-            current: normalized?.niceHashrate || "0 N/A",
-            last5m: normalized?.nice5mHashrate || "0 N/A",
-            last15m: normalized?.nice15mHashrate || "0 N/A",
-            rawAds: normalized?.hashrate?.advertised || 0,
-            rawAvg: normalized?.hashrate?.average || 0,
-            rawCur: normalized?.hashrate?.current || 0,
-            targetHashrate: normalized?.hashrate?.target || 0,
-            hashrate: { suffix: normalized?.hashrate?.suffix || "" },
-            pools: pools.map((p) => ({
-              host:
-                p.host ||
-                p.stratumHost ||
-                p.stratumHostname ||
-                rental.rig?.stratumHost ||
-                rental.rig?.host ||
-                "N/A",
-              port:
-                p.port ||
-                p.stratumPort ||
-                rental.rig?.stratumPort ||
-                rental.rig?.port ||
-                "N/A",
-              username:
-                p.user ||
-                p.username ||
-                rental.rig?.username ||
-                rental.rig?.user ||
-                "N/A",
-            })),
-            isRental: true,
-            nicehashPrice: nhPriceData,
-            price: normalized?.price || rental.price || {}, // Prefer normalized rental price shape
-            currency:
-              normalized?.price?.currency ||
-              rental.currency ||
-              normalized?.currency ||
-              "", // Preserve a usable currency label
-            price_converted:
-              normalized?.price_converted || rental.price_converted || null,
-            duration: rental.hours || rental.length || rental.duration || 0,
-          };
-        } else {
-          // For rig info, the data is already structured correctly by the backend's extractRigInfo
-          infoBoxData = data;
-        }
-        setEnrichedInfo((prev) => ({ ...prev, [rig.id]: infoBoxData }));
+          })),
+          isRental: true,
+          nicehashPrice: nhPriceData,
+          price: {
+            paid: pricePaid,
+            currency: priceCurrency,
+          },
+          currency: priceCurrency,
+          price_converted: normalized?.price_converted || rental.price_converted || null,
+          duration: rental.hours || rental.length || rental.duration || 0,
+          // Store raw data for debugging
+          _rawRental: rental,
+        };
+        
+        console.log(`[MrrRigs] Final price for rental ${rentalId}:`, {
+          pricePaid,
+          priceCurrency,
+          hasPrice: pricePaid > 0
+        });
+        
+      } else {
+        infoBoxData = data;
       }
-    } catch (err) {
-      console.error("Failed to fetch rig info:", err);
-    } finally {
-      setLoadingInfoIds((prev) => {
-        const next = new Set(prev);
-        next.delete(rig.id);
-        return next;
-      });
+      setEnrichedInfo((prev) => ({ ...prev, [rig.id]: infoBoxData }));
     }
-  };
+  } catch (err) {
+    console.error("Failed to fetch rig info:", err);
+  } finally {
+    setLoadingInfoIds((prev) => {
+      const next = new Set(prev);
+      next.delete(rig.id);
+      return next;
+    });
+  }
+};
 
   useEffect(() => {
     if (mrrClient && endpoint) {
-      setEnrichedInfo({}); // Always clear cache when context (client/endpoint) actually changes
+      setEnrichedInfo({});
       fetchRigs();
     }
   }, [mrrClient, endpoint]);
 
-  // Auto-fetch details for rented rigs so "Started X ago" and "Eff" show up automatically
   useEffect(() => {
     if (loading || typeof onCall !== "function") return;
 
@@ -612,13 +729,10 @@ export default function MrrRigs({
       });
 
       if (isSubscribed && rentedWithoutInfo.length > 0) {
-        // Process only one at a time per effect cycle.
-        // This staggers requests and prevents nonce collision in the backend.
         await fetchRigDetailInfo(rentedWithoutInfo[0]);
       }
     };
 
-    // Delay the start of background syncing to avoid clashing with the primary rig list fetch
     syncTimer = setTimeout(() => {
       if (isSubscribed) syncRentedDetails();
     }, 1500);
@@ -636,7 +750,6 @@ export default function MrrRigs({
       query: { client: rig.mrrClient || mrrClient },
       showModal: true,
     });
-    // Clear cached details for this rig to force a fresh sync
     setEnrichedInfo((prev) => {
       const next = { ...prev };
       delete next[rig.id];
@@ -665,7 +778,6 @@ export default function MrrRigs({
       query: { client: rig.mrrClient || mrrClient },
       showModal: true,
     });
-    // Clear cached details for this rig to force a fresh sync
     setEnrichedInfo((prev) => {
       const next = { ...prev };
       delete next[rig.id];
@@ -764,7 +876,6 @@ export default function MrrRigs({
         </div>
       )}
 
-      {/* Status Dashboard */}
       <div
         className="rigs-summary-bar"
         style={{
@@ -919,11 +1030,8 @@ export default function MrrRigs({
         <div
           className="rig-grid-container"
           style={{
-            // minHeight: '1200px',
-            // maxHeight: 'auto',
             overflowY: "auto",
             paddingRight: "6px",
-            // overscrollBehavior: 'contain',
           }}
         >
           {groupedRigs.map(([algoName, rigsInGroup]) => {
@@ -1000,9 +1108,6 @@ export default function MrrRigs({
                         >
                           Enable All
                         </button>
-                        {/* <button className="btn-pro secondary" style={{ fontSize: '10px', color: '#f87171', fontWeight: 'bold' }} onClick={() => handleBulkRigStatus(rigsInGroup, 'disabled')}>
-                          Disable All
-                        </button> */}
                       </div>
                     )}
                   </div>
@@ -1029,10 +1134,10 @@ export default function MrrRigs({
                         algoName={algoName}
                         info={enrichedInfo[rig.id]}
                         isMine={rig.id && userRigIds.has(String(rig.id))}
-                        mrrClient={mrrClient} 
+                        mrrClient={mrrClient}
                         nhOrders={nhOrders}
                         coinPrices={coinPrices}
-                        algoMarketPrices={algoMarketPrices} 
+                        algoMarketPrices={algoMarketPrices}
                         onOpenPool={onOpenPool}
                         fetchRigDetailInfo={fetchRigDetailInfo}
                         loadingInfoIds={loadingInfoIds}

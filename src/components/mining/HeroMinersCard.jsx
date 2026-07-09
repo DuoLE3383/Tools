@@ -241,7 +241,7 @@ function HeroMinersTable({
                           e.target.style.borderColor = "rgba(96,165,250,0.22)";
                         }}
                       >
-                        {coin}
+                        {coin} $
                       </button>
                     ))}
                     {item.coins.length > 8 && (

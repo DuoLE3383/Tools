@@ -81,34 +81,33 @@ function getPoolEndpoint(poolName, coin, address, algo) {
   }
 
   if (lowerPool.includes('2miners')) {
-    // 2Miners: solo and regular use different subdomains
+    // 2Miners API: /api/accounts/{walletid} (per official OpenAPI docs)
+    // Solo pools use solo-{coin}.2miners.com subdomain
     const domain = lowerPool.includes('solo') ? `solo-${lowerCoin}.2miners.com` : `${lowerCoin}.2miners.com`;
     return { type: 'api', url: `https://${domain}/api/accounts/${address}` };
   }
 
   if (lowerPool.includes('k1pool')) {
-    // K1Pool has multiple endpoint options. Try them in order.
-    // The /api/k1/stats/address endpoint requires an algo/coin param.
+    // K1Pool uses Cloudflare-protected API. Try the main API gateway format.
     const coinParam = algo || coin;
     return {
       type: 'api',
       multiple: true,
       urls: [
-        `https://k1pool.com/api/k1/stats/address?address=${address}&coin=${coinParam}`,
-        `https://k1pool.com/api/accounts/${address}`,
-        `https://k1pool.com/api/stats_address?address=${address}`,
+        `https://k1pool.com/api/k1/miner/${address}/stats?coin=${String(coinParam).toLowerCase()}`,
+        `https://k1pool.com/api/k1/stats/address?address=${address}&coin=${String(coinParam).toLowerCase()}`,
       ],
     };
   }
 
   if (lowerPool.includes('kryptex')) {
-    // Kryptex API: /pool/{coin}/api/v2/miner/stats/{address} OR /api/v2/miner/stats/{address}?coin={coin}
+    // Kryptex API — try new format from api.kryptex.com
     return {
       type: 'api',
       multiple: true,
       urls: [
+        `https://api.kryptex.com/v1/miner/stats?address=${address}&coin=${lowerCoin}`,
         `https://pool.kryptex.com/api/v2/miner/stats/${address}?coin=${lowerCoin}`,
-        `https://pool.kryptex.com/${lowerCoin}/api/v2/miner/stats/${address}`,
       ],
     };
   }

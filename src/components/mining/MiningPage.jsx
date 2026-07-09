@@ -1,4 +1,5 @@
 // MiningPage.jsx - fully upgraded with CoinPriceProvider
+import NavBar from "../NavBar";
 import HeroMinersCard from "./HeroMinersCard.jsx";
 import MiningCoin, { HeaderCell, BodyCell } from "./MiningCoin.jsx";
 import { RentedRigProvider } from "../mrr/RentedRigContext.jsx";
@@ -677,7 +678,7 @@ function MiningRouteHero({ onCall }) {
                             e.target.style.borderColor = "rgba(96,165,250,0.22)";
                           }}
                         >
-                          {coin}
+                          {coin} $
                         </button>
                       ))}
                     </div>
@@ -694,6 +695,7 @@ function MiningRouteHero({ onCall }) {
 
 // ===== Shell =====
 function MiningWorkspaceShell({ onNavigateHome, onCall, nhClient }) {
+  const pathname = window.location.pathname || "/";
   return (
     <div
       className="app-shell mining-shell"
@@ -706,6 +708,7 @@ function MiningWorkspaceShell({ onNavigateHome, onCall, nhClient }) {
         minHeight: "100vh",
       }}
     >
+      <NavBar currentPath={pathname} />
       <header
         style={{
           padding: "20px 0 12px",

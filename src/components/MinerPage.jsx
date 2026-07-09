@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import NavBar from "./NavBar";
 
 const formatHashrate = (value) => {
   const num = Number(value);
@@ -138,9 +139,22 @@ function MinerAccountCard({ account }) {
 }
 
 export default function MinerPage({ onCall, onNavigateHome }) {
+  const pathname = window.location.pathname || "/";
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  // Also fetch cached NH/MRR prices from DB for market comparison
+  useEffect(() => {
+    if (typeof onCall !== "function") return;
+    onCall("/api/v2/prices/miner-overview", { silent: true })
+      .then(result => {
+        if (result?.success) {
+          console.log(`[MinerPage] Loaded ${result.data?.nhPrices?.length || 0} NH prices and ${result.data?.mrrPrices?.length || 0} MRR prices from cache`);
+        }
+      })
+      .catch(() => {});
+  }, [onCall]);
 
   const loadAccounts = useCallback(async () => {
     setLoading(true);
@@ -183,15 +197,13 @@ export default function MinerPage({ onCall, onNavigateHome }) {
 
   return (
     <main className="miner-page">
+      <NavBar currentPath={pathname} />
       <header className="miner-page-header">
         <div>
           <h1>Miner Dashboard</h1>
           <p>HeroMiners, 2Miners, K1Pool, and Kryptex wallet monitor with NiceHash and MRR market prices</p>
         </div>
         <div className="miner-header-actions">
-          <button className="btn-pro secondary" onClick={onNavigateHome}>
-            Dashboard
-          </button>
           <button className="btn-pro primary" onClick={loadAccounts} disabled={loading}>
             {loading ? "Waiting..." : error ? "Failed" : "Refresh"}
           </button>

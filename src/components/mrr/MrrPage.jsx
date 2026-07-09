@@ -4,8 +4,10 @@ import { RentedRigProvider } from "./RentedRigContext.jsx";
 import { NiceHashOrderProvider } from "../nicehash/NiceHashContext.jsx";
 import MrrPoolsManager from "./MrrManager";
 import TelegramManager from "../TelegramManager";
+import NavBar from "../NavBar";
 
 export default function MrrPage({ onCall, onNavigateHome, nhClient = "VN" }) {
+  const pathname = window.location.pathname || "/";
   const [mrrClient, setMrrClient] = useState("VN");
   const [mrrPoolData, setMrrPoolData] = useState(null);
   const [mrrPoolRigId, setMrrPoolRigId] = useState("");
@@ -48,6 +50,7 @@ export default function MrrPage({ onCall, onNavigateHome, nhClient = "VN" }) {
 
   return (
     <main className="miner-page">
+      <NavBar currentPath={pathname} />
       <header className="miner-page-header">
         <div>
           <h1>MRR Dashboard</h1>

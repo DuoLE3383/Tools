@@ -98,9 +98,33 @@ export function normalizeHeroRows(payload) {
     .filter((row) => row.nicehashAlgo && row.nicehashAlgo !== "UNKNOWN");
 }
 
+export function normalize2MinersRows(payload) {
+  const source = payload?.['2miners'] || payload || {};
+  const rows = Array.isArray(source?.coinStats) ? source.coinStats : [];
+
+  return rows
+    .map((row) => {
+      const nicehashAlgo = normalizeKey(row.algorithm || row.algo);
+      return {
+        provider: "2Miners",
+        coin: row.coin || row.symbol || "",
+        algorithm: row.algorithm || row.algo || "N/A",
+        nicehashAlgo,
+        mrrAlgo: mapNiceHashToMRR(nicehashAlgo),
+        btcPerDay: numberValue(row.btcPerDay),
+        usdPerDay: numberValue(row.usdPerDay),
+        miners: numberValue(row.miners),
+        hashrate: row.hashrate || "N/A",
+        raw: row,
+      };
+    })
+    .filter((row) => row.nicehashAlgo && row.nicehashAlgo !== "UNKNOWN");
+}
+
 export function mergeMiningRoutes(
   miningDutchRows,
   heroRows,
+  twoMinersRows,
   niceHashPrices = {},
 ) {
   // Build hero by algorithm with proper coin collection
@@ -176,19 +200,49 @@ export function mergeMiningRoutes(
     dutchByAlgo.set(row.nicehashAlgo, current);
   }
 
-  const algos = new Set([...heroByAlgo.keys(), ...dutchByAlgo.keys()]);
+  const twoMinersByAlgo = new Map();
+  for (const row of twoMinersRows) {
+    const current = twoMinersByAlgo.get(row.nicehashAlgo) || {
+      rows: [],
+      btcPerDay: 0,
+      usdPerDay: 0,
+      miners: 0,
+      hashrate: row.hashrate,
+    };
+
+    current.rows.push(row);
+    current.btcPerDay += row.btcPerDay;
+    current.usdPerDay += row.usdPerDay;
+    current.miners += row.miners;
+    current.hashrate = current.hashrate || row.hashrate;
+    twoMinersByAlgo.set(row.nicehashAlgo, current);
+  }
+
+  const algos = new Set([...heroByAlgo.keys(), ...dutchByAlgo.keys(), ...twoMinersByAlgo.keys()]);
   return Array.from(algos)
     .map((nicehashAlgo) => {
       const dutch = dutchByAlgo.get(nicehashAlgo);
       const hero = heroByAlgo.get(nicehashAlgo);
+      const twoMiners = twoMinersByAlgo.get(nicehashAlgo);
       const nhPrice = numberValue(niceHashPrices[nicehashAlgo] || 0);
-      const poolBtc = dutch?.btcPerDay || 0;
+
+      const poolSources = [
+        { name: 'Mining-Dutch', btc: dutch?.btcPerDay || 0, miners: dutch?.miners || 0 },
+        { name: '2Miners', btc: twoMiners?.btcPerDay || 0, miners: twoMiners?.miners || 0 },
+      ];
+      
+      const bestPool = poolSources.reduce((best, current) => current.btc > best.btc ? current : best, { name: 'N/A', btc: 0 });
+
+      const poolBtc = bestPool.btc;
       const spread =
         poolBtc > 0 && nhPrice > 0
           ? ((poolBtc - nhPrice) / nhPrice) * 100
           : null;
       const activityScore = (hero?.miners || 0) + (hero?.workers || 0) * 0.25;
       const profitScore = poolBtc * 100000000;
+      const totalPoolMiners = (dutch?.miners || 0) + (twoMiners?.miners || 0);
+      const totalPoolUsd = (dutch?.usdPerDay || 0) + (twoMiners?.usdPerDay || 0);
+      const poolHashrate = dutch?.hashrate || twoMiners?.hashrate || "N/A";
 
       // Get all coins from hero data
       let heroCoins = hero?.coins || [];
@@ -210,10 +264,10 @@ export function mergeMiningRoutes(
         mrrAlgo: mapNiceHashToMRR(nicehashAlgo),
         label: getAlgoDisplayName(nicehashAlgo),
         unit: getAlgorithmUnit(nicehashAlgo),
-        miningDutchBtcPerDay: poolBtc,
-        miningDutchUsdPerDay: dutch?.usdPerDay || 0,
-        miningDutchMiners: dutch?.miners || 0,
-        miningDutchHashrate: dutch?.hashrate || "N/A",
+        poolBtcPerDay: poolBtc,
+        poolUsdPerDay: totalPoolUsd,
+        poolMiners: totalPoolMiners,
+        poolHashrate: poolHashrate,
         heroCoins: heroCoins,
         heroMiners: hero?.miners || 0,
         heroWorkers: hero?.workers || 0,
@@ -221,7 +275,7 @@ export function mergeMiningRoutes(
         niceHashPrice: nhPrice,
         spread,
         rankScore: profitScore + activityScore,
-        bestSource: poolBtc > 0 ? "Mining-Dutch" : "HeroMiners",
+        bestSource: bestPool.name,
         dutchRows: dutch?.rows || [],
       };
     })
@@ -334,7 +388,7 @@ export function buildOpportunityRows(
     .map((route) => {
       const nhPrice = numberValue(niceHashPrices[route.nicehashAlgo] || 0);
       const mrrMarket = mrrByAlgo.get(route.nicehashAlgo)?.price || 0;
-      const pool = numberValue(route.miningDutchBtcPerDay || 0);
+      const pool = numberValue(route.poolBtcPerDay || 0);
       const bestCost = Math.min(
         ...(nhPrice > 0 ? [nhPrice] : [Number.POSITIVE_INFINITY]),
         ...(mrrMarket > 0 ? [mrrMarket] : [Number.POSITIVE_INFINITY]),

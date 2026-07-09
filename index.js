@@ -171,9 +171,7 @@ async function startServer() {
     console.log('[init] Initializing app...');
     await initializeApp(process.env);
 
-    console.log('[init] Registering routes...');
-    registerRoutes(app);
-    console.log('[Routes] All routes registered');
+    console.log('[Routes] All routes registered (via createApp)');
 
     // Create HTTP server
     const server = http.createServer(app);

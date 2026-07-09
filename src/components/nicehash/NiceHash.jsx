@@ -244,6 +244,7 @@ export function NiceHashOrderManager({ onCall, nhClient, setNhClient }) {
           <option value="VN">VN (All Clients)</option>
           <option value="BT">BT Account</option>
           <option value="PH">PH Account</option>
+          <option value="PH3">PH3 Account</option>
           <option value="NHATLINH">NhatLinh</option>
           <option value="LN">LN</option>
         </select>
@@ -297,47 +298,59 @@ export function NiceHashOrderManager({ onCall, nhClient, setNhClient }) {
           {sortedOrders.some(
             (o) => (o.status?.code || o.status) !== "ACTIVE",
           ) && <option disabled>--- Active Orders ---</option>}
-          {sortedOrders.map((order, index) => {
-            const id = String(
-              order?.id ?? order?.orderId ?? order?.hashpowerOrderId ?? "",
-            );
-            const algoName =
-              typeof order?.algorithm === "object"
-                ? order.algorithm.algorithm || order.algorithm.displayName
-                : order?.algorithm;
-            const poolName = order?.pool?.name || order?.pool?.stratumHostname;
-            const label = poolName
-              ? `${poolName} (${getAlgoDisplayName(algoName) || "N/A"})`
-              : getAlgoDisplayName(algoName) ||
-                order?.title ||
-                order?.name ||
-                `Order ${index + 1}`;
-            const statusCode = String(
-              order?.status?.code || order?.status || "",
-            ).toUpperCase();
-            const clientSuffix = order?.nhClient ? ` [${order.nhClient}]` : "";
-            const isInactive = statusCode !== "ACTIVE";
+          {(() => {
+            // Deduplicate by ID to prevent duplicate key errors
+            const seen = new Set();
+            const uniqueOrders = sortedOrders.filter((order) => {
+              const id = String(
+                order?.id ?? order?.orderId ?? order?.hashpowerOrderId ?? "",
+              );
+              if (!id || seen.has(id)) return false;
+              seen.add(id);
+              return true;
+            });
+            return uniqueOrders.map((order, index) => {
+              const id = String(
+                order?.id ?? order?.orderId ?? order?.hashpowerOrderId ?? "",
+              );
+              const algoName =
+                typeof order?.algorithm === "object"
+                  ? order.algorithm.algorithm || order.algorithm.displayName
+                  : order?.algorithm;
+              const poolName = order?.pool?.name || order?.pool?.stratumHostname;
+              const label = poolName
+                ? `${poolName} (${getAlgoDisplayName(algoName) || "N/A"})`
+                : getAlgoDisplayName(algoName) ||
+                  order?.title ||
+                  order?.name ||
+                  `Order ${index + 1}`;
+              const statusCode = String(
+                order?.status?.code || order?.status || "",
+              ).toUpperCase();
+              const clientSuffix = order?.nhClient ? ` [${order.nhClient}]` : "";
+              const isInactive = statusCode !== "ACTIVE";
 
-            // Add a separator if we are transitioning from active to inactive orders
-            const prevOrder = sortedOrders[index - 1];
-            const showSeparator =
-              isInactive &&
-              prevOrder &&
-              (prevOrder.status?.code || prevOrder.status) === "ACTIVE";
+              // Add a separator if we are transitioning from active to inactive orders
+              const prevOrder = uniqueOrders[index - 1];
+              const showSeparator =
+                isInactive &&
+                prevOrder &&
+                (prevOrder.status?.code || prevOrder.status) === "ACTIVE";
 
-            return (
-              <React.Fragment key={id || `${label}-${index}`}>
-                {showSeparator && (
-                  <option disabled>--- Recent Inactive ---</option>
-                )}
-                <option key={id || `${label}-${index}`} value={id}>
-                  {label}
-                  {statusCode ? ` [${statusCode}]` : ""}
-                  {clientSuffix}
-                </option>
-              </React.Fragment>
-            );
-          })}
+              return (
+                <React.Fragment key={id}>
+                  {showSeparator && (
+                    <option disabled>--- Recent Inactive ---</option>
+                  )}
+                  <option value={id}>
+                    {label}
+                    {statusCode ? ` [${statusCode}]` : ""}
+                    {clientSuffix}
+                  </option>
+                </React.Fragment>
+              );
+            });
+          })()}
         </select>
         {orderDetail?.status?.code && (
           <div

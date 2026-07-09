@@ -192,9 +192,22 @@ export function NiceHashOrderProvider({ children, nhClient, callApi }) {
         })
         .sort((a, b) => parseFloat(b.speed || 0) - parseFloat(a.speed || 0));
 
-      // Create the final list: all active orders + the last 20 inactive ones
+      // Create the final list: all active orders + inactive orders from the last 30 days (up to 50)
       const finalActive = processed.filter((p) => p.isActive);
-      const finalInactive = processed.filter((p) => !p.isActive).slice(0, 20);
+      const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+      const finalInactive = processed
+        .filter((p) => {
+          // Exclude active orders (already in finalActive) to prevent duplicates
+          if (p.isActive) return false;
+          // Only include inactives stopped within the last 30 days
+          const orderTs = p.rawOrder?.ts || p.rawOrder?.updatedTs || p.rawOrder?.lastUpdated || 0;
+          // Parse endTime or updatedAt from rawOrder if available
+          const rawStatus = p.rawOrder?.status;
+          const endTime = rawStatus?.endTime || rawStatus?.end || p.rawOrder?.endTime || 0;
+          const orderAge = endTime > 0 ? Number(endTime) : (orderTs > 0 ? Number(orderTs) : 0);
+          return orderAge > 0 ? (orderAge > thirtyDaysAgo) : true; // include if we can't determine age
+        })
+        .slice(0, 50);
       const combinedList = [...finalActive, ...finalInactive];
 
       // Calculate total paid

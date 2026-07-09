@@ -172,7 +172,17 @@ export function registerNiceHashRoutes(app) {
           return (result?.list || []).map(o => ({ ...o, nhClient: clientName }));
         } catch { return []; }
       }));
-      data = { list: results.flat() };
+      // Deduplicate by order ID (same order may appear under multiple accounts)
+      const orderMap = new Map();
+      for (const order of results.flat()) {
+        const oid = String(order.id || order.orderId || '');
+        if (!oid) continue;
+        // Keep the first occurrence (prefer BT over others for consistency)
+        if (!orderMap.has(oid)) {
+          orderMap.set(oid, order);
+        }
+      }
+      data = { list: Array.from(orderMap.values()) };
     } else {
       data = await req.nhApp.hashpower.getMyOrders(query);
     }

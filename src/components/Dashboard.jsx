@@ -238,22 +238,7 @@ export default function Dashboard({
       >
         {/* ── LEFT COLUMN: MRR ── */}
         <div className="column-stack" style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-          {/* Telegram + Quick Actions */}
-          <article className="panel">
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
-              <TelegramManager onCall={callApi} mrrClient={state.mrrClient} />
-              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                <RefreshOrdersButton />
-                <button className="btn-pro secondary" onClick={() => navigateTo("/nicehash")}>
-                  NiceHash Full
-                </button>
-                <button className="btn-pro secondary" onClick={() => navigateTo("/orders")}>
-                  Active Orders
-                </button>
-              </div>
-            </div>
-          </article>
-
+          
           {/* MRR Rig Management */}
           <article className="panel" style={{ padding: "0" }}>
             <MiningRigRental
@@ -282,11 +267,27 @@ export default function Dashboard({
         </div>
 
         {/* ── RIGHT COLUMN: Crypto Rates ── */}
+        {/* Telegram + Quick Actions */}
+          <article className="panel">
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+              <TelegramManager onCall={callApi} mrrClient={state.mrrClient} />
+              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                <RefreshOrdersButton />
+                <button className="btn-pro secondary" onClick={() => navigateTo("/nicehash")}>
+                  NiceHash Full
+                </button>
+                <button className="btn-pro secondary" onClick={() => navigateTo("/orders")}>
+                  Active Orders
+                </button>
+              </div>
+            </div>
+          
         <div className="column-stack" style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
           <article className="panel" style={{ padding: "0" }}>
             <CryptoRatePage onCall={callApi} />
           </article>
         </div>
+        </article>
       </main>
 
       {/* ─── MODALS ─── */}
