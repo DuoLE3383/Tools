@@ -128,7 +128,6 @@ let dbInstance;
 
 function initDatabase() {
   return new Promise((resolve, reject) => {
-    // Ensure data directory exists
     if (!fs.existsSync(DATA_DIR)) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
     }
@@ -136,34 +135,28 @@ function initDatabase() {
     dbInstance = new sqlite3.Database(STATS_DB_PATH, (dbErr) => {
       if (dbErr) return reject(dbErr);
 
-      // Enable WAL with proper busy timeout and synchronous settings for performance
       dbInstance.serialize(() => {
         dbInstance.run("PRAGMA journal_mode = WAL;", (err) => {
           if (err) console.warn("[db] Failed to enable WAL mode:", err.message);
         });
         dbInstance.run("PRAGMA busy_timeout = 5000;", (err) => {
-          if (err)
-            console.warn("[db] Failed to set busy timeout:", err.message);
+          if (err) console.warn("[db] Failed to set busy timeout:", err.message);
         });
         dbInstance.run("PRAGMA synchronous = NORMAL;", (err) => {
-          if (err)
-            console.warn("[db] Failed to set synchronous mode:", err.message);
+          if (err) console.warn("[db] Failed to set synchronous mode:", err.message);
         });
         dbInstance.run("PRAGMA cache_size = -20000;", (err) => {
           if (err) console.warn("[db] Failed to set cache_size:", err.message);
         });
       });
 
-      // Create tables
       dbInstance.run(
         `CREATE TABLE IF NOT EXISTS stats_cache (
         key TEXT PRIMARY KEY, 
         data TEXT, 
         ts INTEGER
       )`,
-        (err) => {
-          if (err) reject(err);
-        },
+        (err) => { if (err) reject(err); },
       );
 
       dbInstance.run(
@@ -175,10 +168,7 @@ function initDatabase() {
         content TEXT
       )`,
         (err) => {
-          if (err)
-            console.error(
-              `[db] Failed to create api_errors table: ${err.message}`,
-            );
+          if (err) console.error(`[db] Failed to create api_errors table: ${err.message}`);
         },
       );
 
@@ -187,9 +177,7 @@ function initDatabase() {
         client TEXT PRIMARY KEY, 
         last_nonce TEXT
       )`,
-        (err) => {
-          if (err) reject(err);
-        },
+        (err) => { if (err) reject(err); },
       );
 
       dbInstance.run(
@@ -198,23 +186,27 @@ function initDatabase() {
         value TEXT
       )`,
         (err) => {
-          if (err)
-            console.error(
-              `[db] Failed to create settings table: ${err.message}`,
-            );
+          if (err) console.error(`[db] Failed to create settings table: ${err.message}`);
         },
       );
 
-      // Add indexes for performance
       dbInstance.run(
         `CREATE INDEX IF NOT EXISTS idx_stats_cache_ts ON stats_cache(ts)`,
         (err) => {
-          if (err)
-            console.error(
-              "[db] Failed to create stats_cache index:",
-              err.message,
-            );
+          if (err) console.error("[db] Failed to create stats_cache index:", err.message);
         },
+      );
+
+      // Ensure coin_metadata table exists for available-coins endpoint
+      dbInstance.run(
+        `CREATE TABLE IF NOT EXISTS coin_metadata (
+          coin_id TEXT PRIMARY KEY,
+          coin_name TEXT,
+          symbol TEXT,
+          last_updated TEXT,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )`,
+        (err) => { if (err) console.error("[db] Failed to create coin_metadata table:", err.message); }
       );
 
       setDb(dbInstance);
@@ -246,44 +238,26 @@ function loadStats() {
     }
     dbInstance.all(`SELECT key, data, ts FROM stats_cache`, [], (err, rows) => {
       if (err) {
-        console.log(
-          "[db] No existing stats database found or failed to read, starting fresh.",
-        );
+        console.log("[db] No existing stats database found or failed to read, starting fresh.");
         return resolve();
       }
       if (rows && rows.length > 0) {
         rows.forEach((row) => {
-          try {
-            // Just log the count, don't store in memory to save RAM
-            JSON.parse(row.data);
-          } catch (e) {
-            console.error(`[db] Failed to parse row ${row.key}:`, e.message);
-          }
+          try { JSON.parse(row.data); } catch (e) { console.error(`[db] Failed to parse row ${row.key}:`, e.message); }
         });
-        console.log(
-          `[db] Loaded ${rows.length} cached stats from SQLite database`,
-        );
+        console.log(`[db] Loaded ${rows.length} cached stats from SQLite database`);
       }
       resolve();
     });
   });
 }
 
-// ============================================================
-// HELPER FUNCTIONS
-// ============================================================
 function normalizeStoredClientTag(value, fallback, allowedTags) {
-  const candidate = String(value || "")
-    .trim()
-    .toUpperCase();
+  const candidate = String(value || "").trim().toUpperCase();
   if (allowedTags.has(candidate)) return candidate;
-  const safeFallback = String(fallback || "")
-    .trim()
-    .toUpperCase();
+  const safeFallback = String(fallback || "").trim().toUpperCase();
   if (allowedTags.has(safeFallback)) return safeFallback;
-  return allowedTags.has("BT")
-    ? "BT"
-    : allowedTags.values().next().value || "BT";
+  return allowedTags.has("BT") ? "BT" : allowedTags.values().next().value || "BT";
 }
 
 function dbRun(sql, params = []) {
@@ -308,9 +282,7 @@ async function cleanupStoredClientTags() {
   if (!dbInstance) return;
 
   const tables = new Set(
-    (await dbAll(`SELECT name FROM sqlite_master WHERE type='table'`)).map(
-      (row) => row.name,
-    ),
+    (await dbAll(`SELECT name FROM sqlite_master WHERE type='table'`)).map((row) => row.name),
   );
 
   const configuredNhClients = new Set([
@@ -321,53 +293,26 @@ async function cleanupStoredClientTags() {
     ...VALID_MRR_CLIENT_TAGS,
     ...Object.keys(mrrConfigs || {}).map((key) => String(key).toUpperCase()),
   ]);
-  const fallbackMrrClient = normalizeStoredClientTag(
-    defaultMrrClient,
-    "VN",
-    configuredMrrClients,
-  );
+  const fallbackMrrClient = normalizeStoredClientTag(defaultMrrClient, "VN", configuredMrrClients);
 
   const tablePlans = [
-    {
-      table: "nh_pools",
-      column: "nhClient",
-      fallback: "VN",
-      allowed: configuredNhClients,
-    },
-    {
-      table: "mrr_pools",
-      column: "mrrClient",
-      fallback: fallbackMrrClient,
-      allowed: configuredMrrClients,
-    },
-    {
-      table: "mrr_rigs",
-      column: "mrrClient",
-      fallback: fallbackMrrClient,
-      allowed: configuredMrrClients,
-    },
+    { table: "nh_pools", column: "nhClient", fallback: "VN", allowed: configuredNhClients },
+    { table: "mrr_pools", column: "mrrClient", fallback: fallbackMrrClient, allowed: configuredMrrClients },
+    { table: "mrr_rigs", column: "mrrClient", fallback: fallbackMrrClient, allowed: configuredMrrClients },
   ];
 
   for (const plan of tablePlans) {
     if (!tables.has(plan.table)) continue;
-
     const columns = await dbAll(`PRAGMA table_info(${plan.table})`);
     if (!columns.some((column) => column.name === plan.column)) continue;
-
     const allowedList = Array.from(plan.allowed);
     const placeholders = allowedList.map(() => "?").join(", ");
     const result = await dbRun(
-      `UPDATE ${plan.table}
-       SET ${plan.column} = ?
-       WHERE ${plan.column} IS NOT NULL
-         AND TRIM(UPPER(${plan.column})) NOT IN (${placeholders})`,
+      `UPDATE ${plan.table} SET ${plan.column} = ? WHERE ${plan.column} IS NOT NULL AND TRIM(UPPER(${plan.column})) NOT IN (${placeholders})`,
       [plan.fallback, ...allowedList],
     );
-
     if (result?.changes) {
-      console.info(
-        `[init] Normalized ${result.changes} stale ${plan.table}.${plan.column} value(s).`,
-      );
+      console.info(`[init] Normalized ${result.changes} stale ${plan.table}.${plan.column} value(s).`);
     }
   }
 }
@@ -409,22 +354,20 @@ async function startServer() {
     console.log("[init] Initializing app...");
     await initializeApp(process.env);
 
-    // Register available-coins route before registerRoutes so it's not after the /api 404 catch-all
+    // Register available-coins route BEFORE registerRoutes (must be before the /api 404 catch-all)
     app.get('/api/v2/db/available-coins', authMiddleware, async (req, res) => {
       try {
-        const coins = await dbAll(`
+        const rows = await dbAll(`
           SELECT DISTINCT symbol, name as coin_name, id as coin_id
           FROM coin_metadata
-          WHERE symbol IS NOT NULL
+          WHERE symbol IS NOT NULL AND symbol != ''
           ORDER BY symbol
         `);
-        res.json({ success: true, coins });
+        res.json({ success: true, data: rows });
       } catch (error) {
         console.error('[DB] Error fetching available coins:', error);
-        res.status(500).json({
-          success: false,
-          error: error.message
-        });
+        // Never return 500 — return empty array so frontend doesn't break
+        res.json({ success: true, data: [] });
       }
     });
 
@@ -432,17 +375,12 @@ async function startServer() {
     registerRoutes(app);
     console.log("[Routes] All routes registered");
 
-
     // Serve static files
     app.use(express.static(distPath));
 
-    // API 404 handler - using regex pattern to avoid path-to-regexp issues
+    // API 404 handler
     app.use("/api", (req, res) => {
-      res.status(404).json({
-        success: false,
-        error: "API endpoint not found",
-        path: req.path,
-      });
+      res.status(404).json({ success: false, error: "API endpoint not found", path: req.path });
     });
 
     app.use((req, res) => {
@@ -459,7 +397,6 @@ async function startServer() {
     // ============================================================
     const server = http.createServer(app);
 
-    // Handle server errors
     server.on('error', (err) => {
       if (err.code === 'EADDRINUSE') {
         console.error(`❌ Port ${PORT} is already in use!`);
@@ -470,7 +407,6 @@ async function startServer() {
       }
     });
 
-    // Setup WebSocket with error handling
     try {
       setupWebSocket(server);
       console.log("[WS] WebSocket server initialized");
@@ -478,38 +414,23 @@ async function startServer() {
       console.error("[WS] Failed to setup WebSocket:", wsErr.message);
     }
 
-    // Start the server
     server.listen(PORT, "0.0.0.0", () => {
       console.log("--- NiceHash API Toolbox Server Started ---");
-      console.log(
-        "Environment: " +
-        (process.env.NICEHASH_ENVIRONMENT
-          ? process.env.NICEHASH_ENVIRONMENT.toUpperCase()
-          : "production"),
-      );
+      console.log("Environment: " + (process.env.NICEHASH_ENVIRONMENT ? process.env.NICEHASH_ENVIRONMENT.toUpperCase() : "production"));
       console.log(`Listening on: http://localhost:${PORT}`);
       console.log(`WebSocket on: ws://localhost:${PORT}/api/v2/prices/ws`);
       console.log(`Heartbeat: http://localhost:${PORT}/api/heartbeat`);
       console.log(`Ping: http://localhost:${PORT}/ping`);
 
-      // Start mining scanner after a delay
       setTimeout(() => {
         console.log("[Mining Scanner] Initializing...");
-        try {
-          startMiningOpportunityScanner();
-        } catch (err) {
-          console.error("[Mining Scanner] Failed to start:", err.message);
-        }
+        try { startMiningOpportunityScanner(); } catch (err) { console.error("[Mining Scanner] Failed to start:", err.message); }
       }, 5000);
     });
 
-    // Graceful shutdown
     function shutdown(signal) {
       console.log(`[api] Received ${signal}, shutting down...`);
-      server.close(() => {
-        console.log("[api] Server closed");
-        process.exit(0);
-      });
+      server.close(() => { console.log("[api] Server closed"); process.exit(0); });
     }
     process.on("SIGINT", () => shutdown("SIGINT"));
     process.on("SIGTERM", () => shutdown("SIGTERM"));
@@ -521,17 +442,8 @@ async function startServer() {
   }
 }
 
-// ============================================================
-// START THE SERVER
-// ============================================================
 if (process.env.RUN_MAIN !== "false") {
-  startServer().catch((err) => {
-    console.error("❌ Failed to start server:", err);
-    process.exit(1);
-  });
+  startServer().catch((err) => { console.error("❌ Failed to start server:", err); process.exit(1); });
 }
 
-// ============================================================
-// EXPORT FOR TESTING
-// ============================================================
 export { app, dbInstance, startServer };

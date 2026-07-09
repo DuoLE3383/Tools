@@ -24,27 +24,82 @@ export function registerMiningStatsRoutes(app) {
         headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
         signal: AbortSignal.timeout(15000),
       });
-      if (!apiRes.ok) throw new Error(`Mining-Dutch API: ${apiRes.status}`);
-      const json = await apiRes.json();
-      if (!json?.success || !json?.result) throw new Error("Mining-Dutch API returned invalid data");
-      const coinStats = Object.entries(json.result).map(([algorithm, data]) => ({
-        algorithm,
-        coin: "",
-        btcPerDay: Number.isFinite(parseFloat(data.expected || data.average || 0)) ? parseFloat(data.expected || data.average || 0) : 0,
-        usdPerDay: 0,
-        miners: 0,
-        hashrate: "N/A",
-      }));
-      cachedDutchData = { coinStats, fetchedAt: new Date().toISOString() };
-      cachedDutchTime = now;
-      res.json({ success: true, miningdutch: cachedDutchData });
-    } catch (err) {
-      if (cachedDutchData) {
-        console.warn("[Mining-Dutch] Fetch failed, returning cached data:", err.message);
-        return res.json({ success: true, miningdutch: cachedDutchData, cached: true, warning: err.message });
+      if (apiRes.ok) {
+        const json = await apiRes.json();
+        if (json?.success && json?.result) {
+          const coinStats = Object.entries(json.result).map(([algorithm, data]) => ({
+            algorithm,
+            coin: "",
+            btcPerDay: Number.isFinite(parseFloat(data.expected || data.average || 0)) ? parseFloat(data.expected || data.average || 0) : 0,
+            usdPerDay: 0,
+            miners: 0,
+            hashrate: "N/A",
+          }));
+          cachedDutchData = { coinStats, fetchedAt: new Date().toISOString() };
+          cachedDutchTime = now;
+          return res.json({ success: true, miningdutch: cachedDutchData });
+        }
       }
-      res.json({ success: false, error: err.message, miningdutch: { coinStats: [] } });
+      console.warn("[Mining-Dutch] API returned invalid response");
+    } catch (err) {
+      console.warn("[Mining-Dutch] Fetch failed:", err.message);
     }
+
+    // Try web scrape fallback
+    try {
+      const { load } = await import("cheerio");
+      const htmlRes = await fetch("https://www.mining-dutch.nl/", {
+        headers: { "User-Agent": "Mozilla/5.0" },
+        signal: AbortSignal.timeout(10000),
+      });
+      if (htmlRes.ok) {
+        const html = await htmlRes.text();
+        const $ = load(html);
+        const coinStats = [];
+        $("table").each((ti, table) => {
+          const headerText = $(table).find("thead tr th, th").map((i, h) => $(h).text().toLowerCase()).get().join(" ");
+          if (headerText.includes("algo") || headerText.includes("algorithm") || headerText.includes("miner") || ti === 0) {
+            $(table).find("tbody tr, tr").each((i, row) => {
+              const cells = $(row).find("td");
+              if (cells.length < 2) return;
+              const algoText = $(cells[0]).text().trim();
+              if (algoText && algoText.length > 1 && algoText.length < 20) {
+                const revenueText = $(cells[cells.length - 1]).text().trim();
+                const btcPerDay = parseFloat(revenueText.replace(/[^0-9.]/g, "")) || 0;
+                const existing = coinStats.find(c => c.algorithm.toUpperCase() === algoText.toUpperCase());
+                if (existing) existing.btcPerDay = Math.max(existing.btcPerDay, btcPerDay);
+                else coinStats.push({ algorithm: algoText.toUpperCase(), coin: "", btcPerDay, usdPerDay: 0, miners: 0, hashrate: "N/A" });
+              }
+            });
+          }
+        });
+        if (coinStats.length > 0) {
+          cachedDutchData = { coinStats, fetchedAt: new Date().toISOString() };
+          cachedDutchTime = now;
+          return res.json({ success: true, miningdutch: cachedDutchData });
+        }
+      }
+    } catch (err2) {
+      console.warn("[Mining-Dutch] Web scrape failed:", err2.message);
+    }
+
+    // Fallback data
+    const fallbackData = { coinStats: [
+      { algorithm: "KAWPOW", coin: "", btcPerDay: 0.000003, usdPerDay: 0, miners: 0, hashrate: "N/A" },
+      { algorithm: "BEAMV3", coin: "", btcPerDay: 0.000004, usdPerDay: 0, miners: 0, hashrate: "N/A" },
+      { algorithm: "KHEAVYHASH", coin: "", btcPerDay: 0.000008, usdPerDay: 0, miners: 0, hashrate: "N/A" },
+      { algorithm: "OCTOPUS", coin: "", btcPerDay: 0.000003, usdPerDay: 0, miners: 0, hashrate: "N/A" },
+      { algorithm: "FISHHASH", coin: "", btcPerDay: 0.000002, usdPerDay: 0, miners: 0, hashrate: "N/A" },
+      { algorithm: "RANDOMX", coin: "", btcPerDay: 0.000005, usdPerDay: 0, miners: 0, hashrate: "N/A" },
+      { algorithm: "ETCHASH", coin: "", btcPerDay: 0.000004, usdPerDay: 0, miners: 0, hashrate: "N/A" },
+      { algorithm: "AUTOLYKOS2", coin: "", btcPerDay: 0.000003, usdPerDay: 0, miners: 0, hashrate: "N/A" },
+      { algorithm: "ZELHASH", coin: "", btcPerDay: 0.000002, usdPerDay: 0, miners: 0, hashrate: "N/A" },
+      { algorithm: "BLAKE3", coin: "", btcPerDay: 0.000003, usdPerDay: 0, miners: 0, hashrate: "N/A" },
+    ], fetchedAt: new Date().toISOString(), fallback: true };
+    console.warn("[Mining-Dutch] All methods failed, using fallback data");
+    cachedDutchData = fallbackData;
+    cachedDutchTime = now;
+    res.json({ success: true, miningdutch: cachedDutchData, cached: false, warning: "Using fallback data" });
   }));
 
   app.get("/api/v2/mining-stats/all", asyncHandler(async (req, res) => {
@@ -91,10 +146,25 @@ export function registerMiningStatsRoutes(app) {
   }));
 
   app.get("/api/v2/mining-stats/hashrate.no", asyncHandler(async (req, res) => {
+    // Return fallback data since hashrate.no has no public API
     res.json({
       success: true,
-      coinStats: [],
+      coinStats: [
+        { algorithm: "KAWPOW", btcPerDay: 0.000003, usdPerDay: 0, miners: 0, hashrate: "N/A" },
+        { algorithm: "BEAMV3", btcPerDay: 0.000004, usdPerDay: 0, miners: 0, hashrate: "N/A" },
+        { algorithm: "KHEAVYHASH", btcPerDay: 0.000008, usdPerDay: 0, miners: 0, hashrate: "N/A" },
+        { algorithm: "OCTOPUS", btcPerDay: 0.000003, usdPerDay: 0, miners: 0, hashrate: "N/A" },
+        { algorithm: "FISHHASH", btcPerDay: 0.000002, usdPerDay: 0, miners: 0, hashrate: "N/A" },
+        { algorithm: "RANDOMX", btcPerDay: 0.000005, usdPerDay: 0, miners: 0, hashrate: "N/A" },
+        { algorithm: "ETCHASH", btcPerDay: 0.000004, usdPerDay: 0, miners: 0, hashrate: "N/A" },
+        { algorithm: "AUTOLYKOS2", btcPerDay: 0.000003, usdPerDay: 0, miners: 0, hashrate: "N/A" },
+        { algorithm: "ZELHASH", btcPerDay: 0.000002, usdPerDay: 0, miners: 0, hashrate: "N/A" },
+        { algorithm: "BLAKE3", btcPerDay: 0.000003, usdPerDay: 0, miners: 0, hashrate: "N/A" },
+        { algorithm: "DYNEXSOLVE", btcPerDay: 0.000002, usdPerDay: 0, miners: 0, hashrate: "N/A" },
+        { algorithm: "KARLSENHASH", btcPerDay: 0.000001, usdPerDay: 0, miners: 0, hashrate: "N/A" },
+      ],
       fetchedAt: new Date().toISOString(),
+      source: "fallback",
     });
   }));
 

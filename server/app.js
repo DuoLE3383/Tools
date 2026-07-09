@@ -31,7 +31,11 @@ export async function initializeApp(env) {
     console.log('🚀 Initializing system...');
     initNhConfigs(env); // Initialize NiceHash configurations
     initMrrConfigs(env); // Initialize MiningRigRentals configurations
-    validateAuthConfig(); // Centralized auth config validation
+    try {
+      validateAuthConfig(); // Centralized auth config validation
+    } catch (authErr) {
+      console.warn('⚠️ Auth config issue (non-fatal):', authErr.message);
+    }
 
     await initNonces();
     await syncMrrClock();

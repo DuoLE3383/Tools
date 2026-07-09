@@ -140,8 +140,10 @@ function AppContent({ authToken, onLoginSuccess, onLogout, callApi, setAuthToken
 
   // ── navigateToHomepage ──
   const navigateToHomepage = useCallback((userPermissions) => {
-    const firstAllowedView = userPermissions?.[0] || 'dashboard';
-    const path = firstAllowedView === 'dashboard' ? '/' : `/${firstAllowedView}`;
+    // Pick the first non-dashboard permission as the home page
+    // (e.g. miner_viewer → /mining, mrr_viewer → /mrr, admin → /)
+    const homeView = userPermissions?.find(p => p !== 'dashboard') || 'dashboard';
+    const path = homeView === 'dashboard' ? '/' : `/${homeView}`;
     navigate(path);
   }, [navigate]);
 
@@ -280,13 +282,25 @@ function AppContent({ authToken, onLoginSuccess, onLogout, callApi, setAuthToken
           console.log(`[Auth] User permissions:`, userPermissions);
           console.log(`[Auth] Current view:`, currentView);
           
-          // ✅ Only redirect if the user is on a page they don't have permission for
-          // AND they're not on the dashboard (which is always allowed)
           if (currentView !== 'dashboard' && !userPermissions.includes(currentView)) {
+            // Redirect away from a page they don't have access to
             console.log(`[Auth] User lacks permission for ${currentView}, redirecting to:`, userPermissions[0]);
             navigateToHomepage(userPermissions);
+          } else if (currentView === 'dashboard') {
+            // On first check: redirect from dashboard to the user's homepage if they have one
+            // (e.g. miner_viewer → /mining, mrr_viewer → /mrr, admin → stay on /)
+            const hasSpecificHomepage = userPermissions.some(p => p !== 'dashboard');
+            if (hasSpecificHomepage) {
+              console.log(`[Auth] Redirecting ${currentUser?.role} from dashboard to homepage:`, userPermissions[0]);
+              navigateToHomepage(userPermissions);
+            } else {
+              // Ensure view state matches dashboard
+              if (state.view !== 'dashboard') {
+                dispatch({ type: "SET_VIEW", payload: 'dashboard' });
+              }
+            }
           } else {
-            // ✅ Make sure the view state matches the URL
+            // Ensure view state matches the current path
             const viewToSet = currentView === 'cryptorate' ? 'cryptorate' : 
                             currentView === 'mining' ? 'mining' :
                             currentView === 'nicehash' ? 'nicehash' :
