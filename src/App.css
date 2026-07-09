@@ -66,7 +66,7 @@ body {
 
 .app-shell {
   width: 100%;
-  max-width: 1600px;
+  max-width: none;
   margin: 0 auto;
   padding: var(--shell-pad);
   min-height: 100vh;
@@ -76,7 +76,7 @@ body {
 
 .page-full {
   width: 100%;
-  max-width: 1600px;
+  max-width: none;
   margin: 0 auto;
   padding: var(--shell-pad);
 }

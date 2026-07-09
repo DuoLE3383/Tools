@@ -56,7 +56,7 @@ try {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const distPath = path.join(__dirname, "dist", "client");
+const distPath = path.join(__dirname, "dist");
 
 const DATA_DIR = path.join(__dirname, "data");
 const STATS_DB_PATH = path.join(DATA_DIR, "stats.db");
@@ -103,6 +103,24 @@ app.get("/api/heartbeat", (req, res) => {
 app.get("/ping", (req, res) => {
   res.send("pong");
 });
+
+const knownAttackPatterns = [
+  /^\/(php|python|rails|laravel|django|ruby|java|node|test|backup|admin|root|config|conf|data|db|sql|backup|temp|tmp|vendor|web|wordpress|wp-content|wp-admin|wp-includes|xmlrpc\.php)/i,
+  /\.(bak|backup|old|swp|~|sql|zip|tar\.gz|tgz|conf|ini|log|sh|exe|dll|env|yml|yaml|json_backup|xml_temp|php_temp|js_temp|config_temp|config_local|config_new|config_old|config_staging|config_production|config_development|config_test|config_fix|config_update|config_archived|config_hotfix)$/i,
+  /(config|credential|sftp-config|wp-config|docker-compose|package\.json|webpack\.config|vite\.config|next\.config|nuxt\.config|babel\.config|jest\.config|rollup\.config|tsconfig\.json|application_default_credentials)/i
+];
+
+app.use((req, res, next) => {
+  // Check if the request path matches any of the known attack patterns
+  if (knownAttackPatterns.some(pattern => pattern.test(req.path))) {
+    // Log the attempt and immediately block it
+    console.warn(`[SECURITY] Blocked suspicious path scan: ${req.path} from IP: ${req.ip}`);
+    return res.status(403).send('Forbidden');
+  }
+  // If the path is safe, continue to the next middleware
+  next();
+});
+
 
 app.get("/", (req, res) => {
   res.json({

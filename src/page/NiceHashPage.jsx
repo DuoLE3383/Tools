@@ -41,7 +41,7 @@ export default function NiceHashPage({
         currentView="nicehash"
       />
 
-      <main className="dashboard">
+      <main>
         <div className="column-stack" style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
           <article className="panel">
             <NiceHash

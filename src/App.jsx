@@ -8,9 +8,6 @@ import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 import Modal from "./components/Modal";
 import HashCompletionCalculator from "./components/ProfitCompletion.jsx";
 import CryptoRatePage from "../CryptoRatePage.jsx";
-import Modal from './components/Modal';
-import HashCompletionCalculator from './components/ProfitCompletion.jsx';
-import CryptoRatePage from '../CryptoRatePage.jsx';
 import MiningPage from "./components/mining/MiningPage.jsx";
 import { createApiClient } from "./core/apiClient";
 import Login from './components/Login.jsx';
@@ -391,18 +388,6 @@ function AppContent({ authToken, onLoginSuccess, onLogout, callApi, setAuthToken
     switch (state.view) {
       case 'mining':
         return (
-          <MiningPage
-            onCall={callApi}
-            nhClient={state.nhPoolClient}
-            onNavigateHome={() => navigate("/")}
-            state={state}
-            dispatch={dispatch}
-            currentUser={currentUser}
-            isAdmin={isAdmin}
-            forceCheckStatus={forceCheckStatus}
-            handleLogout={handleLogout}
-            onNavigate={navigate}
-          />
           <div className="page-full">
             <DashboardHeader
               state={state}
@@ -416,15 +401,21 @@ function AppContent({ authToken, onLoginSuccess, onLogout, callApi, setAuthToken
               onNavigate={navigate}
               currentView="mining"
             />
-            <main className="dashboard">
-              <div className="column-stack" style={{ display: "flex", flexDirection: "column", gap: "24px", minWidth: "600px" }}>
+            <main>
+              <div className="column-stack" style={{ display: "flex", flexDirection: "column", gap: "24px", width: "100%" }}>
                 <MiningPage
                   onCall={callApi}
+                  nhClient={state.nhPoolClient}
+                  onNavigateHome={() => navigate("/")}
                   state={state}
                   dispatch={dispatch}
+                  currentUser={currentUser}
+                  isAdmin={isAdmin}
+                  forceCheckStatus={forceCheckStatus}
+                  handleLogout={handleLogout}
+                  onNavigate={navigate}
                 />
               </div>
-              <CryptoRatePage onCall={callApi} coinPrices={state.coinPrices} />
             </main>
           </div>
         );

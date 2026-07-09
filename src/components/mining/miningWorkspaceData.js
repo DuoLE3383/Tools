@@ -4,6 +4,7 @@
 import {
   getAlgoDisplayName,
   getAlgorithmUnit,
+  convertPrice, // ✅ Import the convertPrice utility
   mapNiceHashToMRR,
   normalizeAlgoForNiceHash,
   normalizeAlgo,
@@ -394,67 +395,36 @@ export function normalizeMrrMarketRows(payload) {
       : [];
 
   return algos
-    .map((rental) => {
-      const rawPrice = rental?.price || rental?.rig?.price || {};
-      const paidValue =
-        getBtcPriceData(rawPrice).value ||
-        parsePriceValue(
-          rawPrice?.paid ?? rawPrice?.price ?? rawPrice?.amount ?? rawPrice,
-        );
-      const durationHours = numberValue(
-        rental?.hours ||
-          rental?.length ||
-          rental?.duration ||
-          rental?.rig?.hours,
-      );
-      const algo = String(
-        rental?.algo ||
-          rental?.algorithm ||
-          rental?.rig?.algo ||
-          rental?.rig?.algorithm ||
-          rental?.rig?.type ||
-          "N/A",
-      );
+    .map((algoData) => {
+      // This function was trying to parse rental data, but it gets algo market data.
+      // We need to parse the suggested_price from the algo data.
+      const algo = String(algoData?.name || algoData?.algo || "N/A");
       const nicehashAlgo = normalizeAlgoForNiceHash(algo);
-      const advertised = numberValue(
-        rental?.hashrate?.advertised?.hash ??
-          rental?.hashrate?.advertised ??
-          rental?.rig?.hashrate?.advertised?.hash ??
-          rental?.rig?.hashrate?.advertised ??
-          rental?.rig?.hashrate?.hash ??
-          rental?.rig?.hashrate,
-      );
-      const unit = String(
-        rental?.hashrate?.advertised?.type ||
-          rental?.hashrate?.suffix ||
-          rental?.rig?.hashrate?.advertised?.type ||
-          rental?.rig?.hashrate?.suffix ||
-          rental?.price_unit ||
-          rental?.currency ||
-          getAlgorithmUnit(nicehashAlgo),
-      ).toUpperCase();
-      const perUnitPerDay =
-        paidValue > 0 && durationHours > 0 && advertised > 0
-          ? paidValue / (durationHours / 24) / advertised
-          : 0;
+
+      const suggestedPrice = algoData?.suggested_price;
+      const priceAmount = numberValue(suggestedPrice?.amount);
+      // MRR API uses 'mh', 'gh' etc. for units.
+      const priceUnit = String(suggestedPrice?.unit || 'h').toLowerCase();
+
+      // The base unit for this algorithm, which we want to normalize to. e.g., 'TH' for SHA256
+      const targetUnit = getAlgorithmUnit(nicehashAlgo);
+
+      // The price from MRR is already per day. We just need to convert it to the target unit.
+      // e.g., if price is in BTC/MH/day, and target is TH, convert to BTC/TH/day.
+      const perUnitPerDay = convertPrice(priceAmount, priceUnit, targetUnit);
 
       return {
-        id: String(rental?.id || rental?.rentalid || rental?.rental_id || ""),
+        id: algo, // Use algo name as ID
         algo,
         nicehashAlgo,
         mrrAlgo: mapNiceHashToMRR(nicehashAlgo) || NICEHASH_ALGO_MAP?.[nicehashAlgo] || nicehashAlgo,
-        unit,
-        priceBtc: paidValue,
+        unit: targetUnit,
+        priceBtc: perUnitPerDay, // This is the normalized price
         pricePerUnitDayBtc: perUnitPerDay,
-        durationHours,
-        advertised,
-        currency: String(
-          rawPrice?.currency ||
-            rawPrice?.price_unit ||
-            rental?.currency ||
-            "BTC",
-        ).toUpperCase(),
-        mrrClient: rental?.mrrClient || rental?.client || "",
+        durationHours: 24, // Suggested price is per day
+        advertised: 1, // Price is already per unit
+        currency: "BTC",
+        mrrClient: "", // Not available in /info/algos
       };
     })
     .filter(
