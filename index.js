@@ -409,10 +409,7 @@ async function startServer() {
     console.log("[init] Initializing app...");
     await initializeApp(process.env);
 
-    console.log("[init] Registering routes...");
-    registerRoutes(app);
-    console.log("[Routes] All routes registered");
-
+    // Register available-coins route before registerRoutes so it's not after the /api 404 catch-all
     app.get('/api/v2/db/available-coins', authMiddleware, async (req, res) => {
       try {
         const coins = await dbAll(`
@@ -430,6 +427,10 @@ async function startServer() {
         });
       }
     });
+
+    console.log("[init] Registering routes...");
+    registerRoutes(app);
+    console.log("[Routes] All routes registered");
 
 
     // Serve static files
