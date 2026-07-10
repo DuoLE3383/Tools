@@ -14,6 +14,12 @@ import { useAsyncButtonState } from "./useAsyncButtonState.js";
 import TelegramSendModal from "./TelegramSendModal.jsx";
 import { useTelegramMine, TelegramMineProvider } from "../mrr/TelegramMineContext.jsx";
 import { CoinPriceProvider, useCoinPrice } from "./CoinPriceContext.jsx";
+import {
+  MinerstatCard,
+  WhatToMineCard,
+  HashrateNoCard,
+  MiningDutchPoolCard,
+} from "./pools/index.js";
 
 const HEARTBEAT_INTERVAL_MS = 120000;
 const HEARTBEAT_COOLDOWN_MS = 60000;
@@ -632,6 +638,36 @@ function MiningWorkspaceShell({
           }}>
             <MiningCoin onCall={onCall} nhClient={nhClient} />
           </aside>
+        </section>
+
+        {/* Pool Lookup Grid */}
+        <section style={{ width: "100%", marginTop: "clamp(16px, 2vw, 24px)" }}>
+          <div style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: "12px",
+            marginBottom: "clamp(8px, 1vw, 12px)",
+          }}>
+            <h3 style={{ margin: 0, color: "#f8fafc", fontSize: "clamp(14px, 1.4vw, 18px)", fontWeight: 800 }}>
+              Pool Lookup
+            </h3>
+            <span style={{ color: "#64748b", fontSize: "clamp(10px, 0.8vw, 12px)" }}>
+              Multi-source algorithm profitability reference
+            </span>
+          </div>
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))",
+            gap: "clamp(10px, 1vw, 16px)",
+            alignItems: "start",
+            width: "100%",
+          }}>
+            <MiningDutchPoolCard />
+            <MinerstatCard />
+            <WhatToMineCard />
+            <HashrateNoCard />
+          </div>
         </section>
       </div>
     </TelegramMineProvider>
