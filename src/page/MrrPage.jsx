@@ -43,21 +43,24 @@ export default function MrrPage({
         currentView="mrr"
       />
 
-      <main className="dashboard">
-        <div className="column-stack" style={{ display: "flex", flexDirection: "column", gap: "24px", minWidth: "600px" }}>
-          <article className="panel">
-            <MiningRigSection
-              onCall={handleMiningCall}
-              rigsData={state.output?.rigsData}
-              mrrClient={state.mrrClient}
-              setMrrClient={setMrrClient}
-              onOpenMrrPools={handleOpenMrrPools}
-              coinPrices={state.coinPrices}
-            />
-          </article>
-        </div>
-        <CryptoRatePage onCall={callApi} coinPrices={state.coinPrices} />
-      </main>
+      <main className="dashboard" style={{ display: "flex", gap: "24px" }}>
+  <div style={{ width: "70%", flexShrink: 0 }}> {/* 2/3 */}
+    <article className="panel">
+      <MiningRigSection
+        onCall={handleMiningCall}
+        rigsData={state.output?.rigsData}
+        mrrClient={state.mrrClient}
+        setMrrClient={setMrrClient}
+        onOpenMrrPools={handleOpenMrrPools}
+        coinPrices={state.coinPrices}
+      />
+    </article>
+  </div>
+  
+  <div style={{ width: "33.333%", flexShrink: 0 }}> {/* 1/3 */}
+    <CryptoRatePage onCall={callApi} coinPrices={state.coinPrices} />
+  </div>
+</main>
     </div>
   );
 }

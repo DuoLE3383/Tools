@@ -62,45 +62,44 @@ export default function CoinPriceModal({
     
     const coinId = coin.coinId || coin.symbol?.toLowerCase() || coin.name?.toLowerCase();
     
-    // --- Try CoinGecko first (most reliable for 24h high/low) ---
+    // --- Try CoinGecko price endpoint ---
     try {
-      const endpoint = "/api/v2/coingecko/coins/markets"; // ✅ Use the full market data endpoint
+      const endpoint = "/api/v2/prices/coingecko";
       const query = { 
-        ids: coinId, // Use 'ids' to match the backend endpoint
+        coinId: coinId,
         vs_currency: "usd" 
       };
       const result = await onCall(endpoint, { query, silent: true });
-      const data = Array.isArray(result) ? result[0] : (result?.data?.[0] || result?.[0] || {});
+      const data = result?.data || result || {};
       
-      // CoinGecko response structure
-      const price = data.price || data.usd || data.current_price || 0;
-      const marketCap = data.marketCap || data.market_cap || 0;
-      const volume24h = data.volume24h || data.total_volume || 0;
-      const change24h = data.change24h || data.price_change_percentage_24h || 0;
-      const high24h = data.high24h || data.high_24h || 0;
-      const low24h = data.low24h || data.low_24h || 0;
-      const supply = data.supply || data.circulating_supply || 0;
-      const updatedAt = data.lastUpdated || data.last_updated || new Date().toISOString();
+      // The server returns { success: true, data: { usd: 12345, price_btc: ..., source: "...", last_updated: "..." } }
+      let price = 0;
+      if (data.usd !== undefined) {
+        price = parseFloat(data.usd);
+      } else if (data.price !== undefined) {
+        price = parseFloat(data.price);
+      } else if (data[coinId]?.usd !== undefined) {
+        price = parseFloat(data[coinId].usd); // fallback for multi-coin map
+      }
       
-      // Check if we got valid data from CoinGecko
-      if (price > 0 || marketCap > 0) {
+      if (price > 0 && price < 100000) {
         setPriceData({
           price,
-          marketCap,
-          volume24h,
-          change24h,
-          high24h,
-          low24h,
-          supply,
-          lastUpdated: updatedAt,
+          marketCap: 0,
+          volume24h: 0,
+          change24h: 0,
+          high24h: 0,
+          low24h: 0,
+          supply: 0,
+          lastUpdated: new Date().toISOString(),
         });
-        setLastUpdated(updatedAt);
+        setLastUpdated(new Date().toISOString());
         setSource("coingecko");
         setLoading(false);
         return;
       }
     } catch (cgErr) {
-      console.warn("CoinGecko fetch failed, trying fallback:", cgErr.message);
+      console.warn("CoinGecko fetch failed:", cgErr.message);
     }
 
     // --- Try Database as the PRIMARY fallback ---

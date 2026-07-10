@@ -132,13 +132,24 @@ export function getNiceHashPriceValue(rawNhData) {
   if (typeof rawNhData === "number") return rawNhData;
   if (typeof rawNhData === "string") return parsePriceValueUtils(rawNhData);
 
-  // Extract price data
-  const nhData = rawNhData?.price || rawNhData;
-  
-  let price = 0;
-  let unit = "TH";
-  
-  if (nhData) {
+  // Handle object responses — the server API returns { fixedPrice, price, marketPrice, source, speedUnit }
+  if (typeof rawNhData === "object") {
+    // Try direct top-level fields first (server price API shape)
+    let price = parseFloat(
+      rawNhData.fixedPrice ??
+      rawNhData.price ??
+      rawNhData.marketPrice ??
+      rawNhData.amount ??
+      rawNhData.total ??
+      0
+    );
+    if (Number.isFinite(price) && price > 0) {
+      const unit = rawNhData.speedUnit || rawNhData.marketUnit || "TH";
+      return convertPriceBetweenUnits(price, unit, "TH");
+    }
+
+    // Try nested .price object
+    const nhData = rawNhData.price || rawNhData;
     price = parseFloat(
       nhData.fixedPrice ??
       nhData.standardPrice?.fast ??
@@ -148,25 +159,13 @@ export function getNiceHashPriceValue(rawNhData) {
       nhData.total ??
       0
     );
-    unit = nhData.speedUnit || nhData.unit || nhData.price_unit || "TH";
+    if (Number.isFinite(price) && price > 0) {
+      const unit = nhData.speedUnit || nhData.unit || nhData.price_unit || nhData.marketUnit || "TH";
+      return convertPriceBetweenUnits(price, unit, "TH");
+    }
   }
   
-  // Try raw data if price is still 0
-  if (price === 0) {
-    price = parseFloat(
-      rawNhData.fixedPrice ??
-      rawNhData.standardPrice?.fast ??
-      rawNhData.standardPrice ??
-      rawNhData.price ??
-      rawNhData.amount ??
-      rawNhData.total ??
-      0
-    );
-    unit = rawNhData.speedUnit || rawNhData.unit || rawNhData.price_unit || "TH";
-  }
-
-  // Normalize to TH/s for consistent comparison
-  return convertPriceBetweenUnits(price, unit, "TH");
+  return 0;
 }
 
 /**

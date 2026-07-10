@@ -474,9 +474,16 @@ export default function MiningRigRental({
   const [isCryptoRateModalOpen, setIsCryptoRateModalOpen] = useState(false);
 
   return (
-    <div className="rig-section" style={{ padding: "0", maxWidth: "100%", overflow: "hidden" }}>
+    <div className="rig-section" style={{ 
+      padding: "0 clamp(12px, 1.5vw, 24px)", 
+      width: "100%",
+      maxWidth: "none",
+      margin: "0 auto",
+      minHeight: "100vh",
+      boxSizing: 'border-box',
+    }}>
       {/* Header */}
-      <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: "12px", marginBottom: "12px" }}>
+      <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: "16px", marginBottom: "20px", paddingBottom: "16px", borderBottom: '1px solid rgba(148, 163, 184, 0.15)' }}>
         {/* Left side of header */}
         <h2 className="section-title" style={{ margin: 0, fontSize: "clamp(1rem, 2vw, 1.25rem)" }}>
           ⛏️ Mining Rig Rentals
@@ -651,8 +658,6 @@ export default function MiningRigRental({
           <button className="btn-pro secondary" onClick={() => setActiveModal(null)}>Close</button>
         </div>
       </Modal>
-
-      
     </div>
   );
 }

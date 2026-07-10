@@ -883,13 +883,12 @@ export default function MrrRigs({
       <div
         className="rig-list"
         style={{
-          marginTop: "5px",
+          marginTop: "15px",
           position: "relative",
           flexGrow: 1,
           display: "flex",
           flexDirection: "column",
           maxHeight: "auto",
-          paddingRight: "2px",
         }}
       >
         {filteredRigs.length === 0 && !loading && !error && (
@@ -901,11 +900,9 @@ export default function MrrRigs({
         <div
           className="rig-grid-container"
           style={{
-            // minHeight: '1200px',
-            // maxHeight: 'auto',
-            overflowY: "auto",
-            paddingRight: "6px",
-            // overscrollBehavior: 'contain',
+            display: "flex",
+            flexDirection: "column",
+            gap: "clamp(10px, 1vw, 16px)",
           }}
         >
           {groupedRigs.map(([algoName, rigsInGroup]) => {
@@ -913,8 +910,14 @@ export default function MrrRigs({
             return (
               <div
                 key={algoName}
-                className="algo-group-container"
-                style={{ marginBottom: "10px" }}
+                className="algo-group-card"
+                style={{
+                  background: "rgba(15,23,42,0.72)",
+                  border: "1px solid rgba(148,163,184,0.12)",
+                  borderRadius: "12px",
+                  boxShadow: "0 18px 40px rgba(0,0,0,0.20)",
+                  overflow: "hidden",
+                }}
               >
                 <div
                   className="algo-group-header"
@@ -923,28 +926,22 @@ export default function MrrRigs({
                     display: "flex",
                     justifyContent: "space-between",
                     alignItems: "center",
-                    padding: "10px 15px",
-                    background: isExpanded
-                      ? "rgba(59, 130, 246, 0.15)"
-                      : "rgba(255,255,255,0.03)",
-                    borderRadius: "6px",
+                    padding: "clamp(10px, 1vw, 14px)",
                     cursor: "pointer",
-                    border: "1px solid rgba(255,255,255,0.05)",
-                    transition: "all 0.2s ease",
                   }}
                 >
                   <div
                     style={{
                       display: "flex",
                       alignItems: "center",
-                      gap: "10px",
+                      gap: "12px",
                     }}
                   >
                     <span
                       style={{
-                        fontSize: "14px",
+                        fontSize: "clamp(13px, 1.2vw, 16px)",
                         color: isExpanded ? "#60a5fa" : "#94a3b8",
-                        fontWeight: "bold",
+                        fontWeight: 800,
                       }}
                     >
                       {getAlgoMapping(algoName).displayName}
@@ -952,10 +949,11 @@ export default function MrrRigs({
                     <span
                       style={{
                         fontSize: "10px",
-                        background: "rgba(0,0,0,0.3)",
+                        background: "rgba(2,6,23,0.45)",
+                        border: "1px solid rgba(148,163,184,0.10)",
                         padding: "2px 8px",
-                        borderRadius: "10px",
-                        opacity: 0.7,
+                        borderRadius: "999px",
+                        color: "#94a3b8",
                       }}
                     >
                       {rigsInGroup.length} Rigs
@@ -988,7 +986,7 @@ export default function MrrRigs({
                       </div>
                     )}
                   </div>
-                  <span style={{ fontSize: "12px", opacity: 0.5 }}>
+                  <span style={{ fontSize: "12px", color: "#64748b" }}>
                     {isExpanded ? "▲" : "▼"}
                   </span>
                 </div>
@@ -1000,8 +998,8 @@ export default function MrrRigs({
                       display: "grid",
                       gridTemplateColumns:
                         "repeat(auto-fill, minmax(280px, 1fr))",
-                      gap: "12px",
-                      padding: "10px 5px",
+                      gap: "clamp(8px, 1vw, 12px)",
+                      padding: "0 clamp(10px, 1vw, 14px) clamp(10px, 1vw, 14px)",
                     }}
                   >
                     {rigsInGroup.map((rig) => (

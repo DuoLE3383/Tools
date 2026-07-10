@@ -2,7 +2,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { fetchMiningStats } from "./miningStatsFetcher.js";
 import { useRentedRigs } from "../mrr/RentedRigContext.jsx";
-import MiningDutch from "./MiningDutch.jsx";
 import { useCoinPrice } from "./CoinPriceContext.jsx";
 import "./HeroMinersCard.css";
 
@@ -1012,7 +1011,6 @@ export default function HeroMinersCard({
         </div>
       )}
 
-      <MiningDutch onCall={onCall} />
     </div>
   );
 }

@@ -384,7 +384,7 @@ const MrrRigCard = ({
     if (efficiency >= 98) return "rgba(197, 34, 238, 0.3)";
     if (efficiency >= 70) return "rgba(23, 185, 131, 0.3)";
     if (efficiency >= 50) return "rgba(251, 191, 36, 0.30)";
-    if (efficiency >= 30) return "rgba(251, 36, 36, 0.3)";
+    if (efficiency >= 20) return "rgba(251, 36, 36, 0.3)";
     return "rgba(239, 68, 68, 0.30)";
   };
 
@@ -392,23 +392,24 @@ const MrrRigCard = ({
 
   // ── Styles ──
   const shellStyle = {
-    background: `radial-gradient(circle at top right, ${accent} 0%, transparent 88%)`,
-    border: `1.5px solid ${accent}`,
-    borderTop: `2px solid ${getRoiColor(effNum)}`,
-    borderRight: `3px solid ${getRoiColor(effNum)}`,
-    borderBottom: `2px solid ${getRoiColor(effNum)}`,
-    borderLeft: `1px solid ${getRoiColor(effNum)}`,
-    borderRadius: "16px",
-    padding: "8px",
-    position: "relative",
-    display: "flex",
-    flexDirection: "column",
-    gap: "6px",
-    boxShadow: "0 10px 22px rgba(0, 0, 0, 0.16)",
-    overflow: "hidden",
-    width: "300px",
-    height: "380px",
-  };
+  background: `radial-gradient(circle at top right, ${accent} 0%, transparent 88%)`,
+  border: `1.5px solid ${accent}`,
+  borderTop: `2px solid ${getRoiColor(effNum)}`,
+  borderRight: `3px solid ${getRoiColor(effNum)}`,
+  borderBottom: `2px solid ${getRoiColor(effNum)}`,
+  borderLeft: `1px solid ${getRoiColor(effNum)}`,
+  borderRadius: "16px",
+  padding: "8px",
+  paddingTop: "5px", 
+  position: "relative",
+  display: "flex",
+  flexDirection: "column",
+  gap: "6px",
+  boxShadow: "0 10px 22px rgba(0, 0, 0, 0.16)",
+  overflow: "hidden",
+  width: "300px",
+  height: "auto",
+};
 
   const asicBoostBadge = isAsicBoostAlgo ? (
     <span
