@@ -187,4 +187,44 @@ export function registerMiningStatsRoutes(app) {
       res.status(500).json({ error: err.message });
     }
   }));
+
+  // ─── K1Pool ─────────────────────────────────────────────────
+  app.get("/api/v2/mining-stats/k1pool", asyncHandler(async (req, res) => {
+    const { getK1PoolMinerStats, getK1PoolGlobal } = await import("../miners/k1pool.js");
+    const { pool, address } = req.query;
+
+    try {
+      if (address && pool) {
+        const result = await getK1PoolMinerStats(pool, address);
+        return res.json(result);
+      }
+      // If no address specified, return global pool data
+      const global = await getK1PoolGlobal();
+      res.json(global);
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }));
+
+  // ─── Kryptex ────────────────────────────────────────────────
+  app.get("/api/v2/mining-stats/kryptex", asyncHandler(async (req, res) => {
+    const { getKryptexMinerStats, getKryptexGlobalStats } = await import("../miners/kryptex.js");
+    const { coin, address } = req.query;
+
+    if (!coin) {
+      return res.status(400).json({ success: false, error: "coin query parameter is required (e.g. 'etc')" });
+    }
+
+    try {
+      if (address) {
+        const result = await getKryptexMinerStats(coin, address);
+        return res.json(result);
+      }
+      // If no address, return global pool stats
+      const global = await getKryptexGlobalStats(coin);
+      res.json(global);
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }));
 }

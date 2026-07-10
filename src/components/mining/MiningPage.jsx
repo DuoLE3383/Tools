@@ -19,6 +19,8 @@ import {
   WhatToMineCard,
   HashrateNoCard,
   MiningDutchPoolCard,
+  K1PoolCard,
+  KryptexCard,
 } from "./pools/index.js";
 
 const HEARTBEAT_INTERVAL_MS = 120000;
@@ -667,6 +669,18 @@ function MiningWorkspaceShell({
             <MinerstatCard />
             <WhatToMineCard />
             <HashrateNoCard />
+          </div>
+          {/* Address Lookup Cards */}
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))",
+            gap: "clamp(10px, 1vw, 16px)",
+            alignItems: "start",
+            width: "100%",
+            marginTop: "clamp(10px, 1vw, 16px)",
+          }}>
+            <K1PoolCard onCall={onCall} />
+            <KryptexCard onCall={onCall} />
           </div>
         </section>
       </div>
