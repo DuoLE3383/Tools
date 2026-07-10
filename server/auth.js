@@ -39,6 +39,7 @@ const DEFAULT_USER_ROLE = ROLES.USER;
 const PUBLIC_API_PATHS = [
   '/api/auth/login',
   '/api/v2/time',
+  '/api/auth/refresh',
   '/api/v2/prices/coingecko',
   '/api/v2/prices/ws',
   '/api/v2/mining-stats',
@@ -427,6 +428,43 @@ router.post('/login', (req, res, next) => { next(); }, async (req, res) => {
   } catch (error) {
     console.error('❌ Login Error:', error);
     res.status(500).json({ success: false, error: 'Internal server error during login.' });
+  }
+});
+
+router.post('/refresh', async (req, res) => {
+  const authHeader = req.headers?.authorization;
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null;
+
+  if (!token) {
+    return res.status(401).json({ success: false, error: 'Refresh token is required.' });
+  }
+
+  try {
+    // 1. Decode the token, ignoring expiration to check its contents.
+    const decoded = jwt.verify(token, JWT_SECRET, { ignoreExpiration: true });
+    if (!decoded?.username || !decoded?.sid || !decoded?.jti) {
+      return res.status(403).json({ success: false, error: 'Invalid token format.' });
+    }
+
+    // 2. Perform all security checks from your existing verifyToken logic, except for expiration.
+    const currentEpoch = await getAuthEpoch();
+    if (Number(decoded.epoch) !== Number(currentEpoch)) {
+      return res.status(403).json({ success: false, error: 'Token epoch is invalid.' });
+    }
+
+    const session = await getActiveSession(decoded.username);
+    if (!session || session.session_id !== decoded.sid || session.token_jti !== decoded.jti) {
+      return res.status(403).json({ success: false, error: 'Session is invalid or has been revoked.' });
+    }
+
+    // 3. If all checks pass, issue a new token. This rotates the session and invalidates the old token.
+    const newToken = await issueTokenForUser(decoded.username, req);
+    console.log(`[auth] Refreshed token for user: ${decoded.username}`);
+    res.json({ success: true, token: newToken });
+
+  } catch (error) {
+    // This will catch malformed tokens or other verification errors.
+    res.status(403).json({ success: false, error: 'Invalid refresh token.' });
   }
 });
 

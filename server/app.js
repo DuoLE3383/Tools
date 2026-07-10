@@ -1,10 +1,11 @@
 import express from 'express';
+import cors from 'cors';
 import { SyncManager } from '../SyncManager.js'; // Assuming SyncManager is in the root
 import { getDb } from './db.js'; // db is now simpler
 import { initNhConfigs, nhConfigs, getNiceHashApp, resolveNhClient } from './nh.js';
 import { initMrrConfigs, mrrConfigs, initNonces, syncMrrClock, mrrApiCall } from './mrr.js';
 import { registerRoutes } from './routes.js';
-import { corsMiddleware, logRequestMiddleware } from './utils.js';
+import { logRequestMiddleware } from './utils.js';
 import { runRentalMonitor } from './monitor.js';
 import { startMiningOpportunityScanner } from './miningOpportunityNotifier.js'; 
 import authRoutes, { validateAuthConfig } from './auth.js';
@@ -13,7 +14,31 @@ export function createApp({ distPath }) {
   const app = express();
   app.set('etag', false);
   app.use(express.json({ limit: '2mb' }));
-  app.use(corsMiddleware);
+
+  // More robust CORS configuration based on your suggestions
+  const allowedOrigins = [
+    'https://huyenbao.com',
+    'https://www.huyenbao.com',
+    'https://api.huyenbao.com',
+    'http://localhost:1757', // Vite dev server from vite.config.js
+    'http://localhost:3003', // Backend itself for self-requests
+  ];
+
+  app.use(cors({
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps, curl, or server-to-server)
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        // Block other origins
+        callback(new Error('Not allowed by CORS policy.'));
+      }
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Session-Id'],
+  }));
+
   app.use(logRequestMiddleware);
 
   // Authentication routes

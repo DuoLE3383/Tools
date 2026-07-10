@@ -2,7 +2,6 @@ import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import { createServer } from 'net';
-import fs from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -12,25 +11,14 @@ console.log('📁 Working directory:', __dirname);
 
 // Configuration
 const CONFIG = {
-  heartbeatInterval: 5000,
-  heartbeatTimeout: 15000,
-  maxRestarts: 5,
-  restartDelay: 5000,
   port: 3003,
+  frontendPort: 1757,
   maxPortAttempts: 10,
-  startupTimeout: 45000,
 };
 
 let processes = [];
 let backendProcess = null;
 let frontendProcess = null;
-let heartbeatTimer = null;
-let lastHeartbeat = Date.now();
-let restartCount = 0;
-let isRestarting = false;
-let backendReady = false;
-let currentPort = CONFIG.port;
-let startupTimer = null;
 let isShuttingDown = false;
 
 // ---- Utility Functions ----
@@ -114,14 +102,15 @@ function cleanup() {
   if (isShuttingDown) return;
   isShuttingDown = true;
   console.log('\n🛑 Shutting down...');
-  if (heartbeatTimer) clearInterval(heartbeatTimer);
-  if (startupTimer) clearTimeout(startupTimer);
 
+  // Kill all processes in reverse order
   [...processes].reverse().forEach(p => {
     try {
       if (p && !p.killed) {
         p.kill('SIGTERM');
-        setTimeout(() => { if (p && !p.killed) p.kill('SIGKILL'); }, 2000);
+        setTimeout(() => { 
+          if (p && !p.killed) p.kill('SIGKILL'); 
+        }, 2000);
       }
     } catch (e) { /* ignore */ }
   });
@@ -133,62 +122,20 @@ process.on('SIGINT', cleanup);
 process.on('SIGTERM', cleanup);
 process.on('uncaughtException', (err) => {
   console.error('Uncaught Exception:', err.message);
+  // Don't exit on uncaught exceptions
 });
-
-// ---- Heartbeat Monitor ----
-
-function startHeartbeatMonitor() {
-  if (heartbeatTimer) clearInterval(heartbeatTimer);
-  heartbeatTimer = setInterval(() => {
-    const timeSinceHeartbeat = Date.now() - lastHeartbeat;
-    if (backendReady && timeSinceHeartbeat > CONFIG.heartbeatTimeout) {
-      console.error(`❌ Backend frozen! No heartbeat for ${timeSinceHeartbeat}ms`);
-      restartBackend();
-    }
-  }, CONFIG.heartbeatInterval);
-}
-
-// ---- Backend Restart ----
-
-async function restartBackend() {
-  if (isRestarting || isShuttingDown) return;
-  isRestarting = true;
-
-  restartCount++;
-  if (restartCount > CONFIG.maxRestarts) {
-    console.error(`❌ Backend crashed ${restartCount} times. Giving up.`);
-    cleanup();
-    return;
-  }
-
-  console.log(`🔄 Restarting backend (attempt ${restartCount}/${CONFIG.maxRestarts})...`);
-  if (backendProcess) {
-    try {
-      backendProcess.kill('SIGTERM');
-      setTimeout(() => {
-        if (backendProcess && !backendProcess.killed) backendProcess.kill('SIGKILL');
-      }, 1000);
-    } catch (e) { /* ignore */ }
-    backendProcess = null;
-  }
-  backendReady = false;
-  await killProcessOnPort(currentPort);
-
-  setTimeout(async () => {
-    console.log(`📡 Starting backend on port ${currentPort}...`);
-    await startBackend();
-    isRestarting = false;
-  }, CONFIG.restartDelay);
-}
 
 // ---- Backend Start ----
 
 async function startBackend() {
+  let currentPort = CONFIG.port;
+
   // Check port availability
   let portInUse = await isPortInUse(currentPort);
   if (portInUse) {
     console.log(`⚠️ Port ${currentPort} is in use. Attempting to free it...`);
     await killProcessOnPort(currentPort);
+    
     const stillInUse = await isPortInUse(currentPort);
     if (stillInUse) {
       console.log(`❌ Port ${currentPort} still in use. Looking for alternative...`);
@@ -198,9 +145,8 @@ async function startBackend() {
         currentPort = newPort;
         process.env.PORT = currentPort.toString();
       } else {
-        console.error(`❌ No available ports found.`);
-        setTimeout(() => restartBackend(), 5000);
-        return;
+        console.error(`❌ No available ports found. Exiting.`);
+        process.exit(1);
       }
     } else {
       console.log(`✅ Port ${currentPort} is now available.`);
@@ -213,7 +159,7 @@ async function startBackend() {
     NODE_ENV: process.env.NODE_ENV || 'development'
   };
 
-  if (startupTimer) clearTimeout(startupTimer);
+  console.log(`📡 Starting backend on port ${currentPort}...`);
 
   backendProcess = spawn('node', ['--unhandled-rejections=warn', 'index.js'], {
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -224,34 +170,21 @@ async function startBackend() {
   });
   processes.push(backendProcess);
 
-  startupTimer = setTimeout(() => {
-    if (!backendReady && !isShuttingDown) {
-      console.error(`❌ Backend startup timeout (${CONFIG.startupTimeout / 1000}s). Restarting...`);
-      if (backendProcess) {
-        try { backendProcess.kill(); } catch (e) { /* ignore */ }
-      }
-      restartBackend();
-    }
-  }, CONFIG.startupTimeout);
-
   backendProcess.stdout.on('data', (data) => {
     const lines = data.toString().split('\n').filter(line => line.trim());
     for (const line of lines) {
       const trimmed = line.trim();
       if (trimmed) console.log('[📡]', trimmed);
-      lastHeartbeat = Date.now();
 
+      // Check if backend is ready
       if (trimmed.includes(`Listening on: http://localhost:${currentPort}`) ||
           trimmed.includes(`Listening on: http://127.0.0.1:${currentPort}`)) {
-        clearTimeout(startupTimer);
-        startupTimer = null;
-        backendReady = true;
-        restartCount = 0;
         console.log(`✅ Backend ready on port ${currentPort}!`);
-        startHeartbeatMonitor();
+        
+        // Start frontend after backend is ready
         if (!frontendProcess && !isShuttingDown) {
           console.log('🎨 Starting frontend...');
-          startFrontend();
+          startFrontend(currentPort);
         }
       }
     }
@@ -264,46 +197,39 @@ async function startBackend() {
         !error.includes('UV_HANDLE_CLOSING') && !error.includes('WebSocket server initialized')) {
       console.error('[Backend Error]', error);
     }
-    if (error && error.includes('EADDRINUSE')) {
-      console.error(`❌ Port ${currentPort} already in use!`);
-      killProcessOnPort(currentPort).then(() => {
-        if (!isShuttingDown) setTimeout(() => restartBackend(), 2000);
-      });
-    }
   });
 
   backendProcess.on('error', (err) => {
     console.error('❌ Backend process error:', err.message);
-    if (!isShuttingDown && backendReady) restartBackend();
   });
 
   backendProcess.on('close', (code) => {
-    if (startupTimer) clearTimeout(startupTimer);
     if (isShuttingDown) return;
-    if (code !== 0) {
-      console.error(`❌ Backend exited with code ${code}`);
-      if (backendReady) setTimeout(() => restartBackend(), 2000);
-      else if (!isShuttingDown) setTimeout(() => restartBackend(), 3000);
-    } else {
-      console.log('✅ Backend exited cleanly');
-      backendReady = false;
-    }
+    console.log(`❌ Backend exited with code ${code}`);
+    // Clean exit - no auto-restart
     backendProcess = null;
+    // Exit the whole process if backend dies
+    if (!isShuttingDown) {
+      console.log('🛑 Backend stopped. Exiting...');
+      cleanup();
+    }
   });
 
   backendProcess.on('spawn', () => {
     console.log(`✅ Backend process spawned with PID: ${backendProcess.pid}`);
   });
+
+  return currentPort;
 }
 
 // ---- Frontend Start ----
 
-function startFrontend() {
+function startFrontend(backendPort) {
   const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
   const env = {
     ...process.env,
-    VITE_API_PORT: currentPort.toString(),
-    VITE_API_URL: `http://localhost:${currentPort}`
+    VITE_API_PORT: backendPort.toString(),
+    VITE_API_URL: `http://localhost:${backendPort}`
   };
 
   if (frontendProcess) {
@@ -312,7 +238,9 @@ function startFrontend() {
     processes = processes.filter(p => p !== frontendProcess);
   }
 
-  frontendProcess = spawn(npmCmd, ['run', 'dev', '--', '--port', '1757'], {
+  console.log(`🎨 Starting frontend on port ${CONFIG.frontendPort}...`);
+
+  frontendProcess = spawn(npmCmd, ['run', 'dev', '--', '--port', CONFIG.frontendPort.toString()], {
     stdio: 'inherit',
     shell: true,
     env,
@@ -320,35 +248,21 @@ function startFrontend() {
   });
   processes.push(frontendProcess);
 
-  frontendProcess.on('error', (err) => console.error('❌ Frontend error:', err.message));
+  frontendProcess.on('error', (err) => {
+    console.error('❌ Frontend error:', err.message);
+  });
+
   frontendProcess.on('close', (code) => {
     if (code !== 0 && code !== null && !isShuttingDown) {
       console.error(`❌ Frontend exited with code ${code}`);
-      if (backendReady && !frontendProcess && !isShuttingDown) {
-        setTimeout(() => {
-          if (backendReady && !frontendProcess && !isShuttingDown) {
-            console.log('🔄 Restarting frontend...');
-            startFrontend();
-          }
-        }, 3000);
+      // Exit the whole process if frontend dies
+      if (!isShuttingDown) {
+        console.log('🛑 Frontend stopped. Exiting...');
+        cleanup();
       }
     }
     frontendProcess = null;
   });
-}
-
-// ---- Port Monitor ----
-
-function startPortMonitor() {
-  setInterval(async () => {
-    if (backendReady && backendProcess && !isShuttingDown) {
-      const inUse = await isPortInUse(currentPort);
-      if (!inUse) {
-        console.error(`❌ Port ${currentPort} is no longer in use! Backend may have crashed.`);
-        if (!isRestarting) restartBackend();
-      }
-    }
-  }, 10000);
 }
 
 // ---- Start Everything ----
@@ -356,11 +270,12 @@ function startPortMonitor() {
 console.log('📡 Starting application...');
 console.log(`🔍 Checking port ${CONFIG.port}...`);
 console.log('💡 Press Ctrl+C to stop all services.');
-console.log(`💓 Heartbeat monitoring enabled (check every ${CONFIG.heartbeatInterval / 1000}s, timeout after ${CONFIG.heartbeatTimeout / 1000}s)`);
+console.log('ℹ️  No auto-restart or monitoring enabled.');
 
 (async () => {
-  await startBackend();
-  startPortMonitor();
+  const backendPort = await startBackend();
+  // The frontend will start when backend is ready
+  console.log(`✅ Application started with backend on port ${backendPort}`);
 })();
 
 process.on('exit', cleanup);

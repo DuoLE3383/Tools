@@ -1,6 +1,6 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
-import { cloudflare } from '@cloudflare/vite-plugin'
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import { cloudflare } from '@cloudflare/vite-plugin';
 
 export default defineConfig(({ command }) => ({
   plugins: [react(), command === 'build' ? cloudflare() : undefined].filter(Boolean),
@@ -8,7 +8,22 @@ export default defineConfig(({ command }) => ({
     port: 1757,
     host: true,
     watch: { usePolling: true },
-    allowedHosts: ['localhost', 'huyenbao.com', 'api.huyenbao.com', 'api.herominers.com', 'api.mining-dutch.nl', 'api.nicehash.com', 'api.miningrigrentals.com', 'api2.miningrigrentals.com', 'www.huyenbao.com', 'www.herominers.com', 'www.mining-dutch.nl', 'www.nicehash.com', 'www.miningrigrentals.com', 'www2.miningrigrentals.com'],
+    allowedHosts: [
+      'localhost', 
+      'huyenbao.com', 
+      'api.huyenbao.com', 
+      'api.herominers.com', 
+      'api.mining-dutch.nl', 
+      'api.nicehash.com', 
+      'api.miningrigrentals.com', 
+      'api2.miningrigrentals.com', 
+      'www.huyenbao.com', 
+      'www.herominers.com', 
+      'www.mining-dutch.nl', 
+      'www.nicehash.com', 
+      'www.miningrigrentals.com', 
+      'www2.miningrigrentals.com'
+    ],
     proxy: {
       '/api/hm': {
         target: 'https://herominers.com',
@@ -42,11 +57,19 @@ export default defineConfig(({ command }) => ({
           });
         }
       },
+      // ✅ WebSocket proxy for development
+      '/ws': {
+        target: 'ws://localhost:3003',
+        ws: true,
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/ws/, '/api/v2/prices/ws'),
+      },
       '/api/v2/prices/ws': {
         target: 'ws://localhost:3003',
         ws: true,
         changeOrigin: true,
       },
+      // ✅ Main API proxy
       '/api': {
         target: 'http://localhost:3003',
         changeOrigin: true,
@@ -55,7 +78,10 @@ export default defineConfig(({ command }) => ({
             console.error('[API Proxy] Error:', err.message);
           });
           proxy.on('proxyReq', (proxyReq, req, res) => {
-            console.log('[API Proxy] ->', req.url);
+            console.log('[API Proxy] ->', req.method, req.url);
+          });
+          proxy.on('proxyRes', (proxyRes, req, res) => {
+            console.log('[API Proxy] <-', proxyRes.statusCode, req.url);
           });
           proxy.on('upgrade', (proxyReq, req, socket, head) => {
             console.log('[WS Proxy] WebSocket upgrade');
@@ -67,10 +93,8 @@ export default defineConfig(({ command }) => ({
   build: {
     outDir: 'dist',
     sourcemap: true,
-    // ✅ Option 2: Remove manualChunks entirely and let Vite handle it
     rollupOptions: {
       output: {
-        // Keep it simple - Vite will auto-split
         assetFileNames: 'assets/[name].[hash].[ext]',
         chunkFileNames: 'assets/[name].[hash].js',
         entryFileNames: 'assets/[name].[hash].js',
@@ -78,4 +102,4 @@ export default defineConfig(({ command }) => ({
     },
     chunkSizeWarningLimit: 1000,
   },
-}))
+}));

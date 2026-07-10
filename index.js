@@ -3,7 +3,6 @@
 import "dotenv/config";
 import express from "express";
 import http from "http";
-import cors from "cors";
 import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
@@ -81,9 +80,17 @@ const PORT = process.env.PORT;
 // ============================================================
 // MIDDLEWARE
 // ============================================================
-app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+app.use((req, res, next) => {
+  res.setHeader(
+    'Content-Security-Policy',
+    // This policy allows scripts and connections needed by your app and Cloudflare
+    "default-src 'self'; script-src 'self' 'unsafe-inline' https://huyenbao.com https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline'; connect-src 'self' https://huyenbao.com http://localhost:3003; img-src 'self' data:; object-src 'none'; frame-ancestors 'none';"
+  );
+  next();
+});
 
 // ============================================================
 // HEALTH CHECK ROUTES (BEFORE ANYTHING ELSE)

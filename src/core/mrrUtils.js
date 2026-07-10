@@ -412,7 +412,7 @@ export function getRentalEfficiency(rental) {
 export const getClientBadgeStyle = (client) => {
   const c = String(client || "").toUpperCase();
   const styles = {
-    BT: { background: "#25eb3f", color: "#fff" },
+    BT: { background: "#36d472b0", color: "#fff" },
     SL: { background: "#d97706", color: "#fff" },
     LN: { background: "#4708f3", color: "#fff" },
     VN: { background: "#f31890", color: "#fff" },

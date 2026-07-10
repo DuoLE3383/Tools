@@ -26,16 +26,6 @@ export function maskSensitive(value) {
   );
 }
 
-export function corsMiddleware(req, res, next) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept');
-  res.setHeader('Access-Control-Expose-Headers', 'X-MRR-Client, Retry-After, X-RateLimit-Limit');
-
-  if (req.method === 'OPTIONS') return res.sendStatus(204);
-  next();
-}
-
 export function logRequestMiddleware(req, res, next) {
   const start = Date.now();
   const clientTag = String(req.query.client || req.body?.client || 'system').toUpperCase();

@@ -1,7 +1,7 @@
-// core/apiClient.js - FIXED
+// core/apiClient.js - COMPLETE FIX
 
-const API_BASE = '/api'; // ✅ Use relative path for proxy
-const API_URL = import.meta.env.VITE_API_URL || '/api';
+// Use relative path for development proxy, absolute for production
+const API_BASE = import.meta.env.VITE_API_URL || '/api';
 const WS_URL = import.meta.env.VITE_WS_URL || '/api/v2/prices/ws';
 
 export function createApiClient({ onAuthError, onState }) {
@@ -12,20 +12,32 @@ export function createApiClient({ onAuthError, onState }) {
 
     // ✅ Skip if not authenticated and path requires auth
     const token = localStorage.getItem('token');
-    if (!token && !path.includes('/auth/')) {
+    if (!token && !path.includes('/auth/') && !path.includes('/public/')) {
       console.warn('[API] No auth token, skipping call');
       return { success: false, error: 'Not authenticated' };
     }
 
+    const isLoginPath = path.includes('/auth/login');
+
     const headers = {
       'Content-Type': 'application/json',
       ...fetchOptions.headers,
-      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      ...(token && !isLoginPath ? { 'Authorization': `Bearer ${token}` } : {}),
     };
 
-    // Build query string
-    let finalPath = path.startsWith('/api') ? path : `/api${path.startsWith('/') ? path : `/${path}`}`;
-    
+    // ✅ Build the path correctly
+    let apiPath = path;
+    if (!apiPath.startsWith('/api')) {
+      apiPath = `/api${apiPath.startsWith('/') ? apiPath : `/${apiPath}`}`;
+    }
+
+    // ✅ Use environment variable for base URL (if set)
+    // In development with proxy, this will be empty -> relative URLs
+    // In production, we force a relative path to ensure requests go to the same domain.
+    const baseUrl = import.meta.env.PROD ? '' : (import.meta.env.VITE_API_URL || '');
+    let finalUrl = baseUrl ? `${baseUrl}${apiPath}` : apiPath;
+
+    // ✅ Add query parameters
     const enrichedQuery = { ...query };
     if (enrichedQuery && Object.keys(enrichedQuery).length > 0) {
       const params = new URLSearchParams();
@@ -33,7 +45,14 @@ export function createApiClient({ onAuthError, onState }) {
         if (value !== undefined && value !== null) params.append(key, String(value));
       });
       const qs = params.toString();
-      if (qs) finalPath += (finalPath.includes('?') ? '&' : '?') + qs;
+      if (qs) {
+        finalUrl += (finalUrl.includes('?') ? '&' : '?') + qs;
+      }
+    }
+
+    // ✅ Log for debugging
+    if (import.meta.env.DEV) {
+      console.log(`[API] ${method} ${finalUrl}`);
     }
 
     let body = fetchOptions.body;
@@ -44,7 +63,7 @@ export function createApiClient({ onAuthError, onState }) {
     if (onState) {
       onState({
         type: 'request-start',
-        payload: { method, path: finalPath },
+        payload: { method, path: finalUrl },
       });
     }
 
@@ -52,7 +71,7 @@ export function createApiClient({ onAuthError, onState }) {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-      const response = await fetch(finalPath, {
+      const response = await fetch(finalUrl, {
         ...fetchOptions,
         method,
         headers,
@@ -81,7 +100,7 @@ export function createApiClient({ onAuthError, onState }) {
           type: 'request-finish',
           payload: {
             method,
-            path: finalPath,
+            path: finalUrl,
             status: `${response.status} ${response.statusText}`,
             durationMs,
           },
@@ -90,6 +109,9 @@ export function createApiClient({ onAuthError, onState }) {
 
       // ✅ Handle authentication errors
       if (response.status === 401 || response.status === 403) {
+        // Clear invalid token
+        localStorage.removeItem('token');
+        localStorage.removeItem('refreshToken');
         if (onAuthError) onAuthError();
         throw new Error('Unauthorized');
       }
@@ -119,10 +141,20 @@ export function createApiClient({ onAuthError, onState }) {
         errorMsg = 'Request timeout (30s)';
       }
 
+      // ✅ Don't show modal for auth errors (they're handled above)
+      const shouldShowModal = options.showModal !== false && 
+                            !response?.status === 401 && 
+                            !response?.status === 403;
+
       if (onState) {
         onState({
           type: 'request-error',
-          payload: { errorMsg, data: null, status: 0, showModal: options.showModal },
+          payload: { 
+            errorMsg, 
+            data: null, 
+            status: response?.status || 0, 
+            showModal: shouldShowModal 
+          },
         });
         onState({
           type: 'request-failed',
