@@ -435,56 +435,56 @@ async function startBackend() {
   });
 }
 
-// function startFrontend() {
-//   const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+function startFrontend() {
+  const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
-//   // Pass the port to frontend
-//   const env = {
-//     ...process.env,
-//     VITE_API_PORT: currentPort.toString(),
-//     VITE_API_URL: `http://localhost:${currentPort}`
-//   };
+  // Pass the port to frontend
+  const env = {
+    ...process.env,
+    VITE_API_PORT: currentPort.toString(),
+    VITE_API_URL: `http://localhost:${currentPort}`
+  };
 
-//   // Kill any existing frontend
-//   if (frontendProcess) {
-//     try {
-//       frontendProcess.kill();
-//     } catch (e) { }
-//     frontendProcess = null;
-//   }
+  // Kill any existing frontend
+  if (frontendProcess) {
+    try {
+      frontendProcess.kill();
+    } catch (e) { }
+    frontendProcess = null;
+  }
 
-//   // Remove any existing frontend from processes list
-//   processes = processes.filter(p => p !== frontendProcess);
+  // Remove any existing frontend from processes list
+  processes = processes.filter(p => p !== frontendProcess);
 
-//   frontendProcess = spawn(npmCmd, ['run', 'dev', '--', '--port', '1757'], {
-//     stdio: 'inherit',
-//     shell: true,
-//     env: env,
-//     windowsHide: true
-//   });
+  frontendProcess = spawn(npmCmd, ['run', 'dev', '--', '--port', '1757'], {
+    stdio: 'inherit',
+    shell: true,
+    env: env,
+    windowsHide: true
+  });
 
-//   processes.push(frontendProcess);
+  processes.push(frontendProcess);
 
-//   frontendProcess.on('error', (err) => {
-//     console.error('❌ Frontend error:', err.message);
-//   });
+  frontendProcess.on('error', (err) => {
+    console.error('❌ Frontend error:', err.message);
+  });
 
-//   frontendProcess.on('close', (code) => {
-//     if (code !== 0 && code !== null && !isShuttingDown) {
-//       console.error(`❌ Frontend exited with code ${code}`);
-//       // Try to restart frontend if backend is still running
-//       if (backendReady && !isShuttingDown) {
-//         setTimeout(() => {
-//           if (backendReady && !frontendProcess && !isShuttingDown) {
-//             console.log('🔄 Restarting frontend...');
-//             startFrontend();
-//           }
-//         }, 3000);
-//       }
-//     }
-//     frontendProcess = null;
-//   });
-// }
+  frontendProcess.on('close', (code) => {
+    if (code !== 0 && code !== null && !isShuttingDown) {
+      console.error(`❌ Frontend exited with code ${code}`);
+      // Try to restart frontend if backend is still running
+      if (backendReady && !isShuttingDown) {
+        setTimeout(() => {
+          if (backendReady && !frontendProcess && !isShuttingDown) {
+            console.log('🔄 Restarting frontend...');
+            startFrontend();
+          }
+        }, 3000);
+      }
+    }
+    frontendProcess = null;
+  });
+}
 
 // Add periodic port check
 function startPortMonitor() {

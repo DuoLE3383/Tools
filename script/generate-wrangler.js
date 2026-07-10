@@ -8,7 +8,10 @@ dotenv.config({ path: path.join(projectRoot, '.env') })
 const templatePath = path.join(projectRoot, 'wrangler.toml')
 const outputPath = path.join(projectRoot, 'wrangler.generated.toml')
 
-const template = fs.readFileSync(templatePath, 'utf8')
+let template = fs.readFileSync(templatePath, 'utf8')
+
+// Remove the [assets] block to prevent conflicts with the reverse-proxy worker setup.
+template = template.replace(/\[assets\]\s*directory\s*=\s*".*?"\s*\n?/, '');
 
 const vars = {
   NICEHASH_API_KEY: process.env.NICEHASH_API_KEY,
