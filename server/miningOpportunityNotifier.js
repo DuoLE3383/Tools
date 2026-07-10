@@ -233,8 +233,10 @@ function calculateProfitability(poolBtc, nhPrice, coinPrices = null) {
     result.spreadPct = spread;
     result.profitBtc = poolBtc - nhPrice;
     if (coinPrices?.usd) result.profitUsd = result.profitBtc * coinPrices.usd;
-    if (spread > CONFIG.SPREAD_THRESHOLD_PCT) { result.status = "profitable"; result.recommendation = "✅ Mine on pool, sell on NiceHash"; }
-    else if (spread < -CONFIG.SPREAD_THRESHOLD_PCT) { result.status = "loss"; result.recommendation = "❌ Buy on NiceHash instead"; }
+    // spread > 0: pool revenue exceeds NH cost → buy cheap NH hashrate, mine pool
+    if (spread > CONFIG.SPREAD_THRESHOLD_PCT) { result.status = "profitable"; result.recommendation = "✅ Buy hashrate on NiceHash, mine on pool"; }
+    // spread < 0: NH pays more than pool → mine pool, sell hashrate on NH
+    else if (spread < -CONFIG.SPREAD_THRESHOLD_PCT) { result.status = "profitable"; result.recommendation = "✅ Mine on pool, sell hashrate on NiceHash"; }
     else { result.status = "neutral"; result.recommendation = "➖ Break-even"; }
   }
   return result;
@@ -267,7 +269,9 @@ async function sendOpportunityAlert(opp) {
     `<b>Miners:</b> ${opp.poolMiners}\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
     `<b>${opp.recommendation || ""}</b>\n` +
-    `━━━━━━━━━━━━━━━━━━\n<i>Updated every 15 min</i>`;
+    `━━━━━━━━━━━━━━━━━━\n\n<i>Pool revenue</i> = value mined from pool with this hashrate\n` +
+    `<i>NH/MRR cost</i> = price to get same hashrate on marketplace\n` +
+    `\n<i>Updated every 15 min</i>`;
   await sendMineTelegram(msg);
 }
 

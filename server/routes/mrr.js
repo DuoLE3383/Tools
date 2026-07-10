@@ -14,7 +14,7 @@ export function registerMrrRoutes(app) {
     res.json({ success: true, ...result });
   }));
 
-  // ─── MRR Market Proxy (public API, avoids CORS) ─────────────
+  // ─── MRR Market Proxy (public APIs, avoids CORS) ────────────
   app.get("/api/v2/mrr/market/algos/:algo", asyncHandler(async (req, res) => {
     const { algo } = req.params;
     const url = `https://www.miningrigrentals.com/api/v2/market/algos/${algo}`;
@@ -22,6 +22,25 @@ export function registerMrrRoutes(app) {
       const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
       const data = await response.json();
       res.json(data);
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }));
+
+  // ─── MRR Public Info/Algos (no auth needed) ─────────────────
+  // Provides market rental prices without requiring API credentials
+  app.get("/api/v2/mrr/info/algos", asyncHandler(async (req, res) => {
+    try {
+      const response = await fetch("https://www.miningrigrentals.com/api/v2/info/algos", {
+        signal: AbortSignal.timeout(8000)
+      });
+      const data = await response.json();
+      if (data?.success && data?.data) {
+        const items = Array.isArray(data.data) ? data.data : data.data;
+        res.json({ success: true, data: items, source: "public" });
+      } else {
+        res.status(502).json({ success: false, error: "MRR public API returned unexpected data" });
+      }
     } catch (err) {
       res.status(500).json({ success: false, error: err.message });
     }

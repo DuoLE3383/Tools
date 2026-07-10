@@ -56,7 +56,7 @@ try {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const distPath = path.join(__dirname, "dist", "client");
+const distPath = path.join(__dirname, "dist");
 
 const DATA_DIR = path.join(__dirname, "data");
 const STATS_DB_PATH = path.join(DATA_DIR, "stats.db");
@@ -104,7 +104,7 @@ app.get("/ping", (req, res) => {
   res.send("pong");
 });
 
-app.get("/", (req, res) => {
+app.get("/api/status", (req, res) => {
   res.json({
     service: 'NiceHash API Toolbox',
     status: 'running',
