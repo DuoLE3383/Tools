@@ -75,12 +75,17 @@ export function registerCoinGeckoRoutes(app) {
       const ids = idsParam.split(",").map((s) => s.trim()).filter(Boolean).join(",");
 
       try {
-        const data = await getCachedCoinPrices(ids); // Now uses the robust fetcher
+        const data = await getCachedCoinPrices(ids);
         const requestedIds = ids.split(',');
 
         // If a single ID was requested, return just that coin's data for compatibility with the modal
-        if (requestedIds.length === 1 && data[requestedIds[0]]) {
-          return res.json({ success: true, data: data[requestedIds[0]], source: "db_cache" });
+        if (requestedIds.length === 1) {
+          const coinData = data[requestedIds[0]];
+          if (coinData && coinData.usd !== undefined && coinData.usd > 0) {
+            return res.json({ success: true, data: coinData, source: "db_cache" });
+          }
+          // Coin not found in DB — return error so the frontend knows to try fallback
+          return res.status(404).json({ success: false, error: `Price not found for ${requestedIds[0]}` });
         }
 
         res.json({ success: true, data, source: "db_cache" });

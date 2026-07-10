@@ -3,6 +3,7 @@
 
 import DashboardHeader from "../Dashboard/DashboardHeader.jsx";
 import HeroMinersCard from "./HeroMinersCard.jsx";
+import HeroMinersLookup from "./HeroMinersLookup.jsx";
 import MiningCoin, { HeaderCell, BodyCell } from "./MiningCoin.jsx";
 import { RentedRigProvider } from "../mrr/RentedRigContext.jsx";
 import {
@@ -173,15 +174,18 @@ function MiningRouteHero({ onCall }) {
           )}
         </div>
 
-        <div style={{ overflowX: "auto", maxHeight: "280px", overflowY: "auto" }}>
+        <div style={{ overflowX: "auto", maxHeight: "320px", overflowY: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "clamp(9px, 0.7vw, 11px)" }}>
             <thead>
               <tr style={{ color: "#64748b", borderBottom: "1px solid rgba(148,163,184,0.08)" }}>
                 <th style={{ padding: "4px 6px", textAlign: "left", fontWeight: 600 }}>Algo</th>
-                <th style={{ padding: "4px 6px", textAlign: "right", fontWeight: 600 }}>Pool</th>
+                <th style={{ padding: "4px 6px", textAlign: "right", fontWeight: 600 }}>MD</th>
+                <th style={{ padding: "4px 6px", textAlign: "right", fontWeight: 600 }}>MS</th>
+                <th style={{ padding: "4px 6px", textAlign: "right", fontWeight: 600 }}>WTM</th>
+                <th style={{ padding: "4px 6px", textAlign: "right", fontWeight: 600 }}>HN</th>
                 <th style={{ padding: "4px 6px", textAlign: "right", fontWeight: 600 }}>NH</th>
-                <th style={{ padding: "4px 6px", textAlign: "right", fontWeight: 600 }}>Spread</th>
-                <th style={{ padding: "4px 6px", textAlign: "right", fontWeight: 600 }}>Miners</th>
+                <th style={{ padding: "4px 6px", textAlign: "right", fontWeight: 600 }}>Sprd</th>
+                <th style={{ padding: "4px 6px", textAlign: "right", fontWeight: 600 }}>Min</th>
                 <th style={{ padding: "4px 6px", textAlign: "left", fontWeight: 600 }}>Coins</th>
               </tr>
             </thead>
@@ -192,14 +196,23 @@ function MiningRouteHero({ onCall }) {
                     {row.label}
                     <span style={{ color: "#64748b", fontSize: "8px", marginLeft: "4px" }}>{row.nicehashAlgo}</span>
                   </td>
-                  <td style={{ padding: "3px 6px", textAlign: "right", color: (row.miningDutchBtcPerDay || 0) > 0 ? "#34d399" : "#64748b" }}>
+                  <td style={{ padding: "3px 6px", textAlign: "right", fontWeight: 700, color: (row.miningDutchBtcPerDay || 0) > 0 ? "#34d399" : "#64748b" }}>
                     {btcValue(row.miningDutchBtcPerDay)}
                   </td>
-                  <td style={{ padding: "3px 6px", textAlign: "right", color: "#60a5fa" }}>
+                  <td style={{ padding: "3px 6px", textAlign: "right", fontWeight: 700, color: (row.minerstatBtcPerDay || 0) > 0 ? "#f472b6" : "#64748b" }}>
+                    {btcValue(row.minerstatBtcPerDay)}
+                  </td>
+                  <td style={{ padding: "3px 6px", textAlign: "right", fontWeight: 700, color: (row.wtmBtcPerDay || 0) > 0 ? "#38bdf8" : "#64748b" }}>
+                    {btcValue(row.wtmBtcPerDay)}
+                  </td>
+                  <td style={{ padding: "3px 6px", textAlign: "right", fontWeight: 700, color: (row.hashrateNoBtcPerDay || 0) > 0 ? "#818cf8" : "#64748b" }}>
+                    {btcValue(row.hashrateNoBtcPerDay)}
+                  </td>
+                  <td style={{ padding: "3px 6px", textAlign: "right", fontWeight: 700, color: "#60a5fa" }}>
                     {btcValue(row.niceHashPrice)}
                   </td>
-                  <td style={{ padding: "3px 6px", textAlign: "right" }}>
-                    <span style={{ color: row.spread > 0 ? "#34d399" : row.spread < 0 ? "#f87171" : "#94a3b8", fontWeight: 600 }}>
+                  <td style={{ padding: "3px 6px", textAlign: "right", fontWeight: 900 }}>
+                    <span style={{ color: row.spread > 0 ? "#34d399" : row.spread < 0 ? "#f87171" : "#94a3b8" }}>
                       {row.spread === null ? "N/A" : percentValue(row.spread)}
                     </span>
                   </td>
@@ -223,7 +236,7 @@ function MiningRouteHero({ onCall }) {
                 </tr>
               ))}
               {opportunities.length === 0 && (
-                <tr><td colSpan={6} style={{ padding: "16px", textAlign: "center", color: "#64748b" }}>No route data yet.</td></tr>
+                <tr><td colSpan={9} style={{ padding: "16px", textAlign: "center", color: "#64748b" }}>No route data yet.</td></tr>
               )}
             </tbody>
           </table>
@@ -328,7 +341,7 @@ function MiningWorkspaceShell({
             <WhatToMineCard />
             <HashrateNoCard />
             <MiningDutchPoolCard />
-            <HeroMinersCard onCall={onCall} />
+            <HeroMinersLookup onCall={onCall} />
             <K1PoolCard onCall={onCall} />
             <KryptexCard onCall={onCall} />
           </div>
