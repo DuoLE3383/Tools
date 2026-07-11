@@ -197,7 +197,9 @@ export async function getCachedNhPools(clientNameRaw) {
         await db.run('COMMIT');
       } catch (e) {
         console.error(`[nh:pools] DB sync failed for ${clientName}:`, e.message);
-        await db.run('ROLLBACK');
+        try {
+          await db.run('ROLLBACK');
+        } catch (rollbackErr) { /* This can happen if the transaction was never started. It's safe to ignore. */ }
       }
     }
 

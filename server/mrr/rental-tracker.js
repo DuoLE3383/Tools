@@ -129,7 +129,11 @@ export async function saveRental(rental, client, info, metrics, isValid) {
     await db.run('COMMIT');
   } catch (err) {
     console.error(`[rental-tracker] Upsert error for ${rental.id}: ${err.message}`);
-    await db.run('ROLLBACK');
+    try {
+      await db.run('ROLLBACK');
+    } catch (rollbackErr) {
+      // Ignore rollback errors
+    }
   }
 }
 

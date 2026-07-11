@@ -77,8 +77,10 @@ export function registerMrrRoutes(app) {
                     await stmt.finalize();
                     await db.run('COMMIT');
                   } catch (e) {
-                    await db.run('ROLLBACK');
                     console.error(`[mrr:rigs] DB pool sync failed for rig ${id}:`, e.message);
+                    try {
+                      await db.run('ROLLBACK');
+                    } catch (rollbackErr) { /* This can happen if the transaction was never started. It's safe to ignore. */ }
                   }
                 }
                 if (Array.isArray(item.pools)) {
@@ -358,12 +360,16 @@ export function registerMrrRoutes(app) {
       if (pools.length > 0) {
         await db.run('BEGIN TRANSACTION');
         try {
-          const stmt = db.prepare(`INSERT OR REPLACE INTO mrr_pools (id, name, algo, host, port, user, mrrClient, last_updated) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`);
-          pools.forEach(p => stmt.run(p.id, p.name, p.algo, p.host, p.port, p.user, clientName));
-          stmt.finalize();
+          const stmt = await db.prepare(`INSERT OR REPLACE INTO mrr_pools (id, name, algo, host, port, user, mrrClient, last_updated) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`);
+          for (const p of pools) {
+            await stmt.run(p.id, p.name, p.algo, p.host, p.port, p.user, clientName);
+          }
+          await stmt.finalize();
           await db.run('COMMIT');
         } catch (e) {
-          await db.run('ROLLBACK');
+          try {
+            await db.run('ROLLBACK');
+          } catch (rollbackErr) { /* This can happen if the transaction was never started. It's safe to ignore. */ }
         }
       }
     }
