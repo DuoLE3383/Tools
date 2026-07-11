@@ -11,11 +11,16 @@ export const useRoiCalculation = ({
   normalizedAlgo,
   rawAlgo,
   isLoadingMrrRate,
+  skipUnitConversion = false,
 }) => {
   const niceHashPriceInMrrUnit = useMemo(() => {
     if (niceHashSourcePrice <= 0) return 0;
+    // When skipUnitConversion is true, the caller passes the NH price already in TH
+    // (the standard NH API unit). Do not apply convertNiceHashToMrr which uses
+    // the algo mapping's niceHashUnit that does not match the actual API unit.
+    if (skipUnitConversion) return niceHashSourcePrice;
     return convertNiceHashToMrr(niceHashSourcePrice, normalizedAlgo || rawAlgo);
-  }, [niceHashSourcePrice, normalizedAlgo, rawAlgo]);
+  }, [niceHashSourcePrice, normalizedAlgo, rawAlgo, skipUnitConversion]);
 
   const roiPercent = useMemo(() => {
     if (finalMrrRate <= 0 || niceHashPriceInMrrUnit <= 0) return null;

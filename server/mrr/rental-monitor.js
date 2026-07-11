@@ -3,7 +3,7 @@
 //  Location: server/mrr/rental-monitor.js
 // ==========================
 
-import { db } from '../db.js';
+import { getDb } from '../db.js';
 import { mrrApiCall, mrrConfigs } from './index.js';
 import { resolveNhClient, getNiceHashApp, isAggregate, nhConfigs } from '../nh.js';
 import { extractRentalInfo } from '../utils.js';
@@ -17,11 +17,7 @@ import { getBtcPriceData } from '../utils/priceUtils.js';
 
 import {
   isRealRental,
-  getRealRentalCount,
-  getGhostRentalCount,
-  splitRentals,
-  validateRentals,
-  isActiveRentedRig
+  splitRentals
 } from './rental-validator.js';
 
 import {
@@ -37,9 +33,7 @@ import {
 } from './rental-tracker.js';
 
 import {
-  processRigs,
-  processRental,
-  buildRentalsMap
+  processRental
 } from './rentalProcessor.js';
 
 // ==========================
@@ -319,27 +313,30 @@ export async function sendTelegramInternal(message) {
 //  DATABASE HELPERS
 // ==========================
 
-function dbGetAsync(sql, params = []) {
+async function dbGetAsync(sql, params = []) {
+  const _db = await getDb();
   return new Promise((resolve, reject) => {
-    db.get(sql, params, (err, row) => {
+    _db.get(sql, params, (err, row) => {
       if (err) reject(err);
       else resolve(row);
     });
   });
 }
 
-function dbRunAsync(sql, params = []) {
+async function dbRunAsync(sql, params = []) {
+  const _db = await getDb();
   return new Promise((resolve, reject) => {
-    db.run(sql, params, function (err) {
+    _db.run(sql, params, function (err) {
       if (err) reject(err);
       else resolve(this);
     });
   });
 }
 
-function dbAllAsync(sql, params = []) {
+async function dbAllAsync(sql, params = []) {
+  const _db = await getDb();
   return new Promise((resolve, reject) => {
-    db.all(sql, params, (err, rows) => {
+    _db.all(sql, params, (err, rows) => {
       if (err) reject(err);
       else resolve(rows);
     });

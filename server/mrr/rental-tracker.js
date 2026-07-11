@@ -4,7 +4,7 @@
 // ==========================
 
 import { getDb } from '../db.js';
-import { isRealRental, validateRentals } from './rental-validator.js';
+import { isRealRental, splitRentals } from './rental-validator.js';
 
 // Database helpers
 async function dbGetAsync(sql, params = []) {
@@ -84,10 +84,16 @@ export async function saveRental(rental, client, info, metrics, isValid) {
   } = metrics;
 
   const ghostReason = !isValid ? 'No mining activity detected' : null;
+  const savepointName = `save_rental_${String(rental.id).replace(/[^a-zA-Z0-9]/g, "")}`;
 
   const db = await getDb();
-  await db.run('BEGIN TRANSACTION');
+  let transactionStarted = false;
   try {
+    // Use savepoints to allow for nested transactions, preventing
+    // "cannot start a transaction within a transaction" errors.
+    await db.run(`SAVEPOINT ${savepointName}`);
+    transactionStarted = true;
+
     await db.run(
       `INSERT INTO rentals (
           id, name, client, start_time, end_time, algo, 
@@ -126,13 +132,13 @@ export async function saveRental(rental, client, info, metrics, isValid) {
         [String(rental.id), rental.name || rental.id, client, Date.now(), ghostReason]
       );
     }
-    await db.run('COMMIT');
+    await db.run(`RELEASE SAVEPOINT ${savepointName}`);
   } catch (err) {
     console.error(`[rental-tracker] Upsert error for ${rental.id}: ${err.message}`);
-    try {
-      await db.run('ROLLBACK');
-    } catch (rollbackErr) {
-      // Ignore rollback errors
+    if (transactionStarted) {
+      try { await db.run(`ROLLBACK TO SAVEPOINT ${savepointName}`); } catch (rollbackErr) {
+        console.warn(`[rental-tracker] Savepoint rollback for ${rental.id} also failed: ${rollbackErr.message}`);
+      }
     }
   }
 }

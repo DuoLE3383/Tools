@@ -309,8 +309,10 @@ const MrrRigCard = ({
     durationDays,
   });
 
-  // ── NiceHash Orders ──
+  // ── NiceHash Price ──
   const normalizedCardAlgo = normalizeAlgoForNiceHash(algoName || rawAlgo);
+
+  // Find matching order from NiceHash context (has active order prices from myOrders API)
   const nhOrder = [...(nhOrders || [])]
     .sort(
       (a, b) =>
@@ -327,28 +329,19 @@ const MrrRigCard = ({
     )
     .find((order) => normalizeOrderAlgo(order) === normalizedCardAlgo);
 
-  const orderNhPrice = getNiceHashPriceValue(
-    nhOrder?.price ?? nhOrder?.rawOrder?.price ?? nhOrder,
-  );
-  const buyNhPrice = nhOrder && orderNhPrice > 0 ? orderNhPrice : 0;
-  const isEquihash = nhOrder?.algorithm === 'Equihash'; // adjust field name
-  const buyNhPriceWithFee =
-  isEquihash ? 0 :
-  buyNhPrice > 0
-    ? Number.parseFloat(nhOrder?.add_fee ?? nhOrder?.priceWithFee ?? 0) > 0
-      ? Number.parseFloat(nhOrder.add_fee ?? nhOrder.priceWithFee)
-      : buyNhPrice / 1000
+  // The NiceHash myOrders API actually returns prices per TH (not per the mapping's niceHashUnit).
+  // For example SHA256 (listed as EH in mapping) returns 0.4558 BTC/TH/Day, not BTC/EH/Day.
+  // getNiceHashPriceValue returns the raw number — this IS the correct per-TH price.
+  const niceHashSourcePrice = nhOrder
+    ? getNiceHashPriceValue(nhOrder?.price ?? nhOrder?.rawOrder?.price ?? nhOrder)
     : 0;
 
-  const myNhUnit = getNiceHashUnit(normalizedAlgo || rawAlgo) || "KH";
-  const marketPriceData = algoMarketPrices?.[algoName];
-  const marketPriceValue = marketPriceData
-    ? getNiceHashPriceValue(marketPriceData)
-    : 0;
-  const niceHashSourcePrice =
-    marketPriceValue > 0 ? marketPriceValue : buyNhPriceWithFee;
+  console.log(`[MrrRigCard] ${normalizedCardAlgo} nhOrder account=${nhOrder?.account} rawPrice=${nhOrder?.rawOrder?.price} niceHashSourcePrice=${niceHashSourcePrice}`);
 
-  // ── ROI ──
+  // The API returns price per TH. Label accordingly.
+  const myNhUnit = "TH";
+
+  // ── ROI (skip unit conversion — API already returns per-TH prices) ──
   const { niceHashPriceInMrrUnit, roiPercent, roiLabel } = useRoiCalculation({
     finalMrrRate,
     mrrUnit,
@@ -356,6 +349,7 @@ const MrrRigCard = ({
     normalizedAlgo,
     rawAlgo,
     isLoadingMrrRate,
+    skipUnitConversion: true,
   });
 
   const displayAlgo = getAlgoDisplayName(normalizedAlgo || rawAlgo);
