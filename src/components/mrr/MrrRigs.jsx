@@ -76,13 +76,26 @@ export default function MrrRigs({
     const groups = {};
     filteredRigs.forEach((rig) => {
       const info = enrichedInfo[rig.id];
-      const algoKey = (
-        info?.algo ||
-        rig.algo ||
-        rig.algorithm ||
-        rig.type ||
-        "N/A"
-      ).toUpperCase();
+
+      // Helper to robustly extract algo name from string or object
+      const pickAlgoName = (value) => {
+        if (!value) return null;
+        if (typeof value === "object") {
+          return value.algorithm || value.name || value.displayName || null;
+        }
+        return String(value);
+      };
+
+      const rawAlgo =
+        pickAlgoName(info?.algo) ||
+        pickAlgoName(rig.algo) ||
+        pickAlgoName(rig.algorithm) ||
+        pickAlgoName(rig.type) ||
+        "N/A";
+
+      // Use the canonical name for grouping to prevent aliases from creating separate groups
+      const algoKey = normalizeAlgoForNiceHash(rawAlgo);
+
       if (!groups[algoKey]) groups[algoKey] = [];
       groups[algoKey].push(rig);
     });
@@ -905,11 +918,14 @@ export default function MrrRigs({
             gap: "clamp(10px, 1vw, 16px)",
           }}
         >
-          {groupedRigs.map(([algoName, rigsInGroup]) => {
+          {groupedRigs.map(([algoName, rigsInGroup], index) => {
             const isExpanded = expandedAlgos[algoName];
             return (
               <div
-                key={algoName}
+                // Using index in the key to prevent React warnings from potential duplicate
+                // algorithm names in the data source, as you correctly identified.
+                // This ensures each rendered group has a unique key.
+                key={`${algoName}-${index}`}
                 className="algo-group-card"
                 style={{
                   background: "rgba(15,23,42,0.72)",

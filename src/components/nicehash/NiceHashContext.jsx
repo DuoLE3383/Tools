@@ -96,8 +96,12 @@ export function NiceHashOrderProvider({ children, nhClient, callApi }) {
 
     try {
       // Fetch orders from NiceHash
+      // ✅ FIX: Force fetching from the aggregate client ('VN' or 'ALL') to ensure
+      // data is synchronized across all pages (/mrr, /nicehash). This prevents
+      // the context from having an incomplete order list if a specific `nhClient`
+      // prop is passed on a particular page.
       const data = await callApi("/api/v2/hashpower/myOrders", {
-        query: { op: "LE", limit: 100, client: nhClient },
+        query: { op: "LE", limit: 100, client: "VN" },
         silent: true,
       });
 
@@ -153,7 +157,9 @@ export function NiceHashOrderProvider({ children, nhClient, callApi }) {
           id: String(o.id || o.orderId || ""),
           paid: o.payedAmount || "0.00000000",
           price: o.price || 0,
-          account: o.nhClient || nhClient,
+          // Use the account field from the aggregated backend response first.
+          // This is crucial for matching orders to rigs from different accounts.
+          account: o.account || o.nhClient || nhClient,
           algo: algoCode,
           algoDisplayName: algoMapping.displayName || algoCode,
           algoUnit: algoUnit,

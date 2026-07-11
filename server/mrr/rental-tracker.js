@@ -213,28 +213,33 @@ export async function cleanupStaleRentals(client, activeRealIds) {
  * Clean up ghost rentals
  */
 export async function cleanupGhostRentals(client) {
+  const db = await getDb();
+  const savepointName = `cleanup_ghosts_${client.replace(/[^a-zA-Z0-9]/g, "")}`;
   try {
+    await db.run(`SAVEPOINT ${savepointName}`);
     // Move to ghost_rentals table before deleting
     const ghostRentals = await dbAllAsync(
       `SELECT * FROM rentals WHERE client = ? AND is_real = 0`,
       [client]
     );
-    
+
     for (const ghost of ghostRentals) {
       await dbRunAsync(
-        `INSERT OR IGNORE INTO ghost_rentals (id, name, client, detected_at, reason) 
+        `INSERT OR IGNORE INTO ghost_rentals_log (id, name, client, detected_at, reason) 
          VALUES (?, ?, ?, ?, ?)`,
         [ghost.id, ghost.name, ghost.client, Date.now(), ghost.ghost_reason || 'Unknown']
       );
     }
-    
+
     await dbRunAsync(
       `DELETE FROM rentals WHERE client = ? AND is_real = 0`,
       [client]
     );
+    await db.run(`RELEASE SAVEPOINT ${savepointName}`);
     return true;
   } catch (err) {
     console.warn(`[rental-tracker] Failed to clean up ghost rentals: ${err.message}`);
+    try { await db.run(`ROLLBACK TO SAVEPOINT ${savepointName}`); } catch (rollbackErr) { console.warn(`[rental-tracker] Ghost cleanup rollback failed: ${rollbackErr.message}`); }
     return false;
   }
 }

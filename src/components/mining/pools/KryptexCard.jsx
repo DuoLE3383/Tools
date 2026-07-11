@@ -73,13 +73,13 @@ export default function KryptexCard({ onCall }) {
       </div>
 
       {/* Input Row */}
-      <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
         <input
           value={coin}
           onChange={(e) => setCoin(e.target.value)}
           placeholder="Coin (e.g. etc)"
           style={{
-            flex: "0 0 60px",
+            width: "100%",
             padding: "6px 10px",
             background: "rgba(0,0,0,0.25)",
             border: "1px solid rgba(148,163,184,0.15)",
@@ -87,26 +87,28 @@ export default function KryptexCard({ onCall }) {
             color: "#e2e8f0",
             fontSize: "clamp(10px, 0.8vw, 12px)",
             textTransform: "lowercase",
+            boxSizing: "border-box",
           }}
         />
-        <input
-          value={address}
-          onChange={(e) => setAddress(e.target.value)}
-          placeholder="Wallet address"
-          style={{
-            flex: "1",
-            minWidth: "180px",
-            padding: "6px 10px",
-            background: "rgba(0,0,0,0.25)",
-            border: "1px solid rgba(148,163,184,0.15)",
-            borderRadius: "6px",
-            color: "#e2e8f0",
-            fontSize: "clamp(10px, 0.8vw, 12px)",
-          }}
-        />
-        <button className="btn-primary" onClick={handleLookup} disabled={loading} style={{ padding: "6px 14px", fontSize: "clamp(10px, 0.8vw, 12px)" }}>
-          {loading ? "⏳" : "🔍"}
-        </button>
+        <div style={{ display: "flex", gap: "6px" }}>
+          <input
+            value={address}
+            onChange={(e) => setAddress(e.target.value)}
+            placeholder="Wallet address"
+            style={{
+              flex: "1",
+              padding: "6px 10px",
+              background: "rgba(0,0,0,0.25)",
+              border: "1px solid rgba(148,163,184,0.15)",
+              borderRadius: "6px",
+              color: "#e2e8f0",
+              fontSize: "clamp(10px, 0.8vw, 12px)",
+            }}
+          />
+          <button className="btn-primary" onClick={handleLookup} disabled={loading} style={{ padding: "6px 14px", fontSize: "clamp(10px, 0.8vw, 12px)" }}>
+            {loading ? "⏳" : "🔍"}
+          </button>
+        </div>
       </div>
 
       {error && (

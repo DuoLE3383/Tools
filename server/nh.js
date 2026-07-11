@@ -94,8 +94,9 @@ export function resolveNhClient(clientNameRaw) {
 
   // 1. Handle Aggregate (VN) resolution
   if (isAggregate(clientName)) {
-    const btProvider = resolveNhClient('BT');
-    return { client: btProvider.client, clientName: AGGREGATE_CLIENT };
+    // Return a special marker object for aggregation.
+    // The 'client' property is a dummy object that getNiceHashApp will recognize.
+    return { client: { isAggregate: true, name: AGGREGATE_CLIENT }, clientName: AGGREGATE_CLIENT };
   }
 
   // 2. Return cached instance
@@ -185,7 +186,9 @@ export async function getCachedNhPools(clientNameRaw) {
     // Persistence: Sync fetched NiceHash pools to database
     if (allPools.length > 0) {
       const db = await getDb();
-      await db.run('BEGIN TRANSACTION');
+      // Use savepoints to allow nesting within other transactions, preventing the error.
+      const savepointName = `nh_pools_sync_${clientName.replace(/[^a-zA-Z0-9]/g, "")}`;
+      await db.run(`SAVEPOINT ${savepointName}`);
       try {
         const stmt = await db.prepare(`INSERT OR REPLACE INTO nh_pools 
           (id, name, algorithm, stratumHostname, port, username, password, nhClient, last_updated) 
@@ -194,12 +197,12 @@ export async function getCachedNhPools(clientNameRaw) {
           await stmt.run(p.id, p.name, p.algorithm, p.stratumHostname, p.port, p.username, p.password, clientName);
         }
         await stmt.finalize();
-        await db.run('COMMIT');
+        await db.run(`RELEASE SAVEPOINT ${savepointName}`);
       } catch (e) {
         console.error(`[nh:pools] DB sync failed for ${clientName}:`, e.message);
         try {
-          await db.run('ROLLBACK');
-        } catch (rollbackErr) { /* This can happen if the transaction was never started. It's safe to ignore. */ }
+          await db.run(`ROLLBACK TO SAVEPOINT ${savepointName}`);
+        } catch (rollbackErr) { console.warn(`[nh:pools] Savepoint rollback failed for ${clientName}: ${rollbackErr.message}`); }
       }
     }
 
@@ -212,7 +215,62 @@ export async function getCachedNhPools(clientNameRaw) {
 
 const nhInstances = new Map();
 
-export const getNiceHashApp = (client) => ({
+async function getAggregatedMyOrders(query) {
+  const allClientNames = Object.keys(nhConfigs).filter(c => nhConfigs[c].apiKey && !isAggregate(c));
+  const allOrders = [];
+  const errors = [];
+
+  const promises = allClientNames.map(async (name) => {
+    try {
+      // Resolve the actual client, not the aggregate marker
+      const { client: singleClient } = resolveNhClient(name);
+      if (singleClient && !singleClient.isAggregate) {
+        const result = await singleClient.call({
+          method: 'GET',
+          path: '/main/api/v2/hashpower/myOrders',
+          query: { orgId: singleClient.orgId, ...query }
+        });
+
+        if (result && (result.list || result.myOrders)) {
+          const orders = result.list || result.myOrders;
+          // Tag each order with its source account
+          orders.forEach(o => {
+            o.account = name;
+            if (o.rawOrder) {
+              o.rawOrder.account = name;
+            }
+          });
+          allOrders.push(...orders);
+        }
+      }
+    } catch (e) {
+      console.warn(`[nh:aggOrders] Failed to fetch orders for ${name}: ${e.message}`);
+      errors.push({ client: name, message: e.message });
+    }
+  });
+
+  await Promise.all(promises);
+  // Mimic the structure of a single API call response
+  return { list: allOrders, pagination: { total: allOrders.length }, errors: errors.length > 0 ? errors : undefined };
+}
+
+export const getNiceHashApp = (client) => {
+  // If it's the aggregate client marker, return a special app object
+  if (client && client.isAggregate) {
+    const { client: fallbackClient } = resolveNhClient('BT');
+    const fallbackApp = getNiceHashApp(fallbackClient);
+
+    return {
+      ...fallbackApp, // Inherit all methods from a fallback client ('BT')
+      hashpower: {
+        ...fallbackApp.hashpower,
+        getMyOrders: (query) => getAggregatedMyOrders(query), // Override getMyOrders with the aggregate version
+      },
+    };
+  }
+
+  // Original implementation for a single, real client instance
+  return ({
   public: {
     getTime: () => client.getServerTime(),
     getDoc: () => cachedCall(client, { method: 'GET', path: '/api/v2/doc' }),
@@ -364,4 +422,5 @@ export const getNiceHashApp = (client) => ({
     deletePool: (poolId) => client.call({ method: 'DELETE', path: `/main/api/v2/pool/${poolId}` }),
     verifyPool: (body) => client.call({ method: 'POST', path: '/main/api/v2/pools/verify', body }),
   },
-});
+})
+};

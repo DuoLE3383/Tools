@@ -313,21 +313,38 @@ const MrrRigCard = ({
   const normalizedCardAlgo = normalizeAlgoForNiceHash(algoName || rawAlgo);
 
   // Find matching order from NiceHash context (has active order prices from myOrders API)
-  const nhOrder = [...(nhOrders || [])]
-    .sort(
-      (a, b) =>
-        Number(
-          b?.isActive ||
-            b?.rawOrder?.status?.code === "ACTIVE" ||
-            b?.rawOrder?.status === "ACTIVE",
-        ) -
-        Number(
-          a?.isActive ||
-            a?.rawOrder?.status?.code === "ACTIVE" ||
-            a?.rawOrder?.status === "ACTIVE",
-        ),
-    )
-    .find((order) => normalizeOrderAlgo(order) === normalizedCardAlgo);
+  const sortedOrders = useMemo(() => [...(nhOrders || [])]
+    .sort((a, b) =>
+      Number(b?.isActive || b?.rawOrder?.status?.code === "ACTIVE" || b?.rawOrder?.status === "ACTIVE") -
+      Number(a?.isActive || a?.rawOrder?.status?.code === "ACTIVE" || a?.rawOrder?.status === "ACTIVE")
+    ), [nhOrders]);
+
+  const nhOrder = useMemo(() => {
+    const rigClient = String(rig.mrrClient || mrrClient || '').toUpperCase();
+
+    // We only care about active orders for price comparison.
+    const activeOrders = sortedOrders.filter(order =>
+      order.isActive ||
+      (order.rawOrder?.status?.code === 'ACTIVE') ||
+      (order.rawOrder?.status === 'ACTIVE')
+    );
+
+    // First, try to find an ACTIVE order matching both algo and client.
+    const clientSpecificOrder = activeOrders.find((order) => {
+      const orderAlgo = normalizeOrderAlgo(order);
+      const orderClient = String(order.account || order.client || '').toUpperCase();
+      return orderAlgo === normalizedCardAlgo && orderClient === rigClient;
+    });
+
+    if (clientSpecificOrder) return clientSpecificOrder;
+
+    // If no client-specific order is found, find the first ACTIVE order for that algo from any client.
+    // This handles cases where MRR account names (e.g., 'SL') don't map 1:1 to NiceHash account names.
+    return activeOrders.find((order) => {
+      const orderAlgo = normalizeOrderAlgo(order);
+      return orderAlgo === normalizedCardAlgo;
+    });
+  }, [sortedOrders, normalizedCardAlgo, rig.mrrClient, mrrClient]);
 
   // The NiceHash myOrders API actually returns prices per TH (not per the mapping's niceHashUnit).
   // For example SHA256 (listed as EH in mapping) returns 0.4558 BTC/TH/Day, not BTC/EH/Day.

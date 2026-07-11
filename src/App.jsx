@@ -49,7 +49,6 @@ const initialState = {
   view: initialView,
   currentUser: null,
   coinPrices: null,
-  permissionsChecked: false,
   // ✅ Store the current path to prevent unnecessary redirects
   currentPath: window.location.pathname,
 };
@@ -94,8 +93,6 @@ function reducer(state, action) {
       return { ...state, currentUser: action.payload };
     case "SET_COIN_PRICES":
       return { ...state, coinPrices: { ...(state.coinPrices || {}), ...action.payload } };
-    case "SET_PERMISSIONS_CHECKED":
-      return { ...state, permissionsChecked: action.payload };
     case "SET_CURRENT_PATH":
       return { ...state, currentPath: action.payload };
     default:
@@ -140,6 +137,7 @@ function PriceFetcher({ onCall, onPriceUpdate }) {
 // ── AppContent ───────────────────────────────
 function AppContent({ authToken, onLoginSuccess, onLogout, callApi, setAuthToken }) {
   const [state, dispatch] = useReducer(reducer, initialState);
+  const [userPermissions, setUserPermissions] = useState(null);
   const handlePriceUpdate = useCallback((data) => { dispatch({ type: "SET_COIN_PRICES", payload: data }); }, []);
 
   // Lift current user from token if available
@@ -303,62 +301,31 @@ function AppContent({ authToken, onLoginSuccess, onLogout, callApi, setAuthToken
   // ── Permission-based routing ──
   // ✅ Only run once when the component mounts or when the user changes
   useEffect(() => {
-    // Skip if we've already checked permissions or if we don't have the needed data
-    if (state.permissionsChecked || !currentUser || !callApi) return;
-
-    const checkPermissionsAndRedirect = async () => {
+    if (!currentUser || !callApi) return;
+    const fetchPerms = async () => {
       try {
         const permRes = await callApi('/api/auth/permissions', { silent: true });
-        if (permRes?.success && Array.isArray(permRes.permissions)) {
-          const userPermissions = permRes.permissions;
-          
-          // ✅ Get the current path from state, not window.location
-          const currentPath = state.currentPath || window.location.pathname;
-          const currentView = currentPath.replace('/', '') || 'dashboard';
-          
-          console.log(`[Auth] User permissions:`, userPermissions);
-          console.log(`[Auth] Current view:`, currentView);
-          
-          if (currentView !== 'dashboard' && !userPermissions.includes(currentView)) {
-            // Redirect away from a page they don't have access to
-            console.log(`[Auth] User lacks permission for ${currentView}, redirecting to:`, userPermissions[0]);
-            navigateToHomepage(userPermissions);
-          } else if (currentView === 'dashboard') {
-            // On first check: redirect from dashboard to the user's homepage if they have one
-            // (e.g. miner_viewer → /mining, mrr_viewer → /mrr, admin → stay on /)
-            const hasSpecificHomepage = userPermissions.some(p => p !== 'dashboard');
-            if (hasSpecificHomepage) {
-              console.log(`[Auth] Redirecting ${currentUser?.role} from dashboard to homepage:`, userPermissions[0]);
-              navigateToHomepage(userPermissions);
-            } else {
-              // Ensure view state matches dashboard
-              if (state.view !== 'dashboard') {
-                dispatch({ type: "SET_VIEW", payload: 'dashboard' });
-              }
-            }
-          } else {
-            // Ensure view state matches the current path
-            const viewToSet = currentView === 'cryptorate' ? 'cryptorate' : 
-                            currentView === 'mining' ? 'mining' :
-                            currentView === 'nicehash' ? 'nicehash' :
-                            currentView === 'mrr' ? 'mrr' :
-                            'dashboard';
-            if (state.view !== viewToSet) {
-              dispatch({ type: "SET_VIEW", payload: viewToSet });
-            }
-          }
-        }
-        // ✅ Mark permissions as checked
-        dispatch({ type: "SET_PERMISSIONS_CHECKED", payload: true });
+        setUserPermissions(permRes?.success && Array.isArray(permRes.permissions) ? permRes.permissions : []);
       } catch (err) {
-        console.error('[Auth] Failed to check permissions:', err);
-        // ✅ Even on error, mark as checked to prevent infinite loops
-        dispatch({ type: "SET_PERMISSIONS_CHECKED", payload: true });
+        console.error('[Auth] Failed to fetch permissions:', err);
+        setUserPermissions([]);
       }
     };
-    
-    checkPermissionsAndRedirect();
-  }, [currentUser, callApi, state.permissionsChecked, navigateToHomepage, state.currentPath]);
+    fetchPerms();
+  }, [currentUser, callApi]);
+
+  // This effect now handles routing logic whenever permissions or the path changes.
+  useEffect(() => {
+    if (userPermissions === null) return; // Wait until permissions are loaded
+
+    const currentPath = state.currentPath || window.location.pathname;
+    const currentView = currentPath.replace('/', '') || 'dashboard';
+
+    if (currentView !== 'dashboard' && !userPermissions.includes(currentView)) {
+      console.log(`[Auth] No permission for "${currentView}". Redirecting to homepage.`);
+      navigateToHomepage(userPermissions);
+    }
+  }, [userPermissions, state.currentPath, navigateToHomepage]);
 
   // ── Force check ──
   const forceCheckStatus = useCallback(() => {
