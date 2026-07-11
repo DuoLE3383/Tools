@@ -59,7 +59,7 @@ export const ALGO_MAPPING = {
   ETCHASH: { displayName: 'ETCHash', niceHash: 'ETCHASH', unit: 'MH', niceHashUnit: 'TH', mrrUnit: 'MH' },
 
   // Equihash
-  EQUIHASH: { displayName: 'Equihash', niceHash: 'EQUIHASH', unit: 'KH', niceHashUnit: 'GSol', mrrUnit: 'KH' },
+  EQUIHASH: { displayName: 'Equihash', niceHash: 'EQUIHASH', unit: 'Gsol', niceHashUnit: 'GSol', mrrUnit: 'GSol' },
 
   // CryptoNight family
   CRYPTONIGHT: { displayName: 'CryptoNight', niceHash: 'CRYPTONIGHT', unit: 'MH', niceHashUnit: 'TH', mrrUnit: 'MH' },

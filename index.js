@@ -64,6 +64,8 @@ const STATS_DB_PATH = path.join(DATA_DIR, "stats.db");
 const VALID_NH_CLIENT_TAGS = new Set([
   "BT",
   "PH",
+  "PH3",
+  "HUDA",
   "LN",
   "NHATLINH",
   "VN",

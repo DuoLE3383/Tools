@@ -331,12 +331,14 @@ const MrrRigCard = ({
     nhOrder?.price ?? nhOrder?.rawOrder?.price ?? nhOrder,
   );
   const buyNhPrice = nhOrder && orderNhPrice > 0 ? orderNhPrice : 0;
+  const isEquihash = nhOrder?.algorithm === 'Equihash'; // adjust field name
   const buyNhPriceWithFee =
-    buyNhPrice > 0
-      ? Number.parseFloat(nhOrder?.add_fee ?? nhOrder?.priceWithFee ?? 0) > 0
-        ? Number.parseFloat(nhOrder.add_fee ?? nhOrder.priceWithFee)
-        : buyNhPrice / 1000
-      : 0;
+  isEquihash ? 0 :
+  buyNhPrice > 0
+    ? Number.parseFloat(nhOrder?.add_fee ?? nhOrder?.priceWithFee ?? 0) > 0
+      ? Number.parseFloat(nhOrder.add_fee ?? nhOrder.priceWithFee)
+      : buyNhPrice / 1000
+    : 0;
 
   const myNhUnit = getNiceHashUnit(normalizedAlgo || rawAlgo) || "KH";
   const marketPriceData = algoMarketPrices?.[algoName];
@@ -381,10 +383,10 @@ const MrrRigCard = ({
 
   const getEfficiencyAccent = (efficiency) => {
     if (!Number.isFinite(efficiency)) return "rgba(148, 163, 184, 0.18)";
-    if (efficiency >= 98) return "rgba(197, 34, 238, 0.3)";
-    if (efficiency >= 70) return "rgba(23, 185, 131, 0.3)";
-    if (efficiency >= 50) return "rgba(251, 191, 36, 0.30)";
-    if (efficiency >= 20) return "rgba(251, 36, 36, 0.3)";
+    if (efficiency >= 95) return "rgba(197, 34, 238, 0.49)";
+    if (efficiency >= 70) return "rgba(23, 185, 131, 0.73)";
+    if (efficiency >= 50) return "rgba(251, 190, 36, 0.5)";
+    if (efficiency >= 20) return "rgba(251, 36, 36, 0.46)";
     return "rgba(239, 68, 68, 0.30)";
   };
 

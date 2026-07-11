@@ -8,7 +8,7 @@
   "KAWPOW": { "displayName": "KawPow", "niceHash": "KAWPOW", "unit": "GH", "niceHashUnit": "TH", "mrrUnit": "GH" },
   "DAGGERHASHIMOTO": { "displayName": "DaggerHashimoto", "niceHash": "DAGGERHASHIMOTO", "unit": "MH", "niceHashUnit": "TH", "mrrUnit": "MH" },
   "ETCHASH": { "displayName": "ETCHash", "niceHash": "ETCHASH", "unit": "MH", "niceHashUnit": "TH", "mrrUnit": "MH" },
-  "EQUIHASH": { "displayName": "Equihash", "niceHash": "EQUIHASH", "unit": "KH", "niceHashUnit": "GSol", "mrrUnit": "KH" },
+  "EQUIHASH": { "displayName": "Equihash", "niceHash": "EQUIHASH", "unit": "Gsol", "niceHashUnit": "GSol", "mrrUnit": "Gsol" },
   "CRYPTONIGHT": { "displayName": "CryptoNight", "niceHash": "CRYPTONIGHT", "unit": "MH", "niceHashUnit": "TH", "mrrUnit": "MH" },
   "CRYPTONIGHTV7": { "displayName": "CryptoNightV7", "niceHash": "CRYPTONIGHTV7", "unit": "MH", "niceHashUnit": "TH", "mrrUnit": "MH" },
   "CRYPTONIGHTV8": { "displayName": "CryptoNightV8", "niceHash": "CRYPTONIGHTV8", "unit": "MH", "niceHashUnit": "TH", "mrrUnit": "MH" },

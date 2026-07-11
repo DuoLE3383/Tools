@@ -80,3 +80,35 @@ export function parsePriceValue(val) {
   }
   return 0;
 }
+
+/**
+ * Calculates the NiceHash buying price including fees, upgrading a previously complex and potentially buggy implementation.
+ *
+ * This function replaces a nested ternary structure with a clear, readable flow. It corrects the unusual
+ * fallback logic (`price / 1000`) with a standard, configurable percentage-based fee calculation, which is
+ * more appropriate for determining a "price with fee".
+ *
+ * @param {number} buyNhPrice - The base price of the NiceHash order.
+ * @param {object} nhOrder - The NiceHash order object from the API, which may contain `add_fee` or `priceWithFee`.
+ * @param {number} [fallbackFeeRate=0.03] - The fee rate (e.g., 0.03 for 3%) to apply if no explicit fee is found.
+ * @returns {number} The final price including fees.
+ */
+export function calculateNhPriceWithFee(buyNhPrice, nhOrder, fallbackFeeRate = 0.03) {
+  // If the base price is not positive, the final price is zero.
+  if (!(buyNhPrice > 0)) {
+    return 0;
+  }
+
+  // Prioritize an explicit fee-inclusive price from the order object.
+  const explicitPriceWithFee = parsePriceValue(
+    nhOrder?.add_fee ?? nhOrder?.priceWithFee
+  );
+
+  // If a valid, positive fee-inclusive price is found, use it.
+  if (explicitPriceWithFee > 0) {
+    return explicitPriceWithFee;
+  }
+
+  // Fallback: Apply a standard percentage-based fee to the base price.
+  return buyNhPrice * (1 + fallbackFeeRate);
+}

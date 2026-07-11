@@ -175,6 +175,8 @@ function NiceHashOrderManager({ onCall, nhClient, setNhClient }) {
             <option value="VN">🌐 All Clients</option>
             <option value="BT">BT</option>
             <option value="PH">PH</option>
+            <option value="PH3">PH3</option>
+            <option value="HUDA">HUDA</option>
             <option value="LN">LN</option>
             <option value="NHATLINH">NhatLinh</option>
           </select>

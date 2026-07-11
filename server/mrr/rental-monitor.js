@@ -872,36 +872,29 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
           let lastNotified = row?.last_notified || 0;
 
           // Save to database with is_real = 1
-          await new Promise((resolve) => {
-            db.serialize(() => {
-              db.run(
-                `INSERT INTO rentals (
-                  id, name, client, start_time, end_time, algo, 
-                  target_100, order_diff, last_updated, low_hashrate_start, zero_hashrate_start,
-                  current_hashrate, average_hashrate, advertised_hashrate, price_paid, last_notified, is_real
-                ) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
-                ON CONFLICT(id) DO UPDATE SET 
-                  name=excluded.name, client=excluded.client, algo=excluded.algo, order_diff=excluded.order_diff,
-                  start_time=excluded.start_time, end_time=excluded.end_time, target_100=excluded.target_100, 
-                  last_updated=excluded.last_updated, is_real=1,
-                  low_hashrate_start=excluded.low_hashrate_start, zero_hashrate_start=excluded.zero_hashrate_start,
-                  current_hashrate=excluded.current_hashrate, average_hashrate=excluded.average_hashrate,
-                  advertised_hashrate=excluded.advertised_hashrate, price_paid=excluded.price_paid`,
-                [
-                  String(r.id), r.name || r.id, acct, startT, endT, info.algo, 
-                  displayTarget, orderDiff, now, lowHashStart, zeroHashStart,
-                  currentHash, average, advertised, info.price.paid, lastNotified
-                ], (err) => { 
-                  if (err) console.error(`[${new Date().toLocaleTimeString()}] [monitor:db] Upsert error for ${r.id}: ${err.message}`); 
-                }
-              );
-              if (startT > 0) {
-                db.run("INSERT OR IGNORE INTO rental_history (id, start_time) VALUES (?, ?)", [String(r.id), startT]);
-              }
-              resolve();
-            });
-          });
+          try {
+            await dbRunAsync(
+              `INSERT INTO rentals (
+                id, name, client, start_time, end_time, algo, 
+                target_100, order_diff, last_updated, low_hashrate_start, zero_hashrate_start,
+                current_hashrate, average_hashrate, advertised_hashrate, price_paid, last_notified, is_real
+              ) 
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+              ON CONFLICT(id) DO UPDATE SET 
+                name=excluded.name, client=excluded.client, algo=excluded.algo, order_diff=excluded.order_diff,
+                start_time=excluded.start_time, end_time=excluded.end_time, target_100=excluded.target_100, 
+                last_updated=excluded.last_updated, is_real=1,
+                low_hashrate_start=excluded.low_hashrate_start, zero_hashrate_start=excluded.zero_hashrate_start,
+                current_hashrate=excluded.current_hashrate, average_hashrate=excluded.average_hashrate,
+                advertised_hashrate=excluded.advertised_hashrate, price_paid=excluded.price_paid`,
+              [String(r.id), r.name || r.id, acct, startT, endT, info.algo, displayTarget, orderDiff, now, lowHashStart, zeroHashStart, currentHash, average, advertised, info.price.paid, lastNotified]
+            );
+            if (startT > 0) {
+              await dbRunAsync("INSERT OR IGNORE INTO rental_history (id, start_time) VALUES (?, ?)", [String(r.id), startT]);
+            }
+          } catch (err) {
+            console.error(`[${new Date().toLocaleTimeString()}] [monitor:db] Upsert error for ${r.id}: ${err.message}`);
+          }
 
           // ==========================
           //  ALERTS FOR REAL RENTALS
@@ -1094,40 +1087,31 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
           const ghostId = String(r.id || r.rentalid || r.rental_id || '').trim();
           if (ghostId) {
             currentGhostRentalIds.add(ghostId);
-            
+
             // Save ghost rental to database with is_real = 0
-            await new Promise((resolve) => {
-              db.serialize(() => {
-                db.run(
-                  `INSERT OR REPLACE INTO rentals (
-                    id, name, client, is_real, ghost_reason, last_updated
-                  ) VALUES (?, ?, ?, 0, ?, ?)`,
-                  [
-                    ghostId, 
-                    r.name || r.id || ghostId, 
-                    acct, 
-                    'No mining activity detected',
-                    now
-                  ], (err) => {
-                    if (err) console.error(`[monitor:db] Failed to save ghost rental ${ghostId}: ${err.message}`);
-                  }
-                );
-                
-                // Also track in ghost_rentals table
-                db.run(
-                  `INSERT OR IGNORE INTO ghost_rentals (id, name, client, detected_at, reason) 
-                   VALUES (?, ?, ?, ?, ?)`,
-                  [
-                    ghostId, 
-                    r.name || r.id || ghostId, 
-                    acct, 
-                    now, 
-                    'No mining activity detected'
-                  ]
-                );
-                resolve();
-              });
-            });
+            try {
+              await dbRunAsync(
+                `INSERT OR REPLACE INTO rentals (
+                  id, name, client, is_real, ghost_reason, last_updated
+                ) VALUES (?, ?, ?, 0, ?, ?)`,
+                [
+                  ghostId,
+                  r.name || r.id || ghostId,
+                  acct,
+                  'No mining activity detected',
+                  now
+                ]
+              );
+
+              // Also track in ghost_rentals table
+              await dbRunAsync(
+                `INSERT OR IGNORE INTO ghost_rentals (id, name, client, detected_at, reason) 
+                 VALUES (?, ?, ?, ?, ?)`,
+                [ghostId, r.name || r.id || ghostId, acct, now, 'No mining activity detected']
+              );
+            } catch (err) {
+              console.error(`[monitor:db] Failed to save ghost rental ${ghostId}: ${err.message}`);
+            }
           }
         }
 

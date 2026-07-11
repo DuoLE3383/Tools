@@ -40,15 +40,15 @@ export const RigEfficiencySection = ({
             </span>
             <span
               style={{
-                fontSize: "16px",
+                fontSize: "20px",
                 fontWeight: 800,
                 color:
                   effNum >= 100
-                    ? "#22d3ee"
+                    ? "#f832ffde"
                     : effNum > 90
-                      ? "#10b981"
+                      ? "#00ff37"
                       : effNum > 50
-                        ? "#fbbf24"
+                        ? "#ffb700"
                         : "#ef4444",
               }}
             >

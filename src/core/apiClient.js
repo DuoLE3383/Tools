@@ -67,11 +67,12 @@ export function createApiClient({ onAuthError, onState }) {
       });
     }
 
+    let response;
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-      const response = await fetch(finalUrl, {
+      response = await fetch(finalUrl, {
         ...fetchOptions,
         method,
         headers,
@@ -143,8 +144,8 @@ export function createApiClient({ onAuthError, onState }) {
 
       // ✅ Don't show modal for auth errors (they're handled above)
       const shouldShowModal = options.showModal !== false && 
-                            !response?.status === 401 && 
-                            !response?.status === 403;
+                            response?.status !== 401 && 
+                            response?.status !== 403;
 
       if (onState) {
         onState({

@@ -67,17 +67,18 @@ export function registerMrrRoutes(app) {
               const poolMap = new Map(await Promise.all(poolItems.map(async (item) => {
                 const id = String(item.rigId || item.rigid || item.id || item.rentalid || '');
                 if (Array.isArray(item.pools) && item.pools.length > 0) {
+                  await db.run('BEGIN TRANSACTION');
                   try {
-                    await db.run('BEGIN TRANSACTION');
-                    const stmt = db.prepare(`INSERT OR REPLACE INTO mrr_pools (id, name, algo, host, port, user, mrrClient, last_updated) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`);
-                    item.pools.forEach(p => {
+                    const stmt = await db.prepare(`INSERT OR REPLACE INTO mrr_pools (id, name, algo, host, port, user, mrrClient, last_updated) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`);
+                    for (const p of item.pools) {
                       const algo = p.algo || p.algorithm || p.type || item.algo || item.algorithm || '';
-                      stmt.run(id, p.name || `RigPool-${id}`, algo, p.host || p.stratumHost, p.port || p.stratumPort, p.user || p.username, clientName);
-                    });
-                    stmt.finalize();
+                      await stmt.run(id, p.name || `RigPool-${id}`, algo, p.host || p.stratumHost, p.port || p.stratumPort, p.user || p.username, clientName);
+                    }
+                    await stmt.finalize();
                     await db.run('COMMIT');
                   } catch (e) {
                     await db.run('ROLLBACK');
+                    console.error(`[mrr:rigs] DB pool sync failed for rig ${id}:`, e.message);
                   }
                 }
                 if (Array.isArray(item.pools)) {

@@ -41,6 +41,18 @@ export function initNhConfigs(env) {
       environment: normalizeCredential(env.NICEHASH_ENVIRONMENT || 'production'),
 
     },
+    PH3: {
+      apiKey: normalizeCredential(env.NICEHASH_API_KEY_PH3),
+      apiSecret: normalizeCredential(env.NICEHASH_API_SECRET_PH3),
+      orgId: normalizeCredential(env.NICEHASH_ORG_ID_PH3),
+      environment: normalizeCredential(env.NICEHASH_ENVIRONMENT || 'production'), 
+    },
+    HUDA: {
+      apiKey: normalizeCredential(env.NICEHASH_API_KEY_HUDA),
+      apiSecret: normalizeCredential(env.NICEHASH_API_SECRET_HUDA),
+      orgId: normalizeCredential(env.NICEHASH_ORG_ID_HUDA),
+      environment: normalizeCredential(env.NICEHASH_ENVIRONMENT || 'production'),
+    },
     LN: {
       apiKey: normalizeCredential(env.NICEHASH_API_KEY_LN),
       apiSecret: normalizeCredential(env.NICEHASH_API_SECRET_LN),

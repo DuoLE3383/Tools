@@ -1,15 +1,25 @@
 // c:\Coding\tool\src\core\priceUtils.js
 
 export function getPriceData(source) {
-  if (!source) return { value: 0, currency: "BTC" };
+  if (!source) return { value: 0, currency: "BTC", isTotalCost: false };
 
   if (typeof source === "object") {
+    // If source has 'paid', it's a total amount, not a rate.
+    if (source.paid !== undefined) {
+      return {
+        value: parsePriceValue(source.paid),
+        currency: (
+          source.currency ??
+          source.price_unit ??
+          source.unit ??
+          "BTC"
+        ).toUpperCase(),
+        isTotalCost: true,
+      };
+    }
+    // Otherwise, assume it's a rate or a single value
     const val = parsePriceValue(
-      source.paid ??
-        source.value ??
-        source.amount ??
-        source.BTC ??
-        source.price,
+      source.BTC ?? source.value ?? source.amount ?? source.price,
     );
     const curr = (
       source.currency ??
@@ -17,10 +27,10 @@ export function getPriceData(source) {
       source.unit ??
       "BTC"
     ).toUpperCase();
-    return { value: val, currency: curr };
+    return { value: val, currency: curr, isTotalCost: false };
   }
 
-  return { value: parsePriceValue(source), currency: "BTC" };
+  return { value: parsePriceValue(source), currency: "BTC", isTotalCost: false };
 }
 
 export function getBtcPriceData(source) {
@@ -29,16 +39,19 @@ export function getBtcPriceData(source) {
       value: 0,
       currency: "BTC",
       isTotalCost: false,
-      isPerHashRate: true,
+      isPerHashRate: false,
     };
 
   const data = getPriceData(source);
+
+  // Detect if it's a rental total cost or a listing rate
   const isTotalCost = !!(
     typeof source === "object" &&
     (source.paid !== undefined || source.amount !== undefined)
   );
   const isPerHashRate = !isTotalCost;
 
+  // Handle MRR-style nested price objects specifically for rates
   if (typeof source === "object" && !source.paid && source.BTC) {
     return {
       value: parsePriceValue(source.BTC),
@@ -61,9 +74,41 @@ export function parsePriceValue(val) {
   if (val === undefined || val === null) return 0;
   if (typeof val === "number") return val;
   if (typeof val === "string") {
-    const cleaned = val.replace(/,/g, "");
+    const cleaned = val.replace(/,/g, "").trim();
     const parsed = parseFloat(cleaned);
     return isNaN(parsed) ? 0 : parsed;
   }
   return 0;
+}
+
+/**
+ * Calculates the NiceHash buying price including fees, upgrading a previously complex and potentially buggy implementation.
+ *
+ * This function replaces a nested ternary structure with a clear, readable flow. It corrects the unusual
+ * fallback logic (`price / 1000`) with a standard, configurable percentage-based fee calculation, which is
+ * more appropriate for determining a "price with fee".
+ *
+ * @param {number} buyNhPrice - The base price of the NiceHash order.
+ * @param {object} nhOrder - The NiceHash order object from the API, which may contain `add_fee` or `priceWithFee`.
+ * @param {number} [fallbackFeeRate=0.03] - The fee rate (e.g., 0.03 for 3%) to apply if no explicit fee is found.
+ * @returns {number} The final price including fees.
+ */
+export function calculateNhPriceWithFee(buyNhPrice, nhOrder, fallbackFeeRate = 0.03) {
+  // If the base price is not positive, the final price is zero.
+  if (!(buyNhPrice > 0)) {
+    return 0;
+  }
+
+  // Prioritize an explicit fee-inclusive price from the order object.
+  const explicitPriceWithFee = parsePriceValue(
+    nhOrder?.add_fee ?? nhOrder?.priceWithFee
+  );
+
+  // If a valid, positive fee-inclusive price is found, use it.
+  if (explicitPriceWithFee > 0) {
+    return explicitPriceWithFee;
+  }
+
+  // Fallback: Apply a standard percentage-based fee to the base price.
+  return buyNhPrice * (1 + fallbackFeeRate);
 }
