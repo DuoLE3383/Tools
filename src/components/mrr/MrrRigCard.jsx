@@ -168,6 +168,7 @@ const MrrRigCard = ({
     algoName;
   const normalizedAlgo = normalizeAlgoForNiceHash(rawAlgo);
   const mrrUnit = getMrrUnit(normalizedAlgo || rawAlgo);
+  const isEquihash = (normalizedAlgo || '').toUpperCase().includes('EQUIHASH');
   const nhUnit = getNiceHashUnit(normalizedAlgo || rawAlgo);
   const mrrApiKey = getMrrAlgoKey(normalizedAlgo);
   const isAsicBoostAlgo = isAsicBoost(normalizedAlgo);
@@ -349,23 +350,30 @@ const MrrRigCard = ({
   // The NiceHash myOrders API actually returns prices per TH (not per the mapping's niceHashUnit).
   // For example SHA256 (listed as EH in mapping) returns 0.4558 BTC/TH/Day, not BTC/EH/Day.
   // getNiceHashPriceValue returns the raw number — this IS the correct per-TH price.
+  // BUGFIX: The comment above is misleading. `getNiceHashPriceValue` incorrectly converts Equihash (Gsol) to TH.
+  // We must use `parsePriceValueLocal` to get the raw price number without any unit conversion,
+  // as the calling context is aware of the special case for Equihash units.
   const niceHashSourcePrice = nhOrder
-    ? getNiceHashPriceValue(nhOrder?.price ?? nhOrder?.rawOrder?.price ?? nhOrder)
+    ? parsePriceValueLocal(nhOrder?.price ?? nhOrder?.rawOrder?.price ?? nhOrder)
     : 0;
 
   console.log(`[MrrRigCard] ${normalizedCardAlgo} nhOrder account=${nhOrder?.account} rawPrice=${nhOrder?.rawOrder?.price} niceHashSourcePrice=${niceHashSourcePrice}`);
 
-  // The API returns price per TH. Label accordingly.
-  const myNhUnit = "TH";
+  // The myOrders API generally returns price per TH, but for Equihash it's per Gsol.
+  // We need to handle this exception for both display and ROI calculation.
+  const myNhUnit = isEquihash ? "Gsol" : "TH";
 
   // ── ROI (skip unit conversion — API already returns per-TH prices) ──
   const { niceHashPriceInMrrUnit, roiPercent, roiLabel } = useRoiCalculation({
     finalMrrRate,
     mrrUnit,
+    niceHashSourceUnit: myNhUnit,
     niceHashSourcePrice,
     normalizedAlgo,
     rawAlgo,
     isLoadingMrrRate,
+    // Always skip conversion. The `myOrders` API returns prices in a consistent unit (TH or Gsol),
+    // and `useRoiCalculation` will now handle the comparison between different units correctly.
     skipUnitConversion: true,
   });
 

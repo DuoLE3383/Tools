@@ -4,14 +4,11 @@
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 const WS_URL = import.meta.env.VITE_WS_URL || '/api/v2/prices/ws';
 
-export function createApiClient({ onAuthError, onState }) {
+export function createApiClient({ onAuthError, onState, token }) {
   return async function callApi(path, options = {}) {
     const startedAt = performance.now();
     const method = options.method || 'GET';
     const { query, section, silent = false, background = false, noCache = false, ...fetchOptions } = options;
-
-    // ✅ Skip if not authenticated and path requires auth
-    const token = localStorage.getItem('token');
     if (!token && !path.includes('/auth/') && !path.includes('/public/')) {
       console.warn('[API] No auth token, skipping call');
       return { success: false, error: 'Not authenticated' };

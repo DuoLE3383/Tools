@@ -404,7 +404,7 @@ async function issueTokenForUser(username, req) {
 const router = express.Router();
 
 // Login route (using the utilities above)
-router.post('/login', (req, res, next) => { next(); }, async (req, res) => {
+router.post('/login', async (req, res) => {
   try {
     const { username, password } = req.body;
 

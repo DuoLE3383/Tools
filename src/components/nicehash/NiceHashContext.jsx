@@ -157,9 +157,10 @@ export function NiceHashOrderProvider({ children, nhClient, callApi }) {
           id: String(o.id || o.orderId || ""),
           paid: o.payedAmount || "0.00000000",
           price: o.price || 0,
-          // Use the account field from the aggregated backend response first.
-          // This is crucial for matching orders to rigs from different accounts.
-          account: o.account || o.nhClient || nhClient,
+          // When using an aggregate client ('VN'), the backend MUST return the 'account' field.
+          // Falling back to the provider's 'nhClient' prop is incorrect, as it would
+          // mislabel all orders from the aggregate call with the client of the current page.
+          account: o.account || null,
           algo: algoCode,
           algoDisplayName: algoMapping.displayName || algoCode,
           algoUnit: algoUnit,

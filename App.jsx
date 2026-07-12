@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, useRef, useMemo, useReducer } from 'react';
 import Login from './src/components/Login.jsx';
+import { createApiClient } from './src/core/apiClient.js';
 import Dashboard from './src/components/Dashboard.jsx';
 import MiningPage from './src/components/mining/MiningPage.jsx';
 import MinerPage from './src/components/MinerPage.jsx';
@@ -85,6 +86,8 @@ function appReducer(state, action) {
       return { ...state, activeDashboard: action.payload };
     case 'RESET_STATE':
       return { ...initialState, view: state.view, nhOrderClient: state.nhOrderClient };
+    case 'SET_NICEHASH_DATA_IF_NULL':
+      return state.niceHashData === null ? { ...state, niceHashData: action.payload } : state;
     default:
       return state;
   }
@@ -193,207 +196,34 @@ export default function App() {
     addDebugLog('Logged out, token cleared.', 'info');
   }, [addDebugLog]);
 
-  // ============================================
-  // API CALL WITH PERFORMANCE OPTIMIZATIONS
-  // ============================================
-  const callApi = useCallback(async (path, options = {}) => {
-    const startedAt = performance.now();
-    const method = options.method || 'GET';
-    const { query, section, silent = false, background = false, noCache = false } = options;
-
-    // Skip if not authenticated and path requires auth
-    if (!authToken && !path.includes('/auth/')) {
-      addDebugLog('No auth token, skipping API call', 'warn');
-      return { success: false, error: 'Not authenticated' };
-    }
-
-    const headers = {
-      ...options.headers,
-      ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
-    };
-
-    let body = options.body;
-    if (body && typeof body === 'object' && !(body instanceof FormData)) {
-      body = JSON.stringify(body);
-      headers['Content-Type'] = headers['Content-Type'] || 'application/json';
-    }
-
-    // Build query string
-    const enrichedQuery = { ...query };
-    const isPriceReq = path.includes('/prices/');
-    const isNhRequest = path.includes('/mining/') || path.includes('/pools') || path.includes('/hashpower');
-
-    // Only add client for NiceHash v2 API calls, not for MRR or other services.
-    if (path.startsWith('/api/v2/') && isNhRequest && !enrichedQuery.client) {
-      const isPoolsEndpoint = path.includes('/pools') || section === 'pools';
-      enrichedQuery.client = isPoolsEndpoint ? state.nhPoolClient : state.nhOrderClient;
-    }
-
-    // Generate cache key
-    const queryEntries = Object.entries(enrichedQuery)
-      .filter(([k]) => k !== 'ts')
-      .sort()
-      .map(([k, v]) => `${k}=${v}`)
-      .join('&');
-    const cacheKey = `${method}:${path}:${queryEntries}:${body || ''}:${authToken || ''}`;
-
-    // Deduplicate inflight requests (GET only)
-    if (method === 'GET') {
-      const inflight = apiCache.current.getInflight(cacheKey);
-      if (inflight) {
-        addDebugLog(`Deduplicating: ${path}`, 'api');
-        return inflight;
-      }
-    }
-
-    // Check cache (GET only, not for price requests which are highly dynamic)
-    if (method === 'GET' && !noCache && !isPriceReq) {
-      const cached = apiCache.current.get(cacheKey);
-      if (cached) {
-        addDebugLog(`Cache hit: ${path}`, 'api');
-        if (!silent) updateSectionState(section, cached);
-        return cached;
-      }
-    }
-
-    // Build final path
-    let finalPath = path;
-    if (path.startsWith('/api/v2/') && !enrichedQuery.ts && !isPriceReq) {
-      enrichedQuery.ts = Date.now();
-    }
-
-    if (Object.keys(enrichedQuery).length > 0) {
-      const params = new URLSearchParams();
-      Object.entries(enrichedQuery).forEach(([key, value]) => {
-        if (value !== undefined && value !== null) params.append(key, String(value));
-      });
-      const qs = params.toString();
-      if (qs) finalPath += (finalPath.includes('?') ? '&' : '?') + qs;
-    }
-
-    addDebugLog(`API: ${method} ${finalPath}`, 'api');
-
-    if (!silent) {
-      dispatch({ type: 'SET_LOADING', payload: true });
-      dispatch({ type: 'SET_ERROR', payload: '' });
-    }
-
-    const requestPromise = (async () => {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
-
-        const res = await fetch(finalPath, {
-          ...options,
-          method,
-          headers,
-          body,
-          mode: 'cors',
-          credentials: 'omit',
-          signal: controller.signal,
-        });
-
-        clearTimeout(timeoutId);
-
-        let data = null;
-        if (res.status !== 204 && res.status !== 205) {
-          const text = await res.text();
-          try {
-            data = text ? JSON.parse(text) : null;
-          } catch {
-            data = text;
-          }
+  const handleApiState = useCallback((action) => {
+    switch (action.type) {
+      case 'request-start':
+        dispatch({ type: 'SET_LOADING', payload: true });
+        dispatch({ type: 'SET_ERROR', payload: '' });
+        break;
+      case 'request-finish':
+        dispatch({ type: 'SET_LAST_CALL', payload: action.payload });
+        break;
+      case 'request-error':
+        dispatch({ type: 'SET_ERROR', payload: action.payload.errorMsg });
+        if (action.payload.showModal) {
+          dispatch({ type: 'SET_MODAL', payload: { content: { error: action.payload.errorMsg }, open: true } });
         }
-
-        const duration = Math.round(performance.now() - startedAt);
-        dispatch({
-          type: 'SET_LAST_CALL',
-          payload: { method, path: finalPath, status: `${res.status} ${res.statusText}`, durationMs: duration }
-        });
-
-        // Handle 401/403. Do not let feature endpoints log the user out:
-        // upstream services can return auth-looking errors too. The dedicated
-        // session verifier below is responsible for clearing expired app tokens.
-        if (res.status === 401 || res.status === 403) {
-          const isAppAuthFailure =
-            path.startsWith('/api/auth/profile') ||
-            path.startsWith('/api/auth/users') ||
-            path.startsWith('/api/auth/logout');
-
-          if (isAppAuthFailure) {
-            addDebugLog(`Session expired (${res.status}), logging out`, 'error');
-            handleLogout();
-          }
-          return { success: false, error: data?.error || data?.message || 'Unauthorized' };
-        }
-
-        // Check for API errors
-        const isError = !res.ok || (data && typeof data === 'object' &&
-          (data.success === false || data.error || data.errors));
-
-        if (isError) {
-          const errorMsg = typeof data === 'string' ? data :
-            data?.errors?.[0]?.message || data?.error || data?.message || res.statusText;
-          addDebugLog(`API Error ${res.status}: ${errorMsg}`, 'error');
-          if (!silent) dispatch({ type: 'SET_ERROR', payload: errorMsg });
-          if (options.showModal) {
-            dispatch({ type: 'SET_MODAL', payload: { content: data || { error: errorMsg }, open: true } });
-          }
-          return { success: false, error: errorMsg };
-        }
-
-        // Success
-        if (!silent) dispatch({ type: 'SET_ERROR', payload: '' });
-
-        if (options.showModal && data) {
-          dispatch({ type: 'SET_MODAL', payload: { content: data, open: true } });
-        }
-
-        // Update section state
-        const detectedSection = section || (
-          path.includes('/pools') ? 'pools' :
-            path.includes('/mining') || path.includes('/hashpower') ? 'mining' :
-              path.includes('/rigs') ? 'rigs' : ''
-        );
-        updateSectionState(detectedSection, data);
-
-        // Cache successful GET responses (not price requests)
-        if (method === 'GET' && data && !isPriceReq) {
-          const ttl = path.includes('/pools') || path.includes('/algorithms') ? 300000 : 30000;
-          apiCache.current.set(cacheKey, data, ttl);
-        }
-
-        return data || { success: true };
-      } catch (err) {
-        let errorMsg = err.message || String(err);
-        if (err.name === 'AbortError') {
-          errorMsg = 'Request timeout (30s)';
-        } else if (errorMsg.includes('Failed to fetch') || errorMsg.includes('ERR_CONNECTION_REFUSED')) {
-          errorMsg = 'Backend server unreachable. Please ensure the server is running.';
-        }
-
-        if (!silent) {
-          dispatch({ type: 'SET_ERROR', payload: errorMsg });
-          dispatch({
-            type: 'SET_LAST_CALL',
-            payload: { method, path: finalPath, status: 'Failed', durationMs: Math.round(performance.now() - startedAt) }
-          });
-        }
-
-        return { success: false, error: errorMsg };
-      } finally {
-        apiCache.current.deleteInflight(cacheKey);
-        if (!silent) dispatch({ type: 'SET_LOADING', payload: false });
-      }
-    })();
-
-    // Store inflight request
-    if (method === 'GET') {
-      apiCache.current.setInflight(cacheKey, requestPromise);
+        break;
+      case 'request-end':
+        dispatch({ type: 'SET_LOADING', payload: false });
+        break;
+      default:
+        break;
     }
+  }, [dispatch]);
 
-    return requestPromise;
-  }, [authToken, state.nhOrderClient, state.nhPoolClient, addDebugLog, handleLogout]);
+  const apiClient = useMemo(() => createApiClient({
+    token: authToken,
+    onAuthError: handleLogout,
+    onState: handleApiState,
+  }), [authToken, handleLogout, handleApiState]);
 
   // ============================================
   // STATE UPDATE HELPER
@@ -411,12 +241,41 @@ export default function App() {
         dispatch({ type: 'SET_NICEHASH_DATA', payload: data });
         break;
       default:
-        if (state.niceHashData === null) {
-          dispatch({ type: 'SET_NICEHASH_DATA', payload: data });
-        }
+        // Fallback for initial load, handled by reducer to avoid dependency
+        dispatch({ type: 'SET_NICEHASH_DATA_IF_NULL', payload: data });
         break;
     }
-  }, [state.niceHashData]);
+  }, [dispatch]);
+
+  // ============================================
+  // API CALL WRAPPER
+  // ============================================
+  const callApi = useCallback(async (path, options = {}) => {
+    const { query, section, ...restOptions } = options;
+    const enrichedQuery = { ...query };
+    const isNhRequest = path.includes('/mining/') || path.includes('/pools') || path.includes('/hashpower');
+
+    // Add application-specific client parameter to NiceHash calls
+    if (path.startsWith('/api/v2/') && isNhRequest && !enrichedQuery.client) {
+      const isPoolsEndpoint = path.includes('/pools') || section === 'pools';
+      enrichedQuery.client = isPoolsEndpoint ? state.nhPoolClient : state.nhOrderClient;
+    }
+
+    const newOptions = { ...restOptions, query: enrichedQuery };
+    const data = await apiClient(path, newOptions);
+
+    // On success, update the relevant part of the application state
+    if (data && data.success !== false) {
+      const detectedSection = section || (
+        path.includes('/pools') ? 'pools' :
+        path.includes('/mining') || path.includes('/hashpower') ? 'mining' :
+        path.includes('/rigs') ? 'rigs' : ''
+      );
+      updateSectionState(detectedSection, data);
+    }
+
+    return data;
+  }, [apiClient, state.nhPoolClient, state.nhOrderClient, updateSectionState]);
 
   // ============================================
   // FORCE CHECK STATUS

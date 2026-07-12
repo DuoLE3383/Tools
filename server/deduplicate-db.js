@@ -43,6 +43,9 @@ const dbAll = (sql, params = []) => {
  * @param {string} timestampColumn The column to order by to find the latest entry.
  */
 async function deduplicateTable(tableName, keyColumn, timestampColumn) {
+  // Wrap the entire operation in a transaction for atomicity and performance.
+  await dbRun('BEGIN');
+
   console.log(`[DB] Starting deduplication for table: ${tableName}...`);
 
   // For coin_prices, we need to consider both coin_id and symbol to catch all duplicates
@@ -51,6 +54,7 @@ async function deduplicateTable(tableName, keyColumn, timestampColumn) {
     : `UPPER(${keyColumn})`;
 
   try {
+
     // Step 1: Find the rowids of the records to keep.
     // We partition by the key column and find the latest record using the timestamp.
     const queryToKeep = `
@@ -88,11 +92,14 @@ async function deduplicateTable(tableName, keyColumn, timestampColumn) {
     const finalCount = initialCount - deletedCount;
 
     console.log(`[DB] Deduplication of ${tableName} complete.`);
-    console.log(`  - Initial rows: ${initialCount}`);
-    console.log(`  - Rows kept:    ${finalCount}`);
-    console.log(`  - Rows deleted:   ${deletedCount}`);
+    console.log(`  - Initial rows: ${initialCount}, Kept: ${finalCount}, Deleted: ${deletedCount}`);
+
+    // If successful, commit the transaction.
+    await dbRun('COMMIT');
 
   } catch (err) {
+    // If any error occurs, roll back the transaction.
+    await dbRun('ROLLBACK');
     console.error(`[DB] Error deduplicating table ${tableName}: ${err.message}`);
     // Check if the error is due to a missing table or column
     if (/no such table|no such column/.test(err.message)) {
@@ -126,12 +133,18 @@ async function runDeduplication() {
     }
   ];
 
-  for (const config of tablesToProcess) {
-    await deduplicateTable(config.tableName, config.keyColumn, config.timestampColumn);
-    console.log('---');
+  try {
+    for (const config of tablesToProcess) {
+      await deduplicateTable(config.tableName, config.keyColumn, config.timestampColumn);
+      console.log('---');
+    }
+  } catch (err) {
+    console.error('[DB] A critical error occurred during the deduplication process:', err.message);
+  } finally {
+    console.log('[DB] Database deduplication process finished.');
   }
 
-  console.log('[DB] Database deduplication process finished.');
+
 
   // Close the database connection
   if (db) {
@@ -146,4 +159,4 @@ async function runDeduplication() {
 }
 
 // Execute the script
-runDeduplication();
+runDeduplication().catch(err => console.error("Unhandled error in deduplication script:", err));

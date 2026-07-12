@@ -67,7 +67,7 @@ export default function DashboardHeader({
                 href={item.path}
                 onClick={(e) => {
                   e.preventDefault();
-                  onNavigate(item.path);
+                  onNavigate(item.path, item.view);
                 }}
                 className="btn-pro secondary"
                 style={{

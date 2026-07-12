@@ -88,8 +88,12 @@ app.use(express.urlencoded({ extended: true }));
 app.use((req, res, next) => {
   res.setHeader(
     'Content-Security-Policy',
-    // This policy allows scripts and connections needed by your app and Cloudflare
-    "default-src 'self'; script-src 'self' 'unsafe-inline' https://huyenbao.com https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline'; connect-src 'self' https://huyenbao.com http://localhost:3003; img-src 'self' data:; object-src 'none'; frame-ancestors 'none';"
+    // This policy allows scripts and connections for the app, Cloudflare, and API subdomains.
+    "default-src 'self'; " +
+    "script-src 'self' 'unsafe-inline' https://huyenbao.com https://www.huyenbao.com https://static.cloudflareinsights.com; " +
+    "style-src 'self' 'unsafe-inline'; " +
+    "connect-src 'self' https://huyenbao.com https://www.huyenbao.com https://api.huyenbao.com http://localhost:3003 ws: wss:; " +
+    "img-src 'self' data:; object-src 'none'; frame-ancestors 'none';"
   );
   next();
 });

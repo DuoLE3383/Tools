@@ -7,6 +7,7 @@ import {
 export const useRoiCalculation = ({
   finalMrrRate,
   mrrUnit,
+  niceHashSourceUnit, // The original unit of the NH price (e.g., 'TH' or 'Gsol')
   niceHashSourcePrice,
   normalizedAlgo,
   rawAlgo,
@@ -24,13 +25,15 @@ export const useRoiCalculation = ({
 
   const roiPercent = useMemo(() => {
     if (finalMrrRate <= 0 || niceHashPriceInMrrUnit <= 0) return null;
+    // If we skipped unit conversion, the NH price is still in its original unit.
+    const nhUnitForComparison = skipUnitConversion ? niceHashSourceUnit : mrrUnit;
     return calculatePriceComparison(
       finalMrrRate,
       mrrUnit,
       niceHashPriceInMrrUnit,
-      mrrUnit,
+      nhUnitForComparison,
     );
-  }, [finalMrrRate, mrrUnit, niceHashPriceInMrrUnit]);
+  }, [finalMrrRate, mrrUnit, niceHashPriceInMrrUnit, skipUnitConversion, niceHashSourceUnit]);
 
   const formatPercent = (value) => {
     const num = Number(value);
