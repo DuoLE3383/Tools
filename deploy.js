@@ -1,14 +1,45 @@
 import fs from 'fs'
 import path from 'path'
 import dotenv from 'dotenv'
+import { execSync } from 'child_process'
 import { fileURLToPath } from 'url'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
-const projectRoot = path.join(__dirname, '..')
+const projectRoot = __dirname
 
-// Load environment variables
+console.log('🚀 Starting build and deploy process...')
+
+// Step 1: Build the project
+console.log('\n📦 Step 1: Building project...')
+
+// Check if dist exists and clean it
+const distPath = path.join(projectRoot, 'dist')
+if (fs.existsSync(distPath)) {
+  console.log('🧹 Cleaning dist directory...')
+  fs.rmSync(distPath, { recursive: true, force: true })
+}
+
+// Build frontend with Vite
+console.log('🎨 Building frontend...')
+try {
+  execSync('npx vite build', { 
+    stdio: 'inherit',
+    cwd: projectRoot,
+    env: { ...process.env, NODE_ENV: 'production' }
+  })
+  console.log('✅ Frontend build complete!')
+} catch (error) {
+  console.error('❌ Frontend build failed:', error.message)
+  process.exit(1)
+}
+
+// Step 2: Load environment variables
+console.log('\n🔧 Step 2: Loading environment variables...')
 dotenv.config({ path: path.join(projectRoot, '.env') })
+
+// Step 3: Generate wrangler config
+console.log('\n📝 Step 3: Generating wrangler configuration...')
 
 const templatePath = path.join(projectRoot, 'wrangler.toml')
 const outputPath = path.join(projectRoot, 'wrangler.generated.toml')
@@ -109,6 +140,7 @@ const missingKeys = Object.entries(vars)
 
 if (missingKeys.length > 0) {
   console.warn(`⚠️ Warning: missing env vars: ${missingKeys.join(', ')}`)
+  console.warn('💡 These variables will be omitted from deployment')
 }
 
 // Generate vars section
@@ -123,5 +155,30 @@ const varsSnippet = Object.entries(vars)
 // Write generated config
 const output = `${template.trim()}\n\n[vars]\n${varsSnippet}\n`
 fs.writeFileSync(outputPath, output, 'utf8')
-console.log(`✅ Generated ${path.basename(outputPath)} from .env`)
-console.log(`📦 Found ${Object.entries(vars).filter(([_, v]) => v).length} environment variables`)
+console.log(`✅ Generated ${path.basename(outputPath)}`)
+
+// Step 4: Deploy to Cloudflare
+console.log('\n🚀 Step 4: Deploying to Cloudflare Workers...')
+
+try {
+  // Check if wrangler is installed
+  try {
+    execSync('wrangler --version', { stdio: 'ignore' })
+  } catch {
+    console.log('📦 Installing wrangler...')
+    execSync('npm install -g wrangler', { stdio: 'inherit' })
+  }
+
+  // Deploy
+  execSync('wrangler deploy --config wrangler.generated.toml', { 
+    stdio: 'inherit',
+    cwd: projectRoot
+  })
+  
+  console.log('\n✅ Deployment successful! 🎉')
+  console.log(`📍 Worker deployed to: https://${process.env.TUNNEL_URL || 'your-worker.dev'}`)
+  
+} catch (error) {
+  console.error('\n❌ Deployment failed:', error.message)
+  process.exit(1)
+}

@@ -67,6 +67,11 @@ function killProcessOnPort(port) {
         }
         
         for (const pid of pids) {
+          // Don't kill our own process
+          if (parseInt(pid) === process.pid) {
+            console.log(`⚠️ Skipping self (PID: ${pid})`);
+            continue;
+          }
           console.log(`🔪 Killing process ${pid} using port ${port}`);
           spawn('taskkill', ['/F', '/PID', pid], { shell: true, stdio: 'pipe' });
         }
@@ -87,7 +92,13 @@ function killProcessOnPort(port) {
         }
         
         for (const pid of pids) {
-          console.log(`🔪 Killing process ${pid} using port ${port}`);
+          const pidNum = parseInt(pid.trim());
+          // Don't kill our own process
+          if (pidNum === process.pid) {
+            console.log(`⚠️ Skipping self (PID: ${pidNum})`);
+            continue;
+          }
+          console.log(`🔪 Killing process ${pidNum} using port ${port}`);
           spawn('kill', ['-9', pid.trim()], { shell: true });
         }
         setTimeout(resolve, 2000);
@@ -101,14 +112,14 @@ function killProcessByName(processName) {
     console.log(`🔍 Looking for processes named "${processName}"...`);
     
     if (process.platform === 'win32') {
-      // Windows: Use taskkill
+      // Windows: Use taskkill - but be careful not to kill self
       spawn('taskkill', ['/F', '/IM', processName, '/FI', 'WINDOWTITLE eq node*'], { 
         shell: true, 
         stdio: 'pipe' 
       });
       setTimeout(resolve, 1000);
     } else {
-      // Unix: Use pkill
+      // Unix: Use pgrep with more specific patterns
       const findCmd = spawn('pgrep', ['-f', processName], { shell: true });
       let output = '';
       findCmd.stdout.on('data', (d) => (output += d.toString()));
@@ -116,7 +127,13 @@ function killProcessByName(processName) {
         const pids = output.split('\n').filter(pid => pid.trim());
         if (pids.length > 0) {
           for (const pid of pids) {
-            console.log(`🔪 Killing process ${pid} (${processName})`);
+            const pidNum = parseInt(pid.trim());
+            // Don't kill our own process
+            if (pidNum === process.pid) {
+              console.log(`⚠️ Skipping self (PID: ${pidNum}) for pattern "${processName}"`);
+              continue;
+            }
+            console.log(`🔪 Killing process ${pidNum} (${processName})`);
             spawn('kill', ['-9', pid.trim()], { shell: true });
           }
         } else {
@@ -130,6 +147,7 @@ function killProcessByName(processName) {
 
 async function cleanAllPortsAndProcesses() {
   console.log('\n🧹 Starting comprehensive cleanup...');
+  console.log(`📌 Current process PID: ${process.pid} (will be preserved)`);
   
   // Kill specific processes first
   await killProcessByName('node.*index.js');
@@ -141,16 +159,17 @@ async function cleanAllPortsAndProcesses() {
   await killProcessOnPort(CONFIG.port);
   await killProcessOnPort(CONFIG.frontendPort);
   
-  // Additional cleanup for any stray node processes
-  if (process.platform !== 'win32') {
-    await killProcessByName('node');
-  }
-  
   // Kill any existing child processes
   for (const p of processes) {
     try {
       if (p && !p.killed) {
-        console.log(`🔪 Killing child process ${p.pid}`);
+        const pid = p.pid;
+        // Don't kill our own process
+        if (pid === process.pid) {
+          console.log(`⚠️ Skipping self (PID: ${pid}) in child processes`);
+          continue;
+        }
+        console.log(`🔪 Killing child process ${pid}`);
         p.kill('SIGKILL');
       }
     } catch (e) { /* ignore */ }
@@ -177,17 +196,22 @@ function cleanup() {
   isShuttingDown = true;
   console.log('\n🛑 Shutting down...');
 
-  // Kill all tracked processes
+  // Kill all tracked processes (excluding self)
   [...processes].reverse().forEach(p => {
     try {
       if (p && !p.killed) {
-        console.log(`🔪 Killing process ${p.pid}`);
+        const pid = p.pid;
+        if (pid === process.pid) {
+          console.log(`⚠️ Skipping self (PID: ${pid}) in cleanup`);
+          return;
+        }
+        console.log(`🔪 Killing process ${pid}`);
         p.kill('SIGKILL');
       }
     } catch (e) { /* ignore */ }
   });
 
-  // Kill any remaining processes on ports
+  // Kill any remaining processes on ports (excluding self)
   Promise.all([
     killProcessOnPort(CONFIG.port),
     killProcessOnPort(CONFIG.frontendPort)
@@ -219,7 +243,7 @@ process.on('unhandledRejection', (reason) => {
 async function ensureCleanStart() {
   console.log('🔍 Checking for existing processes...');
   
-  // Kill everything before starting
+  // Kill everything before starting (but NOT self)
   await cleanAllPortsAndProcesses();
   
   // Double-check ports are free

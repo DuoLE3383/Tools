@@ -2,20 +2,37 @@ import 'dotenv/config';
 import { initNhConfigs, nhConfigs, resolveNhClient, getNiceHashApp } from './nh.js';
 
 /**
- * Script to automatically verify all stratum pools for ALL configured NiceHash accounts.
+ * Script to automatically verify stratum pools for configured NiceHash accounts.
  * Handles accounts like BT, PH, and numbered extras (2, 3, 4, 5...) from .env.
  * Runs in an infinite loop and handles 429 Rate Limit retries.
  * 
- * Usage: node server/verify-all-accounts.js
+ * Usage:
+ *   node server/verify-all-accounts.js               # Verify all accounts
+ *   node server/verify-all-accounts.js BT             # Verify only BT
+ *   node server/verify-all-accounts.js BT,PH,LN       # Verify specific accounts
  */
 async function run() {
   // Initialize configurations from environment variables
   initNhConfigs(process.env);
 
+  // Parse CLI filter argument (comma-separated account names, optional)
+  const filterArg = process.argv[2];
+  const filterList = filterArg ? filterArg.toUpperCase().split(',').map(s => s.trim()) : null;
+
   // Get all unique client keys that have the necessary credentials
-  const accountNames = Object.keys(nhConfigs).filter(name => 
+  let accountNames = Object.keys(nhConfigs).filter(name => 
     nhConfigs[name].apiKey && nhConfigs[name].apiSecret && nhConfigs[name].orgId
   );
+
+  // Apply filter if provided
+  if (filterList) {
+    accountNames = accountNames.filter(name => filterList.includes(name));
+    if (accountNames.length === 0) {
+      console.error(`[Error] None of the specified accounts match configured clients.`);
+      console.error(`Available accounts: ${Object.keys(nhConfigs).filter(n => nhConfigs[n].apiKey && nhConfigs[n].apiSecret && nhConfigs[n].orgId).join(', ')}`);
+      process.exit(1);
+    }
+  }
 
   if (accountNames.length === 0) {
     console.error(`[Error] No NiceHash clients are fully configured in .env (Missing API Key, Secret, or Org ID).`);
@@ -23,18 +40,16 @@ async function run() {
   }
 
   const sessionStartTime = Date.now();
+  let loopPoolCount = 0;
+  const loopStartTime = Date.now();
 
-  while (true) {
-    let loopPoolCount = 0;
-    const loopStartTime = Date.now();
+  console.log(`\n🚀 Starting Pool Auto-Verification`);
+  console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+  console.log(`Accounts: ${accountNames.join(', ')}`);
+  console.log(`Start:    ${new Date().toLocaleString()}`);
+  console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
 
-    console.log(`\n🚀 Starting Global Pool Auto-Verification`);
-    console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-    console.log(`Found ${accountNames.length} Accounts: ${accountNames.join(', ')}`);
-    console.log(`Start Time:     ${new Date().toLocaleString()}`);
-    console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
-
-    for (let cIdx = 0; cIdx < accountNames.length; cIdx++) {
+  for (let cIdx = 0; cIdx < accountNames.length; cIdx++) {
       const name = accountNames[cIdx];
       const { client, clientName } = resolveNhClient(name);
 
@@ -181,16 +196,11 @@ async function run() {
     const totalRunTime = Math.floor((loopEndTime - sessionStartTime) / 1000);
 
     console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-    console.log(`✨ Global Cycle Finished`);
+    console.log(`✨ Done`);
     console.log(`Total Pools Verified: ${loopPoolCount}`);
-    console.log(`Cycle Duration:       ${cycleDuration}s`);
-    console.log(`Total Session Run:    ${totalRunTime}s`);
-    console.log(`Last Finish Time:     ${new Date().toLocaleString()}`);
+    console.log(`Duration:             ${cycleDuration}s`);
+    console.log(`Finish Time:          ${new Date().toLocaleString()}`);
     console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-
-    console.log(`\nRestarting in 2s...`);
-    await new Promise(resolve => setTimeout(resolve, 2000)); 
-  }
 }
 
 run();

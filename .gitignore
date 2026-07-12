@@ -38,3 +38,4 @@ worker/index.js
 .vite/
 node_modules/.vite/
 wrangler.json
+wrangler.generated.toml

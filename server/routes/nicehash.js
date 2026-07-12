@@ -113,6 +113,10 @@ export function registerNiceHashRoutes(app) {
       return res.json({ currencies: allCurrencies, total: { available: total.available.toFixed(8), pending: total.pending.toFixed(8), totalBalance: total.totalBalance.toFixed(8), currency: "BTC" } });
     }
     res.json(await req.nhApp.accounting.getBalances());
+    // The middleware prepares req.nhApp, which is either a single client app
+    // or an aggregate app that handles fetching from all accounts.
+    const balances = await req.nhApp.accounting.getBalances();
+    res.json(balances);
   }));
   app.get("/api/v2/accounting/balance/:currency", asyncHandler(async (req, res) => res.json(await req.nhApp.accounting.getBalance(req.params.currency))));
   app.post("/api/v2/accounting/withdrawal", asyncHandler(async (req, res) => res.json(await req.nhApp.accounting.createWithdrawal(req.body))));
@@ -139,6 +143,8 @@ export function registerNiceHashRoutes(app) {
       return res.json({ miningRigs: results.flat() });
     }
     res.json(await req.nhApp.mining.getRigs());
+    const rigsData = await req.nhApp.mining.getRigs();
+    res.json(rigsData);
   }));
   app.get("/api/v2/mining/rig/:rigId", asyncHandler(async (req, res) => res.json(await req.nhApp.mining.getRigDetails(req.params.rigId))));
   app.post("/api/v2/mining/rigs/status", asyncHandler(async (req, res) => res.json(await req.nhApp.mining.setRigStatus(req.body))));
@@ -171,6 +177,9 @@ export function registerNiceHashRoutes(app) {
     } else {
       data = await req.nhApp.hashpower.getMyOrders(query);
     }
+
+    const data = await req.nhApp.hashpower.getMyOrders(query);
+
     const rawList = data?.list || data?.myOrders || (Array.isArray(data) ? data : []);
     const processedList = rawList.map(o => ({
       id: o.id || "",
@@ -434,6 +443,10 @@ export function registerNiceHashRoutes(app) {
     const pools = data?.list || [];
     const clientName = res.get("X-NH-Client") || "BT";
     if (pools.length > 0) {
+
+    // For single-client calls, persist the fetched pools to the database.
+    // Aggregate calls handle this internally via getCachedNhPools.
+    if (pools.length > 0 && !isAggregate(clientName)) {
       const db = await getDb();
       await db.run('BEGIN TRANSACTION');
       try {
@@ -444,6 +457,7 @@ export function registerNiceHashRoutes(app) {
         await stmt.finalize();
         await db.run('COMMIT');
       } catch (e) {
+        console.error(`[DB] Failed to save pools for ${clientName}:`, e.message);
         await db.run('ROLLBACK');
       }
     }
@@ -454,6 +468,11 @@ export function registerNiceHashRoutes(app) {
     if (isAggregate(clientParam)) {
       const nhAccounts = Object.keys(nhConfigs).filter(k => nhConfigs[k].apiKey && nhConfigs[k].apiSecret && nhConfigs[k].orgId && !isAggregate(k));
       const processedClients = new Set();
+
+    // If an aggregate client is requested OR no client is specified, search across all accounts.
+    if (isAggregate(clientParam) || !req.query.client) {
+      res.set("X-NH-Client", "VN"); // Indicate an aggregate search
+      const nhAccounts = Object.keys(nhConfigs).filter(k => nhConfigs[k].apiKey && !isAggregate(k));
       for (const acct of nhAccounts) {
         const { client, clientName } = resolveNhClient(acct);
         if (!client || (acct !== "BT" && clientName === "BT") || processedClients.has(clientName)) continue;
@@ -461,9 +480,19 @@ export function registerNiceHashRoutes(app) {
         try {
           const data = await getNiceHashApp(client).pools.getPoolDetails(req.params.poolId);
           if (data && !data.error) { res.set("X-NH-Client", clientName); return res.json(data); }
+          const { client } = resolveNhClient(acct);
+          if (client && !client.isAggregate) {
+            const data = await getNiceHashApp(client).pools.getPoolDetails(req.params.poolId);
+            if (data && !data.error) {
+              return res.json(data);
+            }
+          }
         } catch {}
       }
+      return res.status(404).json({ success: false, error: `Pool ${req.params.poolId} not found in any account.` });
     }
+
+    // For a specific client, use the app prepared by the middleware.
     res.json(await req.nhApp.pools.getPoolDetails(req.params.poolId));
   }));
   app.post("/api/v2/pool", asyncHandler(async (req, res) => res.json(await req.nhApp.pools.createPool(req.body))));
