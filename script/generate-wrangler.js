@@ -10,8 +10,10 @@ const outputPath = path.join(projectRoot, 'wrangler.generated.toml')
 
 let template = fs.readFileSync(templatePath, 'utf8')
 
-// Remove the [assets] block to prevent conflicts with the reverse-proxy worker setup.
-template = template.replace(/\[assets\]\s*directory\s*=\s*".*?"\s*\n?/, '');
+// Remove the existing [vars] section from the template (including any inline vars after it)
+// so we can re-append only the environment-based vars at the end.
+// The regex matches [vars] up to the next section header or end of file.
+template = template.replace(/\n?\[vars\][\s\S]*?(?=\n\[|$)/, '');
 
 const vars = {
   NICEHASH_API_KEY: process.env.NICEHASH_API_KEY,
@@ -66,6 +68,6 @@ const varsSnippet = Object.entries(vars)
   .map(([key, value]) => `${key} = ${JSON.stringify(value)}`)
   .join('\n')
 
-const output = `${template}\n\n[vars]\n${varsSnippet}\n`
+const output = `${template.trim()}\n\n[vars]\n${varsSnippet}\n`
 fs.writeFileSync(outputPath, output, 'utf8')
 console.log(`Generated ${path.basename(outputPath)} from .env`)

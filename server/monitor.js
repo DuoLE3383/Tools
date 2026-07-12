@@ -82,6 +82,24 @@ async function maybeDelay(key) {
   }
 }
 
+/**
+ * Format remaining milliseconds into a human-readable time string
+ * @param {number} ms - milliseconds remaining
+ * @returns {string} e.g. "2h 30m" or "45s"
+ */
+function formatRemainingTime(ms) {
+  if (!ms || ms <= 0) return "0s";
+  const totalSeconds = Math.floor(ms / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const parts = [];
+  if (hours > 0) parts.push(`${hours}h`);
+  if (minutes > 0) parts.push(`${minutes}m`);
+  if (parts.length === 0) parts.push(`${seconds}s`);
+  return parts.join(" ");
+}
+
 // ==========================
 //  NICEHASH HELPERS
 // ==========================

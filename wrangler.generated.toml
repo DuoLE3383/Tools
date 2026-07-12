@@ -1,12 +1,11 @@
+# wrangler.toml
 name = "tools"
-compatibility_date = "2026-07-08"
 main = "worker/index.js"
+compatibility_date = "2026-07-08"
+compatibility_flags = ["nodejs_compat"]
 
 [assets]
 directory = "./dist"
-
-[vars]
-TUNNEL_URL = "https://api.huyenbao.com"
 
 [[kv_namespaces]]
 binding = "KV"
@@ -16,8 +15,13 @@ id = "0f1ddf5ff91d400dad8cfb3c316bfa1e"
 binding = "server"
 id = "745efbcddb5f42008027d3396114ff3a"
 
+# Routes
 [[routes]]
-pattern = "app.huyenbao.com/*"
+pattern = "api.huyenbao.com/*"
+zone_name = "huyenbao.com"
+
+[[routes]]
+pattern = "huyenbao.com/*"
 zone_name = "huyenbao.com"
 
 [vars]
@@ -36,10 +40,10 @@ MRR_KEY_RIG_SL = "26a32e6a0a60233eb09840acbe7bd4eb6299c80f32e88d7cf449743304b085
 MRR_SECRET_RIG_SL = "e68900f5bba7d48517f38ff2b26198d8aad034f6f9fce60d3ba28ad58054ab67"
 MRR_KEY_RIG_LN = "e7b0d9994390c0b29bed634b3be1c0e250fb27557baaaa94a1b8664f1d8b908e"
 MRR_SECRET_RIG_LN = "608003e7ad85d3ab88f9654cd528c8b23c97f1d0eef4da9a1b0cb200bb37b3de"
-MRR_KEY_RIG_LUCKY = "f36cce5f660857a4915a2cb1346ed84029f69494ec3121bd2161a0c05d0f714c"
-MRR_SECRET_RIG_LUCKY = "d74a677f22ae9c6d1879a6e4f96ac807d91d88c9675cd56d39972124d93a6325"
-MRR_NONCE_OVERRIDE_LUCKY = "9223372036854775807"
+MRR_KEY_RIG_LUCKY = "61eefc493887c8b6b8db7dc0546a52503f98e3bd4b09ca966701cddaa36bfa21"
+MRR_SECRET_RIG_LUCKY = "a82220ecc5532932504679789b535cf4fc91cb411ec826e6601a838a8e190a7f"
+MRR_NONCE_OVERRIDE_LUCKY = "0"
 MRR_NONCE_OVERRIDE_LN = "9223372036854775807"
 MRR_NONCE_OVERRIDE_SL = "9223372036854775807"
 MRR_NONCE_OVERRIDE_BT = "9223372036854775807"
-TUNNEL_URL = "https://see-pci-advertisements-diploma.trycloudflare.com"
+TUNNEL_URL = "api.huyenbao.com"

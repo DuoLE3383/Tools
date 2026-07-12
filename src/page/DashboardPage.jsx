@@ -55,8 +55,8 @@ export default function DashboardPage({
           niceHashData={state.output}
           mrrClient={state.mrrClient}
           setMrrClient={setMrrClient}
-          nhPoolClient={state.nhPoolClient}
-          setNhPoolClient={setNhPoolClient}
+          nhClient={state.nhPoolClient}
+          setNhClient={setNhPoolClient}
         />
       </section>
 
