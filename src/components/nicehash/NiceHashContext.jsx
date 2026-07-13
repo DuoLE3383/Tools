@@ -95,13 +95,10 @@ export function NiceHashOrderProvider({ children, nhClient, callApi }) {
     setError(null);
 
     try {
-      // Fetch orders from NiceHash
-      // ✅ FIX: Force fetching from the aggregate client ('VN' or 'ALL') to ensure
-      // data is synchronized across all pages (/mrr, /nicehash). This prevents
-      // the context from having an incomplete order list if a specific `nhClient`
-      // prop is passed on a particular page.
       const data = await callApi("/api/v2/hashpower/myOrders", {
-        query: { op: "LE", limit: 100, client: "VN" }, // Always fetch from aggregate client
+        // Use the client from the provider props. This allows the UI to control the data source.
+        // The MRR page will temporarily set this to 'VN' to ensure it gets all orders.
+        query: { op: "LE", limit: 100, client: nhClient },
         silent: true,
       });
 
@@ -112,7 +109,7 @@ export function NiceHashOrderProvider({ children, nhClient, callApi }) {
       const list =
         data?.list || data?.myOrders || (Array.isArray(data) ? data : []);
       console.log(
-        `[NiceHashOrderContext] Fetched ${list.length} orders for client ${nhClient}`,
+        `[NiceHashOrderContext] Fetched ${list.length} orders for client ${nhClient}`
       );
 
       // Separate active and inactive orders

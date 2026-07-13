@@ -5,11 +5,74 @@ import { mrrApiCall } from "../mrr.js";
 import fs from "fs/promises";
 import path from "path";
 import { getDb } from "../db.js";
-import { getAlgoMapping } from "../../src/core/mapping.js";
+import { getAlgoMapping, getNiceHashUnit, convertUnit, HASHRATE_SUFFIXES } from "../../src/core/mapping.js";
 const ALGO_MAPPING = (algo) => {
   const mapping = getAlgoMapping(algo);
   return mapping?.unit || 'H';
 };
+
+// Unit conversion helper for 1 PH → target unit
+function unitToTarget(value, fromUnit, toUnit) {
+  if (fromUnit === toUnit) return value;
+  const fromMult = HASHRATE_SUFFIXES[fromUnit] || 1;
+  const toMult = HASHRATE_SUFFIXES[toUnit] || 1;
+  return (value * fromMult) / toMult;
+}
+
+// Estimated power draw per algorithm (watts per PH of hashrate)
+const ESTIMATED_WATTS_PER_UNIT = {
+  SHA256: 300,       // 0.3 W/GH → 300 W/PH
+  SHA256ASICBOOST: 300,
+  SCRYPT: 800,
+  SCRYPTN: 600,
+  NEOSCRYPT: 600,
+  RANDOMXMONERO: 500,
+  RANDOMX: 500,
+  KAWPOW: 400,
+  DAGGERHASHIMOTO: 200,
+  ETCHASH: 250,
+  EQUIHASH: 200,
+  X11: 600,
+  X13: 600,
+  X15: 600,
+  X16R: 350,
+  X16RV2: 350,
+  LYRA2RE: 400,
+  LYRA2REV2: 400,
+  LYRA2REV3: 400,
+  KECCAK: 500,
+  NIST5: 500,
+  QUBIT: 600,
+  QUARK: 600,
+  ZHASH: 400,
+  BEAM: 200,
+  BEAMV2: 200,
+  BEAMV3: 100,
+  HANDSHAKE: 300,
+  AUTOLYKOS: 300,
+  OCTOPUS: 400,
+  VERUSHASH: 300,
+  KHEAVYHASH: 200,
+  NEXAPOW: 300,
+  ALEPHIUM: 400,
+  FISHHASH: 300,
+  IRONFISH: 300,
+  KARLSENHASH: 150,
+  PYRINHASH: 150,
+  EAGLESONG: 300,
+  GRINCUCKAROO29: 250,
+  GRINCUCKATOO31: 250,
+  BLAKE256R8: 400,
+  BLAKE256R14: 400,
+  BLAKE2S: 400,
+  DEFAULT: 300,
+};
+
+const ELECTRICITY_RATE_PER_KWH = 0.08; // $0.08/kWh
+
+// Cache for algorithm market factors (used by order update endpoint)
+const algoFactorCache = new Map();
+
 import { saveToDatabase } from "./_helpers.js"; // see below
 
 export function registerNiceHashRoutes(app) {
@@ -109,6 +172,129 @@ export function registerNiceHashRoutes(app) {
   app.get("/api/v2/mining/payouts", asyncHandler(async (req, res) => res.json(await req.nhApp.mining.getPayouts())));
   app.get("/api/v2/mining/history", asyncHandler(async (req, res) => res.json(await req.nhApp.mining.getRigsStatsHistory(req.query))));
   app.get("/api/v2/mining/algo-stats", asyncHandler(async (req, res) => res.json(await req.nhApp.mining.getAlgoStats())));
+
+  // ─── Mining Coin Profit Calculation ─────────────────────────
+  // NiceHash /public/stats/global/24h returns { algos: [{ a: <algo_index>, s: <hashrate>, p: <price>, r: <miners>, o: <orders>, v: <volume> }] }
+  // 'a' is the 0-based index into miningAlgorithms array from /algorithms
+  // 'p' is price in BTC per hashrate-unit PER DAY (unit defined by displayMarketFactor, e.g. "TH"=1e12)
+  // So: price p is BTC/TH/day for SCRYPT
+  // Profit = price * (1 PH in displayMarketFactor units) / day - electricity cost
+  app.get("/api/v2/nh-mining/profit", asyncHandler(async (req, res) => {
+    const clientParam = String(req.query.client || "BT").toUpperCase();
+    const { client } = resolveNhClient(clientParam);
+    if (!client) return res.status(400).json({ error: "No valid client configured" });
+
+    const app = getNiceHashApp(client);
+    let globalStats, btcPrice, algoList;
+
+    // 1. Fetch global 24h stats
+    try { globalStats = await app.hashpower.getGlobalStats24h(); } catch { globalStats = null; }
+
+    // 2. Fetch algorithm list (for mapping IDs to names + factors)
+    try { algoList = await app.public.getAlgorithms(); } catch { algoList = null; }
+
+    // 3. Fetch BTC price
+    try {
+      const cgRes = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd", {
+        signal: AbortSignal.timeout(5000)
+      });
+      if (cgRes.ok) { const cgData = await cgRes.json(); btcPrice = cgData.bitcoin?.usd || 65000; }
+    } catch { btcPrice = 65000; }
+
+    // 4. Build algo ID→name mapping
+    const miningAlgos = algoList?.miningAlgorithms || [];
+    const algoById = new Map();
+    miningAlgos.forEach((a, idx) => {
+      const factor = parseFloat(a.priceFactor || 1);
+      const marketFactor = parseFloat(a.marketFactor || a.displayMarketFactor || 1);
+      const miningFactor = a.miningFactor || "1";
+      algoById.set(idx, {
+        name: a.algorithm,
+        title: a.title || a.algorithm,
+        priceFactor: factor,       // e.g. 1e12 for BTC/TH/s
+        marketFactorUnit: a.displayMarketFactor || "H", // e.g. "TH", "EH"
+        miningUnit: a.displayMiningFactor || "H",
+      });
+    });
+
+    // 5. Extract algos from global 24h stats
+    const rawAlgos = globalStats?.algos || [];
+    const statsArray = Array.isArray(rawAlgos) ? rawAlgos : Object.values(rawAlgos);
+
+    // 6. Build profit report
+    const profitReport = [];
+    const seen = new Set();
+
+    for (const stat of statsArray) {
+      const algoIdx = stat.a;  // 0-based index into miningAlgorithms
+      const algoMeta = algoById.get(algoIdx);
+      if (!algoMeta) continue;
+
+      const algoKey = normalizeAlgoForNiceHash(algoMeta.name);
+      if (!algoKey || algoKey === "UNKNOWN" || seen.has(algoKey)) continue;
+      seen.add(algoKey);
+
+      const algoInfo = getAlgoMapping(algoKey);
+      const displayName = algoInfo.displayName || algoMeta.title || algoKey;
+      const nhUnit = algoMeta.marketFactorUnit || getNiceHashUnit(algoKey);
+
+      // Price (p) is in BTC per displayMarketFactor-unit PER DAY (e.g. BTC/TH/day)
+      const pricePerUnitPerDay = parseFloat(stat.p || 0);
+
+      // How much 1 PH of this algo earns per day in BTC
+      // If price is BTC/TH/day and 1 PH = 1000 TH, then btcPerDayPerPH = price * 1000
+      const onePHinMarketUnits = Math.max(unitToTarget(1, "PH", nhUnit), 1);
+      const btcPerDayPerPH = pricePerUnitPerDay > 0 ? pricePerUnitPerDay * onePHinMarketUnits : 0;
+      const usdPerDayPerPH = btcPerDayPerPH * btcPrice;
+
+      // Total hashrate for the network
+      const totalHashrate = parseFloat(stat.s || 0);
+
+      // Active miners
+      const activeMiners = parseFloat(stat.r || 0);
+
+      // Electricity cost for 1 PH
+      const wattsPerPH = ESTIMATED_WATTS_PER_UNIT[algoKey] || ESTIMATED_WATTS_PER_UNIT.DEFAULT || 300;
+      const electricityCostPerDayUSD = (wattsPerPH * 24 * ELECTRICITY_RATE_PER_KWH) / 1000;
+
+      // Net profit
+      const netProfitUSD = usdPerDayPerPH - electricityCostPerDayUSD;
+      const netProfitBTC = netProfitUSD / btcPrice;
+      const roiPct = electricityCostPerDayUSD > 0
+        ? ((usdPerDayPerPH - electricityCostPerDayUSD) / electricityCostPerDayUSD) * 100
+        : usdPerDayPerPH > 0 ? 999 : 0;
+
+      profitReport.push({
+        algorithm: algoKey,
+        displayName,
+        unit: nhUnit,
+        averagePriceBTC: pricePerUnitPerDay.toFixed(12),
+        btcPerDayPerPH: btcPerDayPerPH.toFixed(8),
+        usdPerDayPerPH: usdPerDayPerPH.toFixed(2),
+        totalHashrate,
+        activeMiners,
+        estimatedWattsPerPH: wattsPerPH,
+        electricityCostPerDayUSD: electricityCostPerDayUSD.toFixed(2),
+        netProfitUSD: netProfitUSD.toFixed(2),
+        netProfitBTC: netProfitBTC.toFixed(10),
+        roiPercent24h: roiPct.toFixed(1),
+      });
+    }
+
+    // Sort by net profit descending
+    profitReport.sort((a, b) => parseFloat(b.netProfitUSD) - parseFloat(a.netProfitUSD));
+
+    res.json({
+      success: true,
+      data: profitReport,
+      meta: {
+        btcPriceUSD: btcPrice,
+        electricityRateKWH: ELECTRICITY_RATE_PER_KWH,
+        fetchedAt: new Date().toISOString(),
+        totalAlgos: profitReport.length,
+      }
+    });
+  }));
 
   // ─── Hashpower Orders ───────────────────────────────────────
   app.get("/api/v2/hashpower/myOrders", asyncHandler(async (req, res) => {
@@ -350,7 +536,52 @@ export function registerNiceHashRoutes(app) {
   app.get("/api/v2/hashpower/order-book", asyncHandler(async (req, res) => res.json(await req.nhApp.hashpower.getOrderBook(req.query))));
   app.delete("/api/v2/hashpower/order/:orderId", asyncHandler(async (req, res) => res.json(await req.nhApp.hashpower.cancelOrder(req.params.orderId))));
   app.post("/api/v2/hashpower/order/:orderId/refill", asyncHandler(async (req, res) => res.json(await req.nhApp.hashpower.refillOrder(req.params.orderId, req.body))));
-  app.post("/api/v2/hashpower/order/:orderId/update", asyncHandler(async (req, res) => res.json(await req.nhApp.hashpower.updatePriceLimit(req.params.orderId, req.body))));
+  app.post("/api/v2/hashpower/order/:orderId/update", asyncHandler(async (req, res) => {
+    // The NiceHash API requires `displayMarketFactor` for price updates.
+    // Fetch the order details first to get its algorithm, then look up the market factor.
+    const { orderId } = req.params;
+    const body = { ...req.body };
+
+    // Try to get the order detail to determine the algorithm
+    if (!body.displayMarketFactor || !body.marketFactor) {
+      try {
+        const detail = await req.nhApp.hashpower.getOrderDetail(orderId);
+        if (detail) {
+          const algo = typeof detail.algorithm === 'object' ? detail.algorithm.algorithm : detail.algorithm;
+          if (algo) {
+            // Fetch algorithm list to get market factor
+            const cacheKey = `__algo_factor_${algo}`;
+            if (!algoFactorCache.has(cacheKey)) {
+              try {
+                const algos = await req.nhApp.public.getAlgorithms();
+                const algoList = algos?.miningAlgorithms || [];
+                const match = algoList.find(a => 
+                  a.algorithm?.toUpperCase() === algo.toUpperCase()
+                );
+                if (match) {
+                  algoFactorCache.set(cacheKey, {
+                    marketFactor: match.marketFactor || match.displayMarketFactor || '1000000000',
+                    displayMarketFactor: match.displayMarketFactor || 'GH',
+                  });
+                }
+              } catch {}
+            }
+            const cached = algoFactorCache.get(cacheKey);
+            if (cached) {
+              body.marketFactor = body.marketFactor || cached.marketFactor;
+              body.displayMarketFactor = body.displayMarketFactor || cached.displayMarketFactor;
+            }
+          }
+        }
+      } catch {}
+    }
+
+    // Last resort fallback values
+    body.marketFactor = body.marketFactor || '1000000000000';
+    body.displayMarketFactor = body.displayMarketFactor || 'TH';
+
+    res.json(await req.nhApp.hashpower.updatePriceLimit(orderId, body));
+  }));
 
   // ─── Pools ──────────────────────────────────────────────────
   app.get("/api/v2/pools", asyncHandler(async (req, res) => {

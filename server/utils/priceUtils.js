@@ -1,8 +1,8 @@
 // server/utils/priceUtils.js
 // Centralized price fetching utilities
 
-let btcPriceCache = { price: 60000, timestamp: 0 };
-const BTC_PRICE_TTL = 60000; // 1 minute
+let btcPriceCache = { price: 66666, timestamp: 0 };
+const BTC_PRICE_TTL = 3600000; // 60 minute
 
 /**
  * Get current BTC price in USD with caching
@@ -22,10 +22,10 @@ export async function getBtcPrice() {
     );
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    btcPriceCache = { price: data?.bitcoin?.usd || 60000, timestamp: now };
+    btcPriceCache = { price: data?.bitcoin?.usd || 66666, timestamp: now };
   } catch (err) {
     console.warn("[BTC Price] Failed to fetch, using fallback:", err.message);
-    btcPriceCache = { price: 60000, timestamp: now };
+    btcPriceCache = { price: 66666, timestamp: now };
   }
   return btcPriceCache.price;
 }
@@ -34,6 +34,6 @@ export async function getBtcPrice() {
  * Clear BTC price cache (force refresh on next call)
  */
 export function clearBtcPriceCache() {
-  btcPriceCache = { price: 60000, timestamp: 0 };
+  btcPriceCache = { price: 62774, timestamp: 0 };
   console.log("[BTC Price] Cache cleared");
 }

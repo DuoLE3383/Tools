@@ -35,11 +35,13 @@ async function getCachedCoinPrices(ids) {
   // If cache is stale or incomplete, fetch from DB
   const placeholders = requestedIds.map(() => '?').join(',');
   const sql = `
-    SELECT * FROM (
+    SELECT p.*, m.symbol FROM (
       SELECT *, ROW_NUMBER() OVER(PARTITION BY coin_id ORDER BY captured_at DESC) as rn
       FROM coin_prices
       WHERE coin_id IN (${placeholders})
-    ) WHERE rn = 1
+    ) p
+    LEFT JOIN coin_metadata m ON p.coin_id = m.coin_id
+    WHERE p.rn = 1
   `;
 
   const db = await getDb();
@@ -48,6 +50,7 @@ async function getCachedCoinPrices(ids) {
     acc[row.coin_id] = {
       usd: row.price_usd,
       price_btc: row.price_btc,
+      symbol: row.symbol,
       source: row.source,
       last_updated: row.captured_at,
     };
@@ -70,22 +73,32 @@ export function registerCoinGeckoRoutes(app) {
     asyncHandler(async (req, res) => { // This is your main price endpoint
       const defaultIds = "bitcoin,ethereum,litecoin,dogecoin,monero,ravencoin,kaspa";
       // Prioritize `coinId` for single lookups, then `ids`, then fallback to default
-      const idsParam = req.query.coinId || req.query.ids || defaultIds;
+      let idsParam = req.query.coinId || req.query.ids || defaultIds;
       const vsCurrency = req.query.vs_currency || 'usd';
-      const ids = idsParam.split(",").map((s) => s.trim()).filter(Boolean).join(",");
+      let ids = idsParam.split(",").map((s) => s.trim()).filter(Boolean).join(",");
+      const originalRequestedIds = ids.split(',');
+
+      // If it's a single ID request from coinId, try to resolve it from symbol to coin_id
+      if (req.query.coinId && originalRequestedIds.length === 1) {
+        const db = await getDb();
+        const meta = await db.get('SELECT coin_id FROM coin_metadata WHERE symbol = ? OR coin_id = ?', [originalRequestedIds[0].toLowerCase(), originalRequestedIds[0]]);
+        if (meta && meta.coin_id) {
+          ids = meta.coin_id; // Replace symbol (e.g., 'cfx') with actual coin_id (e.g., 'conflux-token')
+        }
+      }
 
       try {
         const data = await getCachedCoinPrices(ids);
-        const requestedIds = ids.split(',');
+        const resolvedIds = ids.split(',');
 
         // If a single ID was requested, return just that coin's data for compatibility with the modal
-        if (requestedIds.length === 1) {
-          const coinData = data[requestedIds[0]];
+        if (originalRequestedIds.length === 1) {
+          const coinData = data[resolvedIds[0]]; // Use the (potentially resolved) ID to look up
           if (coinData && coinData.usd !== undefined && coinData.usd > 0) {
             return res.json({ success: true, data: coinData, source: "db_cache" });
           }
           // Coin not found in DB — return error so the frontend knows to try fallback
-          return res.status(404).json({ success: false, error: `Price not found for ${requestedIds[0]}` });
+          return res.status(404).json({ success: false, error: `Price not found for ${originalRequestedIds[0]}` });
         }
 
         res.json({ success: true, data, source: "db_cache" });

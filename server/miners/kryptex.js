@@ -30,67 +30,60 @@ export async function getKryptexMinerStats(coin, address) {
     }
 
     const html = await response.text();
-    const { load } = await import("cheerio");
-    const $ = load(html);
-
-    // Parse miner stats from HTML
-    const workersTotal = parseInt($('.stat-value:contains("Workers")').parent().find('.stat-value').text().trim()) || 0;
     
-    // Extract hashrate values
-    const hashrates = {};
-    $('.stat-item').each((i, el) => {
-      const label = $(el).find('.stat-label').text().trim().toLowerCase();
-      const value = $(el).find('.stat-value').text().trim();
-      if (label.includes('hashrate')) {
-        if (label.includes('30min') || label.includes('30 min')) hashrates['30min'] = value;
-        else if (label.includes('3h') || label.includes('3 hour')) hashrates['3h'] = value;
-        else if (label.includes('24h') || label.includes('24 hour')) hashrates['24h'] = value;
+    // Modern websites often embed data in a script tag. This is more reliable than scraping.
+    const nextDataScript = html.substring(html.indexOf('<script id="__NEXT_DATA__" type="application/json">') + 58);
+    const nextDataJson = nextDataScript.substring(0, nextDataScript.indexOf('</script>'));
+
+    if (!nextDataJson) {
+      throw new Error('Could not find __NEXT_DATA__ script tag. Kryptex page structure may have changed.');
+    }
+
+    const pageData = JSON.parse(nextDataJson);
+    const minerData = pageData?.props?.pageProps?.minerData;
+
+    if (!minerData) {
+      // This can happen if the address is invalid, Kryptex returns a page without minerData.
+      if (pageData?.props?.pageProps?.error) {
+        throw new Error(`Kryptex error: ${pageData.props.pageProps.error.message}`);
       }
-    });
-
-    // Extract balance
-    const unpaidMatch = html.match(/Unpaid\s*([\d.]+)\s*(\w+)/i);
-    const totalPaidMatch = html.match(/Total\s*Paid\s*([\d.]+)\s*(\w+)/i);
-    const reward7dMatch = html.match(/Reward\s*\(7 days?\)\s*([\d.]+)\s*(\w+)/i);
-
-    // Extract worker table data
-    const workerRows = [];
-    $('table.workers tbody tr, table tbody tr').each((i, row) => {
-      const cells = $(row).find('td');
-      if (cells.length >= 4) {
-        workerRows.push({
-          name: $(cells[0]).text().trim(),
-          mode: $(cells[1]).text().trim(),
-          hashrate30m: $(cells[2]).text().trim(),
-          hashrate24h: $(cells[3]).text().trim(),
-          valid: $(cells[4]).text().trim() || "0",
-          stale: $(cells[5]).text().trim() || "0",
-          invalid: $(cells[6]).text().trim() || "0",
-        });
-      }
-    });
-
-    const workerStats = {
-      online: $('.stat-value:contains("Online")').text().trim(),
-      offline: $('.stat-value:contains("Offline")').text().trim(),
-      total: workersTotal,
-    };
+      throw new Error('Could not find minerData in page data. The address might be invalid.');
+    }
 
     const result = {
       success: true,
       coin: coin.toUpperCase(),
       address,
       stats: {
-        workers: workerStats,
-        hashrate: hashrates,
-        balance: {
-          unpaid: unpaidMatch ? parseFloat(unpaidMatch[1]) : 0,
-          totalPaid: totalPaidMatch ? parseFloat(totalPaidMatch[1]) : 0,
-          reward7d: reward7dMatch ? parseFloat(reward7dMatch[1]) : 0,
+        workers: {
+          online: minerData.workersOnline || 0,
+          offline: minerData.workersOffline || 0,
+          total: minerData.workersTotal || 0,
         },
-        workerTable: workerRows,
+        hashrate: {
+          current: minerData.hashrate || '0 H/s',
+          '30min': minerData.hashrate30m || '0 H/s',
+          '3h': minerData.hashrate3h || '0 H/s',
+          '24h': minerData.hashrate24h || '0 H/s',
+        },
+        balance: {
+          unpaid: minerData.balance || 0,
+          immature: minerData.immature || 0,
+          totalPaid: minerData.paid || 0,
+          reward7d: minerData.reward7d || 0,
+          reward30d: minerData.reward30d || 0,
+        },
+        workerTable: (minerData.workers || []).map(w => ({
+          name: w.name,
+          mode: 'N/A', // Not available in new structure
+          hashrate30m: w.hashrate30m || '0 H/s',
+          hashrate24h: w.hashrate24h || '0 H/s',
+          valid: String(w.shares24h || '0'), // shares24h is the closest to "valid shares"
+          stale: '0', // Not available
+          invalid: '0', // Not available
+        })),
       },
-      raw: { workersTotal, hashrates },
+      raw: minerData,
       fetchedAt: new Date().toISOString(),
     };
 

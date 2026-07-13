@@ -135,34 +135,13 @@ function clearGhostRentals() {
 // CONFIGURATION
 // ============================================
 export function initMrrConfigs(env) {
-  mrrConfigs = {
-    BT: {
-      apiKey: normalizeCredential(env.MRR_KEY_RIG_BT),
-      apiSecret: normalizeCredential(env.MRR_SECRET_RIG_BT),
-      nonceOverride: env.MRR_NONCE_OVERRIDE_BT ? BigInt(env.MRR_NONCE_OVERRIDE_BT) : null,
-    },
-    SL: {
-      apiKey: normalizeCredential(env.MRR_KEY_RIG_SL),
-      apiSecret: normalizeCredential(env.MRR_SECRET_RIG_SL),
-      nonceOverride: env.MRR_NONCE_OVERRIDE_SL ? BigInt(env.MRR_NONCE_OVERRIDE_SL) : null,
-    },
-    LN: {
-      apiKey: normalizeCredential(env.MRR_KEY_RIG_LN),
-      apiSecret: normalizeCredential(env.MRR_SECRET_RIG_LN),
-      nonceOverride: env.MRR_NONCE_OVERRIDE_LN ? BigInt(env.MRR_NONCE_OVERRIDE_LN) : null,
-    },
-    LUCKY: {
-      apiKey: normalizeCredential(env.MRR_KEY_RIG_LUCKY),
-      apiSecret: normalizeCredential(env.MRR_SECRET_RIG_LUCKY),
-      nonceOverride: env.MRR_NONCE_OVERRIDE_LUCKY ? BigInt(env.MRR_NONCE_OVERRIDE_LUCKY) : null,
-    },
-  };
+  mrrConfigs = {};
 
   // Discover additional accounts from environment variables
   Object.keys(env).forEach(key => {
     if (key.startsWith('MRR_KEY_RIG_')) {
       const acct = key.replace('MRR_KEY_RIG_', '').toUpperCase();
-      if (!mrrConfigs[acct]) {
+      if (!mrrConfigs[acct] && env[key] && (env[`MRR_SECRET_RIG_${acct}`] || env[`MRR_API_SECRET_${acct}`])) {
         mrrConfigs[acct] = {
           apiKey: normalizeCredential(env[key]),
           apiSecret: normalizeCredential(env[`MRR_SECRET_RIG_${acct}`] || env[`MRR_API_SECRET_${acct}`]),
@@ -172,14 +151,15 @@ export function initMrrConfigs(env) {
     }
   });
 
-  const defaultMrrClientRaw = String(env.MRR_DEFAULT_CLIENT || 'VN').trim().toUpperCase();
-  defaultMrrClient = (function () {
-    if (defaultMrrClientRaw === 'VN') return 'VN';
-    if (defaultMrrClientRaw === 'SL') return 'SL';
-    if (defaultMrrClientRaw === 'LN') return 'LN';
-    if (defaultMrrClientRaw === 'LUCKY') return 'LUCKY';
-    return mrrConfigs[defaultMrrClientRaw] ? defaultMrrClientRaw : 'BT';
-  })();
+  const defaultMrrClientRaw = String(env.MRR_DEFAULT_CLIENT || 'BT').trim().toUpperCase();
+  const availableClients = Object.keys(mrrConfigs);
+  if (mrrConfigs[defaultMrrClientRaw]) {
+    defaultMrrClient = defaultMrrClientRaw;
+  } else if (availableClients.length > 0) {
+    defaultMrrClient = availableClients[0];
+  } else {
+    defaultMrrClient = 'BT'; // Fallback if no clients are configured
+  }
 }
 
 // ============================================

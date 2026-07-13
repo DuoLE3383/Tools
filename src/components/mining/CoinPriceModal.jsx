@@ -101,9 +101,10 @@ export default function CoinPriceModal({
     const tryCoinIds = [...new Set([coinId, coin.name?.toLowerCase(), coin.symbol?.toLowerCase()].filter(Boolean))];
     for (const cid of tryCoinIds) {
       try {
-        const result = await onCall("/api/v2/coingecko/price", { query: { ids: cid, vs_currencies: "usd" }, silent: true });
-        if (result?.[cid]?.usd > 0) {
-          foundPrice = result[cid].usd;
+        // Use the correct endpoint that supports symbol resolution and returns the simple format
+        const result = await onCall("/api/v2/prices/coingecko", { query: { coinId: cid, vs_currencies: "usd" }, silent: true });
+        if (result?.data?.usd > 0) {
+          foundPrice = result.data.usd;
           setPriceData({ price: foundPrice, marketCap: 0, volume24h: 0, change24h: 0, high24h: 0, low24h: 0, supply: 0, lastUpdated: new Date().toISOString() });
           setLastUpdated(new Date().toISOString());
           setSource("coingecko");

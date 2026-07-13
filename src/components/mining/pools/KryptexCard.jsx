@@ -1,7 +1,22 @@
 // KryptexCard.jsx - Address lookup card for Kryptex Pool
 import { useState, useCallback } from "react";
 
-export default function KryptexCard({ onCall }) {
+function formatUsd(value) {
+  const v = parseFloat(value);
+  if (isNaN(v) || v <= 0) return "";
+  if (v >= 1) return `$${v.toFixed(2)}`;
+  if (v >= 0.0001) return `$${v.toFixed(4)}`;
+  if (v >= 0.000001) return `$${v.toFixed(8)}`;
+  return `$${v.toFixed(12)}`;
+}
+
+function parseAmount(str) {
+  if (!str) return 0;
+  return parseFloat(str.replace(/[^0-9.eE-]/g, "")) || 0;
+}
+
+
+export default function KryptexCard({ onCall, coinPrices }) {
   const [coin, setCoin] = useState("etc");
   const [address, setAddress] = useState("");
   const [loading, setLoading] = useState(false);
@@ -9,6 +24,15 @@ export default function KryptexCard({ onCall }) {
   const [data, setData] = useState(null);
   const [lastUpdate, setLastUpdate] = useState(null);
   const [viewRaw, setViewRaw] = useState(false);
+
+  const getPrice = useCallback((coinSymbol) => {
+    if (!coinPrices || !coinSymbol) return 0;
+    const symbol = coinSymbol.toLowerCase();
+    // The prices object is keyed by coingecko ID, e.g., "conflux" for "CFX"
+    // We need to find the right key.
+    const priceData = Object.values(coinPrices).find(p => p.symbol?.toLowerCase() === symbol);
+    return priceData?.usd || 0;
+  }, [coinPrices]);
 
   const handleLookup = useCallback(async () => {
     if (!address || !coin) {
@@ -23,8 +47,8 @@ export default function KryptexCard({ onCall }) {
         query: { coin: coin.trim().toLowerCase(), address: address.trim() },
         silent: true,
       });
-      if (result?.success) {
-        setData(result);
+      if (result?.success && result.data) {
+        setData(result.data);
         setLastUpdate(new Date());
       } else {
         throw new Error(result?.error || "Failed to fetch miner stats");
@@ -40,6 +64,21 @@ export default function KryptexCard({ onCall }) {
   const balance = stats.balance || {};
   const hashrate = stats.hashrate || {};
   const workers = stats.workers || {};
+
+  const price = getPrice(coin);
+  
+  // Using Kryptex terminology: "Confirmed" is ready for payout, "Immature" is pending.
+  const confirmed = (balance.unpaid || 0).toFixed(6);
+  const confirmedUsd = formatUsd(parseAmount(confirmed) * price);
+  const immature = (balance.immature || 0).toFixed(6);
+  const immatureUsd = formatUsd(parseAmount(immature) * price);
+  
+  const totalPaid = (balance.totalPaid || 0).toFixed(6);
+  const totalPaidUsd = formatUsd(parseAmount(totalPaid) * price);
+  
+  const reward7d = (balance.reward7d || 0).toFixed(6);
+  const reward30d = (balance.reward30d || 0).toFixed(6);
+  const reward30dUsd = formatUsd(parseAmount(reward30d) * price);
 
   return (
     <div style={{
@@ -126,27 +165,25 @@ export default function KryptexCard({ onCall }) {
           display: "flex",
           flexDirection: "column",
           gap: "8px",
-        }}>
-          {/* Hashrate grid */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))", gap: "6px" }}>
-            <MiniBlock label="Hash 30m" value={hashrate["30min"] || "0 H/s"} tone="#60a5fa" />
-            <MiniBlock label="Hash 3h" value={hashrate["3h"] || "0 H/s"} tone="#fbbf24" />
-            <MiniBlock label="Hash 24h" value={hashrate["24h"] || "0 H/s"} tone="#818cf8" />
+        }}>          
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px" }}>
+            <MiniStat label="Current Hash" value={hashrate.current || "0 H/s"} color="#60a5fa" />
+            <MiniStat label="Hashrate 24h" value={hashrate["24h"] || "0 H/s"} color="#34d399" />
           </div>
 
-          {/* Workers */}
-          {workers.total > 0 && (
-            <div style={{ fontSize: "clamp(10px, 0.8vw, 12px)", color: "#94a3b8" }}>
-              Workers: <span style={{ color: "#34d399", fontWeight: 700 }}>{workers.online || 0}</span> online /{" "}
-              <span style={{ color: "#f87171", fontWeight: 700 }}>{workers.offline || 0}</span> offline
-            </div>
-          )}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px" }}>
+            <MiniStatUSD label="Confirmed" value={confirmed} usd={confirmedUsd} color="#f59e0b" />
+            <MiniStatUSD label="Immature" value={immature} usd={immatureUsd} color="#fbbf24" />
+          </div>
 
-          {/* Balance */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: "4px" }}>
-            <StatItem label="Unpaid" value={balance.unpaid?.toFixed(4) || "0"} />
-            <StatItem label="Total Paid" value={balance.totalPaid?.toFixed(4) || "0"} />
-            <StatItem label="7d Reward" value={balance.reward7d?.toFixed(4) || "0"} />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px" }}>
+            <MiniStatUSD label="Total Paid" value={totalPaid} usd={totalPaidUsd} color="#34d399" />
+            <MiniStatUSD label="30d Reward" value={reward30d} usd={reward30dUsd} color="#a78bfa" />
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px" }}>
+            <MiniStat label="Workers" value={`${workers.online || 0} online`} color="#94a3b8" />
+            <MiniStat label="7d Reward" value={reward7d} color="#f472b6" />
           </div>
 
           {/* Workers table */}
@@ -206,30 +243,43 @@ export default function KryptexCard({ onCall }) {
   );
 }
 
-function MiniBlock({ label, value, tone }) {
+function MiniStat({ label, value, color }) {
   return (
     <div style={{
-      padding: "8px",
+      padding: "6px 8px",
       borderRadius: "6px",
       background: "rgba(255,255,255,0.02)",
-      border: "1px solid rgba(148,163,184,0.08)",
-      textAlign: "center",
+      border: "1px solid rgba(148,163,184,0.06)",
     }}>
-      <div style={{ color: "#64748b", fontSize: "clamp(8px, 0.6vw, 10px)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+      <div style={{ color: "#64748b", fontSize: "8px", textTransform: "uppercase", letterSpacing: "0.08em" }}>
         {label}
       </div>
-      <div style={{ color: tone, fontSize: "clamp(12px, 1vw, 14px)", fontWeight: 800, marginTop: "3px" }}>
+      <div style={{ color, fontSize: "clamp(11px, 0.9vw, 13px)", fontWeight: 800, marginTop: "1px", overflow: "hidden", textOverflow: "ellipsis" }}>
         {value}
       </div>
     </div>
   );
 }
 
-function StatItem({ label, value }) {
+function MiniStatUSD({ label, value, usd, color }) {
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", padding: "3px 6px", fontSize: "clamp(9px, 0.7vw, 11px)" }}>
-      <span style={{ color: "#94a3b8" }}>{label}</span>
-      <span style={{ color: "#e2e8f0", fontWeight: 600 }}>{value}</span>
+    <div style={{
+      padding: "6px 8px",
+      borderRadius: "6px",
+      background: "rgba(255,255,255,0.02)",
+      border: "1px solid rgba(148,163,184,0.06)",
+    }}>
+      <div style={{ color: "#64748b", fontSize: "8px", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+        {label}
+      </div>
+      <div style={{ color, fontSize: "clamp(11px, 0.9vw, 13px)", fontWeight: 800, marginTop: "1px", overflow: "hidden", textOverflow: "ellipsis" }}>
+        {value}
+      </div>
+      {usd && (
+        <div style={{ color: "#94a3b8", fontSize: "clamp(8px, 0.6vw, 10px)", marginTop: "1px" }}>
+          {usd}
+        </div>
+      )}
     </div>
   );
 }

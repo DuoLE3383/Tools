@@ -16,7 +16,7 @@ import NiceHashPage from './page/NiceHashPage.jsx';
 import MrrPage from './page/MrrPage.jsx';
 import "./App.css";
 
-const COIN_IDS_TO_FETCH = "bitcoin,ethereum,ethereum-classic,litecoin,dogecoin,ravencoin,monero,kaspa,iron-fish,zephyr-protocol,clore-ai,dynex,conflux,ergo,bitcoin-cash";
+const COIN_IDS_TO_FETCH = "bitcoin,ethereum,ethereum-classic,litecoin,dogecoin,ravencoin,monero,kaspa,iron-fish,zephyr-protocol,clore-ai,dynex,conflux-token,ergo,bitcoin-cash,quantum-resistant-ledger";
 
 const routeMap = {
   '/': 'dashboard',

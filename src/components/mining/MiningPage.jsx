@@ -341,9 +341,9 @@ function MiningWorkspaceShell({
             <WhatToMineCard />
             <HashrateNoCard />
             <MiningDutchPoolCard />
-            <HeroMinersLookup onCall={onCall} />
-            <K1PoolCard onCall={onCall} />
-            <KryptexCard onCall={onCall} />
+            <HeroMinersLookup onCall={onCall} coinPrices={state.coinPrices} />
+            <K1PoolCard onCall={onCall} coinPrices={state.coinPrices} />
+            <KryptexCard onCall={onCall} coinPrices={state.coinPrices} />
           </div>
         </section>
 

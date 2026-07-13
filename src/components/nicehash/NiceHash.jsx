@@ -334,8 +334,8 @@ function NiceHashOrderManager({ onCall, nhClient, setNhClient }) {
               <div><span style={{ opacity: 0.8, display: "block", fontSize: "8px" }}>PRICE</span><strong style={{ color: "#f59e0b" }}>{orderDetail.price}</strong></div>
               <div><span style={{ opacity: 0.6, display: "block", fontSize: "8px" }}>SPEED</span><strong style={{ color: "#10b981" }}>{parseFloat(orderDetail.acceptedCurrentSpeed || 0).toFixed(4)}</strong></div>
               <div><span style={{ opacity: 0.6, display: "block", fontSize: "8px" }}>LIMIT</span><strong>{orderDetail.limit}</strong></div>
-              <div><span style={{ opacity: 0.6, display: "block", fontSize: "8px" }}>REMAINING</span><strong>{parseFloat(orderDetail.availableAmount || 0).toFixed(4)}</strong></div>
-              <div><span style={{ opacity: 0.6, display: "block", fontSize: "8px" }}>RIGS</span><strong>{orderDetail.rigsCount}</strong></div>
+              <div><span style={{ opacity: 0.6, display: "block", fontSize: "8px" }}>REMAINING</span><strong>{parseFloat(orderDetail.availableAmount || 0).toFixed(8)}</strong></div>
+              <div><span style={{ opacity: 0.6, display: "block", fontSize: "8px" }}>MINER</span><strong>{orderDetail.rigsCount}</strong></div>
             </div>
           </div>
         )}

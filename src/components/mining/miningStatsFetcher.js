@@ -107,6 +107,7 @@ async function fetchMiningStatsInternal(
     whattomine: "whattomine",
     "hashrate.no": "hashrate.no",
     herominers_address: "herominers/address",
+    herominers_multi: "herominers/multi",
     all: "all",
   };
 

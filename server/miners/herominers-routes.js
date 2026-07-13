@@ -290,7 +290,7 @@ router.get('/herominers/global', async (req, res) => {
  */
 router.get('/herominers/address', async (req, res) => {
   try {
-    const { address, coin } = req.query; // coin is now required
+    const { address, coin } = req.query;
     if (!address) {
       return res.status(400).json({ success: false, error: 'Address query parameter is required.' });
     }
@@ -305,7 +305,6 @@ router.get('/herominers/address', async (req, res) => {
       return res.status(404).json({ success: false, error: 'No data found for this address.' });
     }
 
-    // The raw data needs to be parsed and built into the dashboard structure
     const parsed = parseHeroMinersResponse(rawData, address, coin);
     if (!parsed) {
       return res.status(500).json({ success: false, error: 'Failed to parse API response.' });
@@ -314,11 +313,9 @@ router.get('/herominers/address', async (req, res) => {
     const prices = await getCoinPricesFromDb([coin.toUpperCase()]);
     const dashboardData = buildDashboardData(parsed, prices[coin.toUpperCase()] || {});
 
-    // The frontend expects a `data` property containing the dashboard object.
-    // We also include the raw parsed data for the "View Raw" feature.
     return res.json({
       success: true,
-      data: { ...dashboardData, raw: parsed }, // Wrap dashboard data and include raw data
+      data: { ...dashboardData, raw: parsed },
       timestamp: new Date().toISOString(),
     });
 
@@ -326,11 +323,66 @@ router.get('/herominers/address', async (req, res) => {
     const errorMessage = error.message || 'An unknown error occurred';
     console.error('[HeroMiners Address Error]', errorMessage);
 
-    // If the external API returned a 404, forward that status code to the client.
     if (errorMessage.includes('status 404') || errorMessage.includes('404')) {
       return res.status(404).json({ success: false, error: `Address not found on HeroMiners for coin ${req.query.coin}.` });
     }
 
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/v2/mining-stats/herominers/multi
+ * Batch-monitor multiple coin/address pairs at once.
+ * Query format: ?pairs=CFX:0xADDR&pairs=KASPA:kaspa:ADDR&pairs=QRL:Q...
+ */
+router.get('/herominers/multi', async (req, res) => {
+  try {
+    let pairs;
+    if (req.query.pairs) {
+      pairs = Array.isArray(req.query.pairs) ? req.query.pairs : [req.query.pairs];
+    } else if (req.query.addresses && req.query.coins) {
+      // Support parallel arrays: ?coins=CFX,KAS&addresses=addr1,addr2
+      const coins = Array.isArray(req.query.coins) ? req.query.coins : [req.query.coins];
+      const addrs = Array.isArray(req.query.addresses) ? req.query.addresses : [req.query.addresses];
+      pairs = coins.map((c, i) => `${c}:${addrs[i] || addrs[0]}`);
+    } else {
+      return res.status(400).json({
+        success: false,
+        error: 'Provide pairs (e.g. ?pairs=CFX:0xADDR&pairs=KAS:kaspa:ADDR) or coins+addresses arrays.'
+      });
+    }
+
+    const api = new HeroMinersAPI({ timeout: 15000 });
+    const results = [];
+
+    // Fetch each pair in parallel
+    const fetches = pairs.map(async (pair) => {
+      const [coin, ...addrParts] = pair.split(':');
+      const address = addrParts.join(':');
+      if (!coin || !address) return null;
+      try {
+        const raw = await api.getMinerStats(address, coin.trim());
+        if (!raw) return { coin: coin.trim().toUpperCase(), address, success: false, error: 'No data' };
+        const parsed = parseHeroMinersResponse(raw, address, coin.trim());
+        if (!parsed) return { coin: coin.trim().toUpperCase(), address, success: false, error: 'Parse failed' };
+        const prices = await getCoinPricesFromDb([coin.trim().toUpperCase()]);
+        const dashboard = buildDashboardData(parsed, prices[coin.trim().toUpperCase()] || {});
+        return { coin: coin.trim().toUpperCase(), address, success: true, ...dashboard };
+      } catch (e) {
+        return { coin: coin.trim().toUpperCase(), address, success: false, error: e.message };
+      }
+    });
+
+    const settled = await Promise.allSettled(fetches);
+    settled.forEach((s) => {
+      if (s.status === 'fulfilled' && s.value) results.push(s.value);
+      else if (s.status === 'rejected') results.push({ success: false, error: s.reason.message });
+    });
+
+    return res.json({ success: true, data: results, timestamp: new Date().toISOString() });
+  } catch (error) {
+    console.error('[HeroMiners Multi Error]', error.message);
     res.status(500).json({ success: false, error: error.message });
   }
 });

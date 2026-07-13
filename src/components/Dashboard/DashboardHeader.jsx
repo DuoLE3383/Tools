@@ -15,7 +15,7 @@ export default function DashboardHeader({
 }) {
   // Navigation items
   const navItems = [
-    { path: '/', label: 'Mining', view: 'mining' },
+    { path: '/', label: 'Pool', view: 'pool' },
     { path: '/nicehash', label: 'NiceHash', view: 'nicehash' },
     { path: '/mrr', label: 'Rigs', view: 'mrr' },
     { path: '/mining', label: 'Mining', view: 'mining' },

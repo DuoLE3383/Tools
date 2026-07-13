@@ -334,6 +334,23 @@ export function registerMrrRoutes(app) {
     res.json({ success: true, data: results });
   }));
 
+  // ─── List configured MRR clients ─────────────────────────────
+  app.get("/api/v2/mrr/clients", asyncHandler(async (req, res) => {
+    const allClientNames = Object.keys(mrrConfigs).filter(c => mrrConfigs[c].apiKey && mrrConfigs[c].apiSecret);
+    const clients = allClientNames.map(name => ({
+      name,
+      isDefault: name === defaultMrrClient,
+      hasCredentials: true,
+    }));
+    // Sort: default first, then alphabetical
+    clients.sort((a, b) => {
+      if (a.isDefault) return -1;
+      if (b.isDefault) return 1;
+      return a.name.localeCompare(b.name);
+    });
+    res.json({ success: true, clients, defaultClient: defaultMrrClient });
+  }));
+
   // ─── Account / Balance / Algos ──────────────────────────────
   app.get("/api/v2/mrr/balance", asyncHandler(async (req, res) => mrrRequest('/account/balance', req, res)));
   app.get("/api/v2/mrr/algos", asyncHandler(async (req, res) => {

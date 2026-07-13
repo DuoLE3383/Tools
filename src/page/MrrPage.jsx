@@ -2,7 +2,7 @@ import MiningRigSection from "../components/mrr/MiningRigSection";
 import DashboardHeader from "../components/Dashboard/DashboardHeader.jsx";
 import CryptoRatePage from "../../CryptoRatePage.jsx";
 import { useNiceHashOrders } from "../components/nicehash/NiceHashContext.jsx";
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 export default function MrrPage({
   state,
@@ -17,12 +17,23 @@ export default function MrrPage({
   setMrrClient,
   onNavigate,
 }) {
+  const originalNhClient = useRef(state.nhOrderClient);
   const { refresh: refreshNhOrders } = useNiceHashOrders();
 
   const handleRefresh = useCallback(() => {
     if (forceCheckStatus) forceCheckStatus();
     if (refreshNhOrders) refreshNhOrders();
   }, [forceCheckStatus, refreshNhOrders]);
+
+  // On mount, force the NH client to 'VN' to get all orders for rig matching.
+  // On unmount, restore it to what it was before.
+  useEffect(() => {
+    dispatch({ type: "SET_NH_ORDER_CLIENT", payload: "VN" });
+
+    return () => {
+      dispatch({ type: "SET_NH_ORDER_CLIENT", payload: originalNhClient.current });
+    };
+  }, [dispatch]);
 
   return (
     <div className="page-full">

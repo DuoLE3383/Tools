@@ -9,6 +9,8 @@ const publicCache = new Map();
 const POOL_CACHE_TTL = 60000; // 1 minute cache
 const NH_CACHE_TTL_DEFAULT = 30000; // 30 seconds
 const NH_CACHE_TTL_STABLE = 300000; // 5 minutes
+const AGGREGATED_ORDERS_CACHE_TTL = 15000; // 15 seconds
+const aggregatedOrdersCache = new Map();
 const nhInflight = new Map();
 
 /** Normalizes market strings (USA/EU) to NiceHash numeric IDs (1/0) */
@@ -27,61 +29,38 @@ export { NICEHASH_ALGO_MAP, normalizeAlgoForNiceHash }; // Keep these exports
 export let nhConfigs = {}; // Declare as mutable
 
 export function initNhConfigs(env) {
-  nhConfigs = {
-    BT: {
-      apiKey: normalizeCredential(env.NICEHASH_API_KEY),
-      apiSecret: normalizeCredential(env.NICEHASH_API_SECRET),
-      orgId: normalizeCredential(env.NICEHASH_ORG_ID),
-      environment: normalizeCredential(env.NICEHASH_ENVIRONMENT || 'production'),
-    },
-    PH: {
-      apiKey: normalizeCredential(env.NICEHASH_API_KEY_PH),
-      apiSecret: normalizeCredential(env.NICEHASH_API_SECRET_PH),
-      orgId: normalizeCredential(env.NICEHASH_ORG_ID_PH),
-      environment: normalizeCredential(env.NICEHASH_ENVIRONMENT || 'production'),
-
-    },
-    PH3: {
-      apiKey: normalizeCredential(env.NICEHASH_API_KEY_PH3),
-      apiSecret: normalizeCredential(env.NICEHASH_API_SECRET_PH3),
-      orgId: normalizeCredential(env.NICEHASH_ORG_ID_PH3),
-      environment: normalizeCredential(env.NICEHASH_ENVIRONMENT || 'production'), 
-    },
-    HUDA: {
-      apiKey: normalizeCredential(env.NICEHASH_API_KEY_HUDA),
-      apiSecret: normalizeCredential(env.NICEHASH_API_SECRET_HUDA),
-      orgId: normalizeCredential(env.NICEHASH_ORG_ID_HUDA),
-      environment: normalizeCredential(env.NICEHASH_ENVIRONMENT || 'production'),
-    },
-    LN: {
-      apiKey: normalizeCredential(env.NICEHASH_API_KEY_LN),
-      apiSecret: normalizeCredential(env.NICEHASH_API_SECRET_LN),
-      orgId: normalizeCredential(env.NICEHASH_ORG_ID_LN),
-      environment: normalizeCredential(env.NICEHASH_ENVIRONMENT || 'production'),
-
-    },
-    NHATLINH: {
-      apiKey: normalizeCredential(env.NICEHASH_API_KEY_NHATLINH),
-      apiSecret: normalizeCredential(env.NICEHASH_API_SECRET_NHATLINH),
-      orgId: normalizeCredential(env.NICEHASH_ORG_ID_NHATLINH),
-      environment: normalizeCredential(env.NICEHASH_ENVIRONMENT || 'production'),
-    },
-  };
+  nhConfigs = {}; // Start with an empty object.
 
   // Discover and register additional accounts from environment variables
   Object.keys(env).forEach(key => {
     if (key.startsWith('NICEHASH_API_KEY_')) {
       const acct = key.replace('NICEHASH_API_KEY_', '').toUpperCase();
-      if (!nhConfigs[acct]) {
+      const secretKey = `NICEHASH_API_SECRET_${acct}`;
+      const orgIdKey = `NICEHASH_ORG_ID_${acct}`;
+      
+      // Ensure all parts of the credential set are present
+      if (env[key] && env[secretKey] && env[orgIdKey]) {
         nhConfigs[acct] = {
           apiKey: normalizeCredential(env[key]),
-          apiSecret: normalizeCredential(env[`NICEHASH_API_SECRET_${acct}`]),
-          orgId: normalizeCredential(env[`NICEHASH_ORG_ID_${acct}`] || env.NICEHASH_ORG_ID),
+          apiSecret: normalizeCredential(env[secretKey]),
+          orgId: normalizeCredential(env[orgIdKey]),
           environment: normalizeCredential(env[`NICEHASH_ENVIRONMENT_${acct}`] || env.NICEHASH_ENVIRONMENT || 'production'),
         };
       }
     }
   });
+
+  // Also handle the default, non-suffixed variables as the 'BT' client
+  if (env.NICEHASH_API_KEY && env.NICEHASH_API_SECRET && env.NICEHASH_ORG_ID) {
+    if (!nhConfigs.BT) { // Avoid overwriting if BT was explicitly defined with a suffix
+      nhConfigs.BT = {
+        apiKey: normalizeCredential(env.NICEHASH_API_KEY),
+        apiSecret: normalizeCredential(env.NICEHASH_API_SECRET),
+        orgId: normalizeCredential(env.NICEHASH_ORG_ID),
+        environment: normalizeCredential(env.NICEHASH_ENVIRONMENT || 'production'),
+      };
+    }
+  }
 }
 
 export const isAggregate = (c) => {
@@ -282,7 +261,13 @@ async function getAggregatedRigs() {
   return { miningRigs: allRigs, errors: errors.length > 0 ? errors : undefined };
 }
 
-async function getAggregatedMyOrders(query) {
+async function getAggregatedMyOrders(query = {}) {
+  const queryKey = JSON.stringify(query);
+  const cached = aggregatedOrdersCache.get(queryKey);
+  if (cached && (Date.now() - cached.ts < AGGREGATED_ORDERS_CACHE_TTL)) {
+    return cached.data;
+  }
+
   const allClientNames = Object.keys(nhConfigs).filter(c => nhConfigs[c].apiKey && !isAggregate(c));
   const allOrders = [];
   const errors = [];
@@ -295,7 +280,7 @@ async function getAggregatedMyOrders(query) {
         const result = await singleClient.call({
           method: 'GET',
           path: '/main/api/v2/hashpower/myOrders',
-          query: { ts: Date.now().toString(), ...query }
+          query: { ts: Date.now().toString(), ...query },
         });
 
         if (result && (result.list || result.myOrders)) {
@@ -311,8 +296,14 @@ async function getAggregatedMyOrders(query) {
   });
 
   await Promise.all(promises);
-  // Mimic the structure of a single API call response
-  return { list: allOrders, pagination: { total: allOrders.length }, errors: errors.length > 0 ? errors : undefined };
+  
+  const response = { 
+    list: allOrders, 
+    pagination: { total: allOrders.length, page: 0, size: allOrders.length }, 
+    errors: errors.length > 0 ? errors : undefined 
+  };
+  aggregatedOrdersCache.set(queryKey, { data: response, ts: Date.now() });
+  return response;
 }
 
 async function getAggregatedPools() {
@@ -349,7 +340,28 @@ export const getNiceHashApp = (client) => {
       },
       hashpower: {
         ...fallbackApp.hashpower,
-        getMyOrders: (query) => getAggregatedMyOrders(query), // Override getMyOrders with the aggregate version
+        getMyOrders: (query) => getAggregatedMyOrders(query),
+        getOrderDetail: async (orderId) => {
+          // When fetching a single order detail via the aggregate client,
+          // we must first find which client owns the order.
+          const allOrdersResult = await getAggregatedMyOrders({ op: 'LE', limit: 1000 });
+          const order = allOrdersResult.list.find(o => o.id === orderId);
+
+          if (order && order.nhClient) {
+            const { client: singleClient } = resolveNhClient(order.nhClient);
+            if (singleClient && !singleClient.isAggregate) {
+              // Found the owner, use the correct client to fetch details.
+              return getNiceHashApp(singleClient).hashpower.getOrderDetail(orderId);
+            }
+          }
+
+          // If the order is not found in our aggregated list, it's either not
+          // one of ours or it's an old/inactive order. Throw a 404 to prevent
+          // the fallback client from trying and getting a misleading 403.
+          const error = new Error(`Order ${orderId} not found among active orders for any configured client.`);
+          error.statusCode = 404;
+          throw error;
+        },
       },
       pools: {
         ...fallbackApp.pools,
@@ -361,7 +373,14 @@ export const getNiceHashApp = (client) => {
   // Original implementation for a single, real client instance
   return ({
   public: {
-    getTime: () => client.getServerTime(),
+    getTime: async () => {
+      try {
+        return await client.getServerTime();
+      } catch (err) {
+        console.warn(`[nh:getTime] NiceHash upstream failed for ${client.name}: ${err.message}. Using local time.`);
+        return Date.now();
+      }
+    },
     getDoc: () => cachedCall(client, { method: 'GET', path: '/api/v2/doc' }),
     getAlgorithms: () => cachedCall(client, { method: 'GET', path: '/main/api/v2/mining/algorithms' }),
     getMarkets: () => cachedCall(client, { method: 'GET', path: '/main/api/v2/mining/markets' }),
@@ -428,7 +447,36 @@ export const getNiceHashApp = (client) => {
     getBusinessBuyerInfo: () => client.call({ method: 'GET', path: '/main/api/v2/hashpower/business/buyers/info' }),
     getMyOrders: (query) => client.call({ method: 'GET', path: '/main/api/v2/hashpower/myOrders', query: { op: 'LE', limit: '1000', ts: Date.now().toString(), ...query } }),
     createOrder: (orderData) => client.call({ method: 'POST', path: '/main/api/v2/hashpower/order', body: orderData }),
-    getOrderDetail: (orderId) => client.call({ method: 'GET', path: `/main/api/v2/hashpower/order/${orderId}`, query: { ts: Date.now().toString() } }),
+    getOrderDetail: async (orderId) => {
+      try {
+        return await client.call({ method: 'GET', path: `/main/api/v2/hashpower/order/${orderId}`, query: { ts: Date.now().toString() } });
+      } catch (err) {
+        // If we get a permission error, it might be because we're using the wrong client.
+        // Try to find the correct owner and retry ONCE if the owner is different.
+        if (err.statusCode === 403 || (err.message && (err.message.includes('Forbidden') || err.message.includes('permission')))) {
+          console.warn(`[nh:getOrderDetail] Permission error for client ${client.name}. Attempting fallback search for order ${orderId}.`);
+          
+          const allOrdersResult = await getAggregatedMyOrders({ op: 'LE', limit: 1000 });
+          const order = allOrdersResult.list.find(o => o.id === orderId);
+
+          // IMPORTANT: Only retry if the found owner is DIFFERENT from the current client to prevent a loop.
+          if (order && order.nhClient && order.nhClient !== client.name) {
+            console.log(`[nh:getOrderDetail] Found order owner is ${order.nhClient}. Retrying with correct client...`);
+            const { client: singleClient } = resolveNhClient(order.nhClient);
+            if (singleClient && !singleClient.isAggregate) {
+              // This is a one-time retry. The next call will not have this fallback logic if it's the right client.
+              return getNiceHashApp(singleClient).hashpower.getOrderDetail(orderId);
+            }
+          }
+
+          // If we're here, the order wasn't found, or the owner is the client that just failed.
+          // In either case, we should not retry. Re-throw the original error.
+          console.error(`[nh:getOrderDetail] Fallback failed for order ${orderId}. The owner is likely ${client.name}, but the API key is missing 'VIEW_ORDERS' permissions.`);
+          throw err;
+        }
+        throw err;
+      }
+    },
     cancelOrder: (orderId) => client.call({ method: 'DELETE', path: `/main/api/v2/hashpower/order/${orderId}` }),
     refillOrder: (orderId, body) => client.call({ method: 'POST', path: `/main/api/v2/hashpower/order/${orderId}/refill`, body }),
     updatePriceLimit: (orderId, body) => client.call({ method: 'POST', path: `/main/api/v2/hashpower/order/${orderId}/updatePriceAndLimit`, body }),

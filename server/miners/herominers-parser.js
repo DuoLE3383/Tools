@@ -4,8 +4,9 @@
 
 function getCoinDivisibility(coin) {
   const coinUpper = String(coin || '').toUpperCase();
-  if (coinUpper === 'QRL' || coinUpper === 'ZEPH') return 1e9; // 9 decimal places
-  return 1e8; // Default to 8 decimal places
+  if (coinUpper === 'QRL' || coinUpper === 'ZEPH' || coinUpper === 'ERGO' || coinUpper === 'SALVIUM') return 1e9;
+  if (coinUpper === 'CFX' || coinUpper === 'CONFLUX' || coinUpper === 'ETC' || coinUpper === 'ETHW') return 1e18;
+  return 1e8;
 }
 
 // ==========================
