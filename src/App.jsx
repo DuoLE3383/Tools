@@ -18,17 +18,16 @@ import "./App.css";
 
 const COIN_IDS_TO_FETCH = "bitcoin,ethereum,ethereum-classic,litecoin,dogecoin,ravencoin,monero,kaspa,iron-fish,zephyr-protocol,clore-ai,dynex,conflux,ergo,bitcoin-cash";
 
-// ── Reducer ──────────────────────────────────
-const initialView = (() => {
-  const p = window.location.pathname;
-  if (p === '/mining') return 'mining';
-  if (p === '/nicehash') return 'nicehash';
-  if (p === '/mrr') return 'mrr';
-  if (p === '/cryptorate') return 'cryptorate';
-  if (p === '/') return 'dashboard';
-  return 'dashboard';
-})();
+const routeMap = {
+  '/': 'dashboard',
+  '/mining': 'mining',
+  '/nicehash': 'nicehash',
+  '/mrr': 'mrr',
+  '/cryptorate': 'cryptorate',
+};
+const getViewForPath = (path) => routeMap[path] || 'dashboard';
 
+// ── Reducer ──────────────────────────────────
 const initialState = {
   loading: false,
   error: "",
@@ -46,7 +45,7 @@ const initialState = {
   mrrClient: "BT",
   nhOrderClient: "BT",
   nhPoolClient: "BT",
-  view: initialView,
+  view: getViewForPath(window.location.pathname),
   currentUser: null,
   coinPrices: null,
   // ✅ Store the current path to prevent unnecessary redirects
@@ -158,21 +157,20 @@ function AppContent({ authToken, onLoginSuccess, onLogout, callApi, setAuthToken
   const isAdmin = String(currentUser?.role || "").toLowerCase() === "admin";
 
   // ── Navigation ──
-  const navigate = useCallback((to) => {
-    const nextPath = String(to || "/").startsWith("/") ? String(to || "/") : `/${String(to || "")}`;
-    dispatch({ type: "SET_CURRENT_PATH", payload: nextPath });
-    if (window.location.pathname !== nextPath) {
-      window.history.pushState({}, "", nextPath);
+  const navigate = useCallback((path) => {
+    if (window.location.pathname !== path) {
+      window.history.pushState({}, "", path);
       window.dispatchEvent(new PopStateEvent("popstate"));
     }
-    let view = 'dashboard';
-    if (nextPath === '/mining') view = 'mining';
-    else if (nextPath === '/nicehash') view = 'nicehash';
-    else if (nextPath === '/mrr') view = 'mrr';
-    else if (nextPath === '/cryptorate') view = 'cryptorate';
-    dispatch({ type: "SET_VIEW", payload: view });
   }, []);
 
+  const handleNavClick = useCallback((path) => (event) => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+      return;
+    }
+    event.preventDefault();
+    navigate(path);
+  }, [navigate]);
   // ── navigateToHomepage ──
   const navigateToHomepage = useCallback((userPermissions) => {
     // Pick the first non-dashboard permission as the home page
@@ -286,17 +284,13 @@ function AppContent({ authToken, onLoginSuccess, onLogout, callApi, setAuthToken
   useEffect(() => {
     const onPopState = () => {
       const path = window.location.pathname;
-      let view = 'dashboard';
-      if (path === '/mining') view = 'mining';
-      else if (path === '/nicehash') view = 'nicehash';
-      else if (path === '/mrr') view = 'mrr';
-      else if (path === '/cryptorate') view = 'cryptorate';
+      const view = getViewForPath(path);
       dispatch({ type: "SET_VIEW", payload: view });
       dispatch({ type: "SET_CURRENT_PATH", payload: path });
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
-  }, []);
+  }, [dispatch]);
 
   // ── Permission-based routing ──
   // ✅ Only run once when the component mounts or when the user changes
@@ -363,8 +357,8 @@ function AppContent({ authToken, onLoginSuccess, onLogout, callApi, setAuthToken
             currentUser={currentUser}
             isAdmin={isAdmin}
             forceCheckStatus={forceCheckStatus}
-            handleLogout={handleLogout}
-            onNavigate={navigate}
+            handleLogout={handleLogout}            
+            onNavigate={handleNavClick}
           />
         );
       
@@ -380,6 +374,7 @@ function AppContent({ authToken, onLoginSuccess, onLogout, callApi, setAuthToken
             forceCheckStatus={forceCheckStatus}
             handleMiningCall={handleMiningCall}
             setNhOrderClient={(v) => dispatch({ type: "SET_NH_ORDER_CLIENT", payload: v })}
+            onNavigate={handleNavClick}
           />
         );
       
@@ -396,6 +391,7 @@ function AppContent({ authToken, onLoginSuccess, onLogout, callApi, setAuthToken
             handleMiningCall={handleMiningCall}
             handleOpenMrrPools={handleOpenMrrPools}
             setMrrClient={(v) => dispatch({ type: "SET_MRR_CLIENT", payload: v })}
+            onNavigate={handleNavClick}
           />
         );
       
@@ -415,6 +411,7 @@ function AppContent({ authToken, onLoginSuccess, onLogout, callApi, setAuthToken
             forceCheckStatus={forceCheckStatus}
             setNhPoolClient={(v) => dispatch({ type: "SET_NH_POOL_CLIENT", payload: v })}
             setMrrClient={(v) => dispatch({ type: "SET_MRR_CLIENT", payload: v })}
+            onNavigate={handleNavClick}
           />
         );
     }

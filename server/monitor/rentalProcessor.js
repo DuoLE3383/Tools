@@ -11,7 +11,7 @@ import {
   getAlgoMapping,
 } from "../../src/core/mapping.js";
 import { getBtcPriceData } from "../../src/core/priceUtils.js";
-import { getMonitorNhActiveOrders, sendTelegramInternal } from "../monitor.js";
+import { getMonitorNhActiveOrders, sendTelegramInternal, getNhMarketPrice } from "../monitor.js";
 import { extractRentalInfo } from "../utils.js";
 import { getNiceHashPriceValue } from "../../src/core/mrrUtils.js";
 
@@ -154,19 +154,17 @@ async function getPriceRoi(info, acct, now) {
         }
 
         let nhP = monitorNhPriceCache.get(cacheKey);
-
         if (!nhP) {
-            const activeOrders = await getMonitorNhActiveOrders(acct);
-            const matchedOrder = activeOrders.find(
-                (order) => normalizeAlgoForNiceHash(order?.algorithm || order?.algo || order?.type) === nhAlgo
-            );
-            if (!matchedOrder) throw new Error(`No active NiceHash order found for ${nhAlgo}`);
+            const marketPrice = await getNhMarketPrice(nhAlgo, acct);
+
+            if (!marketPrice || marketPrice <= 0) {
+                throw new Error(`NiceHash market price unavailable for ${nhAlgo}`);
+            }
 
             nhP = {
-                price: parseFloat(matchedOrder?.price ?? matchedOrder?.marketPrice ?? matchedOrder?.fixedPrice ?? 0) || 0,
+                price: marketPrice,
                 unit: getMrrAlgorithmUnit(nhAlgo),
             };
-            if (nhP.price <= 0) throw new Error("NiceHash price unavailable");
             monitorNhPriceCache.set(cacheKey, nhP);
             monitorNhPriceErrorCache.delete(cacheKey);
         }

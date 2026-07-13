@@ -7,6 +7,17 @@ import { extractRentalInfo, extractRigInfo } from './utils.js';
 import { TELEGRAM_CONFIG, TelegramTemplates } from '../src/core/telegram.js';
 import { ALGO_DISPLAY_NAMES } from '../src/core/mapping.js';
 
+// Helper to escape HTML for safe inclusion in Telegram message titles.
+function escapeHtml(unsafe) {
+  if (typeof unsafe !== 'string') return '';
+  return unsafe
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 import { getDb } from './db.js';
 // Import utilities (assuming these files exist and are correct)
 import { getRentalIdFromRig, getRigLookupKeys, isRentalActive, isLiveRigCurrentlyRented, resolveRentalAlgo, parseUtcDate } from './mrr/rental-utils.js';
@@ -17,17 +28,6 @@ import {
   ALGO_MAPPING,
   getPerformanceEmoji 
 } from './mrr/hashrate-utils.js';
-
-import { 
-  extractArray, 
-  deduplicateByKey, 
-  groupBy 
-} from './mrr/array-utils.js';
-
-import { 
-  escapeHtml, 
-  buildGroupedMessages 
-} from './mrr/telegram-utils.js';
 
 import { TTLMap } from './mrr/cache-utils.js';
 
@@ -49,8 +49,8 @@ const TELEGRAM_BOTS = {
     name: 'Main Bot',
   },
   MINE_BOT: {
-    token: process.env.TELEGRAM_MINE_BOT_TOKEN,
-    chatId: process.env.TELEGRAM_GROUP_ID,
+    token: process.env.TELEGRAM_MINE_BOT_TOKEN || process.env.TELEGRAM_TOKEN,
+    chatId: process.env.TELEGRAM_GROUP_ID || process.env.TELEGRAM_ID,
     name: 'Mining Bot',
   }
 };
@@ -122,6 +122,45 @@ export async function getMonitorNhActiveOrders(clientName) {
   return activeOrders;
 }
 
+/**
+ * Get the lowest market price for a given algorithm from the NiceHash order book.
+ * @param {string} algo - The algorithm name (e.g., 'KAWPOW').
+ * @param {string} clientName - The client account name.
+ * @returns {Promise<number|null>} The lowest price or null.
+ */
+export async function getNhMarketPrice(algo, clientName) {
+  const cacheKey = `market_price:${algo}:${String(clientName || 'BT').toUpperCase()}`;
+  const cached = nhPriceCache.get(cacheKey);
+  if (cached) return cached;
+
+  const { client } = resolveNhClient(clientName);
+  if (!client) return null;
+
+  try {
+    const orderbook = await getNiceHashApp(client).hashpower.getOrderBook({ algorithm: algo });
+    
+    const euPrice = parseFloat(orderbook?.stats?.EU?.price);
+    const usaPrice = parseFloat(orderbook?.stats?.USA?.price);
+
+    let price = null;
+    if (Number.isFinite(euPrice) && euPrice > 0) {
+      price = euPrice;
+    }
+    if (Number.isFinite(usaPrice) && usaPrice > 0) {
+      price = price === null ? usaPrice : Math.min(price, usaPrice);
+    }
+
+    if (price !== null) {
+      nhPriceCache.set(cacheKey, price);
+      return price;
+    }
+    return null;
+  } catch (err) {
+    console.warn(`[Monitor] Failed to get market price for ${algo}: ${err.message}`);
+    return null;
+  }
+}
+
 // ==========================
 //  TELEGRAM FUNCTIONS - UPGRADED
 // ==========================
@@ -130,6 +169,8 @@ export async function getMonitorNhActiveOrders(clientName) {
  * Get health status for both Telegram bots
  */
 export async function getTelegramHealth() {
+  const mineBotToken = process.env.TELEGRAM_MINE_BOT_TOKEN || process.env.TELEGRAM_TOKEN;
+  const mineBotChatId = process.env.TELEGRAM_GROUP_ID || process.env.TELEGRAM_ID;
   return {
     mainBot: {
       tokenPresent: !!process.env.TELEGRAM_BOT_TOKEN,
@@ -137,9 +178,9 @@ export async function getTelegramHealth() {
       configured: !!process.env.TELEGRAM_BOT_TOKEN && !!process.env.TELEGRAM_CHAT_ID,
     },
     mineBot: {
-      tokenPresent: !!process.env.TELEGRAM_MINE_BOT_TOKEN,
-      chatIdPresent: !!process.env.TELEGRAM_GROUP_ID,
-      configured: !!process.env.TELEGRAM_MINE_BOT_TOKEN && !!process.env.TELEGRAM_GROUP_ID,
+      tokenPresent: !!mineBotToken,
+      chatIdPresent: !!mineBotChatId,
+      configured: !!mineBotToken && !!mineBotChatId,
     }
   };
 }
@@ -319,18 +360,42 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
 
     const flushQueuedTelegramMessages = async () => {
       if (queuedTelegramMessages.length === 0) return;
+
       const groupedByType = new Map();
       for (const item of queuedTelegramMessages) {
         const type = String(item.type || item.label || 'Monitor');
         if (!groupedByType.has(type)) groupedByType.set(type, []);
         groupedByType.get(type).push(item);
       }
+
       for (const [type, items] of groupedByType.entries()) {
-        for (const item of items) {
-          try {
-            await sendTelegramInternal(item.message);
+        let messageToSend;
+        if (items.length > 1) {
+          const title = `<b>📢 ${escapeHtml(type)} Summary (${items.length})</b>\n━━━━━━━━━━━━━━\n\n`;
+          const bodies = items.map(item => item.message).join('\n\n');
+          messageToSend = title + bodies;
+        } else {
+          messageToSend = items[0].message;
+        }
+
+        try {
+          // Fallback for very long grouped messages to avoid hitting Telegram API limits.
+          if (messageToSend.length > 4096) {
+            console.warn(`[Monitor] Grouped message for type '${type}' is too long. Sending individually.`);
+            for (const item of items) {
+              await sendTelegramInternal(item.message);
+            }
+          } else {
+            await sendTelegramInternal(messageToSend);
+          }
+
+          // If sending was successful, run all callbacks for the group.
+          for (const item of items) {
             await item.onSuccess?.();
-          } catch (err) {
+          }
+        } catch (err) {
+          console.error(`[Monitor] Failed to send grouped Telegram message for type ${type}:`, err);
+          for (const item of items) {
             await item.onFailure?.(err);
           }
         }
@@ -525,27 +590,19 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
           const startT = parseUtcDate(info.startTime);
           const endT = parseUtcDate(info.endTime);
           
-          // Skip if no valid times
-          if (startT <= 0 || endT <= 0) {
-            console.log(`[monitor:${acct}] Skipping rental with invalid times: ${rentalId}`);
-            continue;
-          }
+          // Determine if the rental is currently active.
+          // A rental is active if its end time hasn't passed OR if the live rig reports it as rented.
+          // This handles rentals that might not have an end time yet (e.g., pay-as-you-go).
+          const hasFinishedStatus = /finished|complete|cancelled|expired/i.test(String(r.status?.status || r.status || ''));
+          const hasPassedEndTime = endT > 0 && now > endT;
+          const isRentedOnRig = isLiveRigCurrentlyRented(liveRig);
 
-          const remainingMs = Math.max(0, endT - now);
-          
-          // Skip if finished
-          if (remainingMs <= 0) {
-            console.log(`[monitor:${acct}] Skipping finished rental: ${rentalId}`);
+          if (hasFinishedStatus || (hasPassedEndTime && !isRentedOnRig)) {
+            // This rental is definitively finished.
             await db.run(`DELETE FROM rentals WHERE id = ?`, [String(r.id)]).catch(() => {});
             continue;
           }
-
-          // Check if currently rented
-          const isRented = isLiveRigCurrentlyRented(liveRig);
-          if (!isRented && !currentActiveRentalIds.has(rentalId)) {
-            // Not rented and not in active list - skip
-            continue;
-          }
+          const remainingMs = Math.max(0, endT - now);
 
           // This is a real active rental - count it
           realRentalCount++;

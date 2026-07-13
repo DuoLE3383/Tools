@@ -113,13 +113,15 @@ export function resolveNhClient(clientNameRaw) {
     return { client: newClient, clientName: targetClientName };
   }
 
-  // 4. Recursive fallback to VN if client is unconfigured
-  if (targetClientName !== AGGREGATE_CLIENT) {
-    console.warn(`[nh:resolve] Client "${targetClientName}" not found or unconfigured. Falling back to ${AGGREGATE_CLIENT}.`);
-    return resolveNhClient(AGGREGATE_CLIENT);
+  // 4. If a specific client was requested but not found/configured, return undefined.
+  // This prevents accidentally falling back to the aggregate view.
+  if (!isAggregate(targetClientName)) {
+    console.warn(`[nh:resolve] Specific client "${targetClientName}" not found or is unconfigured.`);
+    return { client: undefined, clientName: targetClientName };
   }
 
-  return { client: undefined, clientName: AGGREGATE_CLIENT };
+  // 5. If we are here, it means the aggregate client was requested. Return the marker.
+  return { client: { isAggregate: true, name: AGGREGATE_CLIENT }, clientName: AGGREGATE_CLIENT };
 }
 
 /**
@@ -298,14 +300,8 @@ async function getAggregatedMyOrders(query) {
 
         if (result && (result.list || result.myOrders)) {
           const orders = result.list || result.myOrders;
-          // Tag each order with its source account
-          orders.forEach(o => {
-            o.account = name;
-            if (o.rawOrder) {
-              o.rawOrder.account = name;
-            }
-          });
-          allOrders.push(...orders);
+          // Tag each order with its source client name for the frontend
+          allOrders.push(...orders.map(o => ({ ...o, nhClient: name })));
         }
       }
     } catch (e) {

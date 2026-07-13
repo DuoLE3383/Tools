@@ -3,7 +3,7 @@ import React from "react";
 export default function NiceHashOrderCard({ order }) {
   return (
     <div
-      className="rented-rig-card"
+      className="nicehash-order-card"
       style={{
         background: "rgba(92, 71, 4, 0.18)",
         border: "1px solid rgba(219, 131, 16, 0.26)",
@@ -35,7 +35,6 @@ export default function NiceHashOrderCard({ order }) {
         </span>
       </div>
       <div style={{ marginTop: "-4px" }}>
-        {/* <div style={{ fontSize: '0.7rem', opacity: 0.5 }}>Pool</div> */}
         <div
           style={{
             fontSize: "11px",
@@ -69,7 +68,7 @@ export default function NiceHashOrderCard({ order }) {
       >
         <div style={{ display: "flex", flexDirection: "column" }}>
           <span style={{ fontSize: "0.7rem", opacity: 0.6 }}>
-            My Order Price
+            Order Price
           </span>
           <span style={{ fontWeight: "bold" }}>
             {parseFloat(order.price).toFixed(8)}

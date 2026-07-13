@@ -491,6 +491,9 @@ export default function MiningRigRental({
         <button className="btn-pro secondary" onClick={() => openManagementModal("list")} style={{ fontSize: "clamp(10px, 1vw, 12px)", padding: "4px 12px" }}>
             📋 Rigs
           </button>
+          <button className="btn-pro secondary" onClick={() => setIsCryptoRateModalOpen(true)} style={{ fontSize: "clamp(10px, 1vw, 12px)", padding: "4px 12px" }}>
+            🚦Update Nicehash Rates
+          </button>
         <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center" }}>
           {/* Right side of header */}
           
@@ -506,9 +509,7 @@ export default function MiningRigRental({
             <option value="LN">LN</option>
             <option value="LUCKY">LUCKY</option>
           </select>
-          <button className="btn-pro secondary" onClick={() => setIsCryptoRateModalOpen(true)} style={{ fontSize: "clamp(10px, 1vw, 12px)", padding: "4px 12px" }}>
-            Live Rates
-          </button>
+          
 
           
           {/* <button className="btn-pro secondary" onClick={() => onCall("/api/v2/mrr/balance", { query: { client: mrrClient }, showModal: true })} style={{ fontSize: "clamp(10px, 1vw, 12px)", padding: "4px 12px" }}>

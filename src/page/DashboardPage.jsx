@@ -1,4 +1,3 @@
-import { useCallback } from "react";
 import Pools from "../components/pools/Pools";
 import DashboardHeader from "../components/Dashboard/DashboardHeader.jsx";
 import QuickActions from "./QuickActions";
@@ -16,22 +15,8 @@ export default function DashboardPage({
   forceCheckStatus,
   setNhPoolClient,
   setMrrClient,
+  onNavigate,
 }) {
-  const handleNavClick = useCallback((path) => (event) => {
-      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
-        return;
-      }
-      event.preventDefault();
-      window.history.pushState({}, "", path);
-      window.dispatchEvent(new PopStateEvent("popstate"));
-      let view = 'dashboard';
-      if (path === '/cryptorate') view = 'cryptorate';
-      else if (path === '/mining') view = 'mining';
-      else if (path === '/nicehash') view = 'nicehash';
-      else if (path === '/mrr') view = 'mrr';
-      dispatch({ type: "SET_VIEW", payload: view });
-    }, [dispatch]);
-
   return (
     <div className="page-full">
       <DashboardHeader
@@ -43,7 +28,7 @@ export default function DashboardPage({
         onLogout={handleLogout}
         onUsers={() => dispatch({ type: "SET_USERS_MODAL", payload: true })}
         onCalculator={() => dispatch({ type: "SET_CALCULATOR_MODAL", payload: true })}
-        onNavigate={handleNavClick}
+        onNavigate={onNavigate}
         currentView="dashboard"
       />
 

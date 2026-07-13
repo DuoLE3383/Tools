@@ -17,14 +17,20 @@ export function registerNiceHashRoutes(app) {
   app.use("/api/v2", (req, res, next) => {
     if (req.path.startsWith("/mrr/") || req.path === "/algos/mapping" || req.path === "/extracted-pools") return next();
     try {
-      const { client, clientName } = resolveNhClient(req.query.client);
-      if (client) {
-        req.nhApp = getNiceHashApp(client);
-        res.set("X-NH-Client", clientName);
+      const clientParam = req.query.client;
+      const { client, clientName } = resolveNhClient(clientParam);
+
+      // If a specific (non-aggregate) client was requested but could not be resolved,
+      // it's better to return an error than to silently fall back to the aggregate view.
+      if (!client && clientParam && !isAggregate(clientParam)) {
+        return res.status(404).json({ success: false, error: `Client '${clientParam}' not found or is not configured.` });
       }
+
+      req.nhApp = getNiceHashApp(client);
+      res.set("X-NH-Client", clientName);
       next();
     } catch (err) {
-      next();
+      next(err); // Pass errors to the Express error handler
     }
   });
 
@@ -110,6 +116,9 @@ export function registerNiceHashRoutes(app) {
     if (!query.ts) query.ts = Date.now().toString();
 
     const data = await req.nhApp.hashpower.getMyOrders(query);
+    // Get the client name resolved by the middleware to tag orders from single-account calls.
+    // Aggregate calls already tag orders with `nhClient`, so this will be a fallback.
+    const clientNameForOrder = res.get("X-NH-Client") || req.query.client || "BT";
 
     const rawList = data?.list || data?.myOrders || (Array.isArray(data) ? data : []);
     const processedList = rawList.map(o => ({
@@ -132,11 +141,19 @@ export function registerNiceHashRoutes(app) {
       status: typeof o.status === "object" ? o.status.code : o.status,
       isDead: (o.status?.code || o.status) === "ACTIVE" && parseFloat(o.acceptedCurrentSpeed || 0) === 0 && parseInt(o.rigsCount || 0) === 0,
       pool: o.pool,
-      nhClient: o.nhClient,
+      nhClient: o.nhClient || clientNameForOrder,
       ts: new Date().toISOString(),
     }));
     await saveToDatabase("nh_order.csv", processedList.filter(o => o.status === "ACTIVE"));
-    res.json(typeof data === "object" && !Array.isArray(data) ? { ...data, list: processedList } : processedList);
+
+    // Standardize the response format to always return an object with a 'list' property.
+    const responsePayload = {
+      // Spread original data to keep properties like 'pagination'
+      ...(typeof data === 'object' && !Array.isArray(data) ? data : {}),
+      list: processedList,
+    };
+
+    res.json(responsePayload);
   }));
   app.get("/api/v2/hashpower/rented-summary", asyncHandler(async (req, res) => {
     const maxPrice = parseFloat(req.query.price);
@@ -345,17 +362,18 @@ export function registerNiceHashRoutes(app) {
     // Aggregate calls handle this internally via getCachedNhPools.
     if (pools.length > 0 && !isAggregate(clientName)) {
       const db = await getDb();
-      await db.run('BEGIN TRANSACTION');
+      const savepointName = `nh_pool_sync_${clientName.replace(/[^a-zA-Z0-9]/g, "")}`;
+      await db.run(`SAVEPOINT ${savepointName}`);
       try {
         const stmt = await db.prepare(`INSERT OR REPLACE INTO nh_pools (id, name, algorithm, stratumHostname, port, username, password, nhClient, last_updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`);
         for (const p of pools) {
           await stmt.run(p.id, p.name, p.algorithm, p.stratumHostname, p.port, p.username, p.password, clientName);
         }
         await stmt.finalize();
-        await db.run('COMMIT');
+        await db.run(`RELEASE SAVEPOINT ${savepointName}`);
       } catch (e) {
         console.error(`[DB] Failed to save pools for ${clientName}:`, e.message);
-        await db.run('ROLLBACK');
+        await db.run(`ROLLBACK TO SAVEPOINT ${savepointName}`);
       }
     }
     res.json(data);

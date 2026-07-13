@@ -13,8 +13,10 @@ export async function saveToDatabase(filename, items) {
   const columnDefs = columns.map(c => c === "id" ? '"id" TEXT PRIMARY KEY' : `"${c}" TEXT`).join(", ");
   try {
     const db = await getDb();
+    // Use a unique savepoint name to allow for nesting.
+    const savepointName = `save_to_${tableName}`;
     await db.run(`CREATE TABLE IF NOT EXISTS ${tableName} (${columnDefs})`);
-    await db.run('BEGIN TRANSACTION');
+    await db.run(`SAVEPOINT ${savepointName}`);
     const stmt = await db.prepare(`INSERT OR REPLACE INTO ${tableName} (${quotedColumns.join(", ")}) VALUES (${placeholders})`);
     for (const item of items) {
       const values = columns.map(c => {
@@ -24,14 +26,15 @@ export async function saveToDatabase(filename, items) {
       await stmt.run(values);
     }
     await stmt.finalize();
-    await db.run('COMMIT');
+    await db.run(`RELEASE SAVEPOINT ${savepointName}`);
   } catch (err) {
     console.error(`[db] Failed to save to ${tableName}:`, err.message);
     try {
       const db = await getDb();
-      await db.run('ROLLBACK');
+      // Rollback to the specific savepoint if the transaction was started
+      await db.run(`ROLLBACK TO SAVEPOINT ${savepointName}`);
     } catch (rollbackErr) {
-      // This can happen if the transaction was never started. It's safe to ignore.
+      // This can happen if the transaction was never started or already rolled back. It's safe to ignore.
     }
   }
 }

@@ -101,7 +101,7 @@ export function NiceHashOrderProvider({ children, nhClient, callApi }) {
       // the context from having an incomplete order list if a specific `nhClient`
       // prop is passed on a particular page.
       const data = await callApi("/api/v2/hashpower/myOrders", {
-        query: { op: "LE", limit: 100, client: "VN" },
+        query: { op: "LE", limit: 100, client: "VN" }, // Always fetch from aggregate client
         silent: true,
       });
 
@@ -157,10 +157,10 @@ export function NiceHashOrderProvider({ children, nhClient, callApi }) {
           id: String(o.id || o.orderId || ""),
           paid: o.payedAmount || "0.00000000",
           price: o.price || 0,
-          // When using an aggregate client ('VN'), the backend MUST return the 'account' field.
+          // When using an aggregate client ('VN'), the backend returns an `nhClient` field.
           // Falling back to the provider's 'nhClient' prop is incorrect, as it would
           // mislabel all orders from the aggregate call with the client of the current page.
-          account: o.account || null,
+          account: o.nhClient || o.account || null,
           algo: algoCode,
           algoDisplayName: algoMapping.displayName || algoCode,
           algoUnit: algoUnit,

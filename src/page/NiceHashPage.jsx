@@ -1,6 +1,5 @@
 import NiceHash from "../components/nicehash/NiceHash";
 import DashboardHeader from "../components/Dashboard/DashboardHeader.jsx";
-import { useCallback } from "react";
 
 export default function NiceHashPage({
   state,
@@ -12,20 +11,8 @@ export default function NiceHashPage({
   forceCheckStatus,
   handleMiningCall,
   setNhOrderClient,
+  onNavigate,
 }) {
-  const handleNavClick = useCallback((path) => (event) => {
-      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
-        return;
-      }
-      event.preventDefault();
-      window.history.pushState({}, "", path);
-      window.dispatchEvent(new PopStateEvent("popstate"));
-      const view = path.startsWith('/') ? path.substring(1) : path;
-      dispatch({ type: "SET_VIEW", payload: view || "dashboard" });
-    },
-    [dispatch],
-  );
-
   return (
     <div className="page-full">
       <DashboardHeader
@@ -37,7 +24,7 @@ export default function NiceHashPage({
         onLogout={handleLogout}
         onUsers={() => dispatch({ type: "SET_USERS_MODAL", payload: true })}
         onCalculator={() => dispatch({ type: "SET_CALCULATOR_MODAL", payload: true })}
-        onNavigate={handleNavClick}
+        onNavigate={onNavigate}
         currentView="nicehash"
       />
 

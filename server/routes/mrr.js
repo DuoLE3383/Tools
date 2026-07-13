@@ -67,7 +67,9 @@ export function registerMrrRoutes(app) {
               const poolMap = new Map(await Promise.all(poolItems.map(async (item) => {
                 const id = String(item.rigId || item.rigid || item.id || item.rentalid || '');
                 if (Array.isArray(item.pools) && item.pools.length > 0) {
-                  await db.run('BEGIN TRANSACTION');
+                  // Use savepoints to allow nesting within other transactions.
+                  const savepointName = `mrr_rig_pool_sync_${id.replace(/[^a-zA-Z0-9]/g, "")}`;
+                  await db.run(`SAVEPOINT ${savepointName}`);
                   try {
                     const stmt = await db.prepare(`INSERT OR REPLACE INTO mrr_pools (id, name, algo, host, port, user, mrrClient, last_updated) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`);
                     for (const p of item.pools) {
@@ -75,12 +77,12 @@ export function registerMrrRoutes(app) {
                       await stmt.run(id, p.name || `RigPool-${id}`, algo, p.host || p.stratumHost, p.port || p.stratumPort, p.user || p.username, clientName);
                     }
                     await stmt.finalize();
-                    await db.run('COMMIT');
+                    await db.run(`RELEASE SAVEPOINT ${savepointName}`);
                   } catch (e) {
                     console.error(`[mrr:rigs] DB pool sync failed for rig ${id}:`, e.message);
                     try {
-                      await db.run('ROLLBACK');
-                    } catch (rollbackErr) { /* This can happen if the transaction was never started. It's safe to ignore. */ }
+                      await db.run(`ROLLBACK TO SAVEPOINT ${savepointName}`);
+                    } catch (rollbackErr) { console.warn(`[mrr:rigs] Savepoint rollback failed for rig ${id}: ${rollbackErr.message}`); }
                   }
                 }
                 if (Array.isArray(item.pools)) {
@@ -358,18 +360,19 @@ export function registerMrrRoutes(app) {
       const db = await getDb();
       const pools = data.data || [];
       if (pools.length > 0) {
-        await db.run('BEGIN TRANSACTION');
+        const savepointName = `mrr_acct_pool_sync_${clientName.replace(/[^a-zA-Z0-9]/g, "")}`;
+        await db.run(`SAVEPOINT ${savepointName}`);
         try {
           const stmt = await db.prepare(`INSERT OR REPLACE INTO mrr_pools (id, name, algo, host, port, user, mrrClient, last_updated) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`);
           for (const p of pools) {
             await stmt.run(p.id, p.name, p.algo, p.host, p.port, p.user, clientName);
           }
           await stmt.finalize();
-          await db.run('COMMIT');
+          await db.run(`RELEASE SAVEPOINT ${savepointName}`);
         } catch (e) {
           try {
-            await db.run('ROLLBACK');
-          } catch (rollbackErr) { /* This can happen if the transaction was never started. It's safe to ignore. */ }
+            await db.run(`ROLLBACK TO SAVEPOINT ${savepointName}`);
+          } catch (rollbackErr) { console.warn(`[mrr:acct-pool] Savepoint rollback failed: ${rollbackErr.message}`); }
         }
       }
     }

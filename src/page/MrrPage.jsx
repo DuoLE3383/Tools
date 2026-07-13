@@ -1,7 +1,8 @@
 import MiningRigSection from "../components/mrr/MiningRigSection";
 import DashboardHeader from "../components/Dashboard/DashboardHeader.jsx";
-import { useCallback } from "react";
 import CryptoRatePage from "../../CryptoRatePage.jsx";
+import { useNiceHashOrders } from "../components/nicehash/NiceHashContext.jsx";
+import { useCallback } from "react";
 
 export default function MrrPage({
   state,
@@ -14,19 +15,14 @@ export default function MrrPage({
   handleMiningCall,
   handleOpenMrrPools,
   setMrrClient,
+  onNavigate,
 }) {
-  const handleNavClick = useCallback((path) => (event) => {
-      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
-        return;
-      }
-      event.preventDefault();
-      window.history.pushState({}, "", path);
-      window.dispatchEvent(new PopStateEvent("popstate"));
-      const view = path.startsWith('/') ? path.substring(1) : path;
-      dispatch({ type: "SET_VIEW", payload: view || "dashboard" });
-    },
-    [dispatch],
-  );
+  const { refresh: refreshNhOrders } = useNiceHashOrders();
+
+  const handleRefresh = useCallback(() => {
+    if (forceCheckStatus) forceCheckStatus();
+    if (refreshNhOrders) refreshNhOrders();
+  }, [forceCheckStatus, refreshNhOrders]);
 
   return (
     <div className="page-full">
@@ -34,12 +30,12 @@ export default function MrrPage({
         state={state}
         currentUser={currentUser}
         isAdmin={isAdmin}
-        onForceCheck={forceCheckStatus}
+        onForceCheck={handleRefresh}
         onDebugLogs={() => dispatch({ type: "SET_DEBUG_MODAL", payload: true })}
         onLogout={handleLogout}
         onUsers={() => dispatch({ type: "SET_USERS_MODAL", payload: true })}
         onCalculator={() => dispatch({ type: "SET_CALCULATOR_MODAL", payload: true })}
-        onNavigate={handleNavClick}
+        onNavigate={onNavigate}
         currentView="mrr"
       />
 

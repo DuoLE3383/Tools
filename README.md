@@ -37,6 +37,10 @@ cp .env.example .env
 - `JWT_SECRET` (Required: A long random string to sign tokens)
 - `ADMIN_USER` (Required: Your login username)
 - `ADMIN_PASS` (Required: Your login password or bcrypt hash)
+- `TELEGRAM_BOT_TOKEN` (Optional: For the main Telegram bot)
+- `TELEGRAM_CHAT_ID` (Optional: For the main Telegram bot)
+- `TELEGRAM_MINE_BOT_TOKEN` (Optional: For the mining-specific bot. Alias: `TELEGRAM_TOKEN`)
+- `TELEGRAM_GROUP_ID` (Optional: For the mining-specific bot. Alias: `TELEGRAM_ID`)
 
 
 4. Start the backend server:

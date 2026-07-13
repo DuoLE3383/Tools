@@ -11,6 +11,19 @@ import { RentedRigProvider } from './src/components/mrr/RentedRigContext.jsx';
 import CryptoRatePage from './src/components/CryptoRatePage.jsx';
 import './src/App.css';
 
+const routeMap = {
+  '/': 'dashboard',
+  '/mining': 'mining',
+  '/miner': 'miner',
+  '/cryptorate': 'cryptorate',
+  '/orders': 'orders',
+  '/nicehash': 'nicehash',
+  '/mrr': 'mrr',
+};
+
+const getViewForPath = (path) => routeMap[path] || 'dashboard';
+
+
 // ============================================
 // REDUCER FOR STATE MANAGEMENT
 // ============================================
@@ -31,15 +44,7 @@ const initialState = {
   nhOrderClient: 'BT',
   nhPoolClient: 'BT',
   mrrClient: 'BT',
-  view: (typeof window !== 'undefined' && window.location.pathname === '/mining')
-    ? 'mining'
-    : (typeof window !== 'undefined' && window.location.pathname === '/miner')
-      ? 'miner'
-      : (typeof window !== 'undefined' && window.location.pathname === '/cryptorate')
-        ? 'cryptorate'
-        : (typeof window !== 'undefined' && window.location.pathname === '/orders')
-          ? 'orders'
-        : 'dashboard',
+  view: typeof window !== 'undefined' ? getViewForPath(window.location.pathname) : 'dashboard',
   activeDashboard: 'nicehash',
 };
 
@@ -321,11 +326,8 @@ export default function App() {
   // Route handling
   useEffect(() => {
     const handlePath = () => {
-      const path = window.location.pathname;
-      dispatch({
-        type: 'SET_VIEW',
-        payload: path === '/cryptorate' ? 'cryptorate' : path === '/mining' ? 'mining' : path === '/miner' ? 'miner' : path === '/nicehash' ? 'nicehash' : path === '/mrr' ? 'mrr' : path === '/orders' ? 'orders' : 'dashboard',
-      });
+      const newView = getViewForPath(window.location.pathname);
+      dispatch({ type: 'SET_VIEW', payload: newView });
     };
     window.addEventListener('popstate', handlePath);
     handlePath();
