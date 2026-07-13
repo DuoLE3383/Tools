@@ -1,19 +1,17 @@
 // src/mining/ProfitAlert.jsx
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useProfitCalculator } from '../../hooks/useProfitCalculator';
-import { useTelegramMine } from '../mrr/TelegramMineContext';
 import SelectNiceHashOrderModal from './SelectNiceHashOrderModal.jsx';
+import { useProfitAlert } from '../../hooks/useProfitAlert.js';
 
 export default function ProfitAlert({ 
   pair,           // Auto-detected from pool monitor
   onCall,
   nhClient = 'VN',
+  poolName,
 }) {
   const [manualOrderId, setManualOrderId] = useState(null);
   const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
-  const [alertSent, setAlertSent] = useState(false);
-  const [lastAlertType, setLastAlertType] = useState(null);
-  const { notify } = useTelegramMine();
 
   const {
     stats,
@@ -35,6 +33,15 @@ export default function ProfitAlert({
   });
 
   const { coin, address } = pairData || {};
+
+  const { niceHashOrder } = useProfitAlert({
+    profit,
+    pairData,
+    niceHashPriceBTC,
+    orderedHashrateGH,
+    niceHashOrderId,
+    alertTitle: `${poolName ? `${poolName} ` : ''}Mining Profit Alert`,
+  });
 
   // This is a copy from useProfitCalculator.js to determine the algo for the modal
   const getCoinAlgorithm = (coinName) => {
@@ -72,74 +79,20 @@ export default function ProfitAlert({
     setIsOrderModalOpen(false);
   };
 
-  // Send Telegram alert
-  const sendProfitAlert = useCallback(async (profitData, isNegative = false) => {
-    if (!profitData) return;
-
-    const emoji = isNegative ? '🔴' : '✅';
-    const status = isNegative ? 'NEGATIVE' : 'POSITIVE';
-
-    const message = `
-${emoji} <b>Mining Profit Alert - ${status}</b>
-
-📊 <b>${coin} Mining</b>
-• Address: ${address?.slice(0, 12)}...${address?.slice(-6)}
-• Hashrate: ${profitData.hashrate}
-• Workers: ${profitData.workers}
-
-💰 <b>Income (24h)</b>
-• ${profitData.paid24hCoin.toFixed(4)} ${coin}
-• $${profitData.paid24hUSD.toFixed(2)}
-• ${profitData.grossBtcPerDay.toFixed(8)} BTC
-
-💸 <b>NiceHash Cost (24h)</b>
-• ${niceHashPriceBTC.toFixed(8)} BTC/GH/day × ${orderedHashrateGH.toFixed(2)} GH/s
-• ${profitData.costPerDay.toFixed(8)} BTC
-• Paid: <b>${(profitData.nhTotalPaidBTC || 0).toFixed(8)} BTC</b>
-• $${profitData.costPerDayUSD.toFixed(2)}
-
-📈 <b>Profit</b>
-• Hourly: <b>$${profitData.netProfitPerHour.toFixed(2)}/h</b>
-• Daily: <b>$${profitData.netProfitPerDay.toFixed(2)}/day</b>
-• Daily BTC: <b>${profitData.netProfitBTC.toFixed(8)} BTC</b>
-• ROI: <b>${profitData.roi.toFixed(2)}%</b>
-
-${niceHashOrderId ? `🆔 Order: ${niceHashOrderId.slice(0, 8)}...` : ''}
-
-⏰ Updated: ${new Date(profitData.timestamp).toLocaleString()}
-    `.trim();
-
-    await notify(message);
-    setAlertSent(true);
-    setLastAlertType(isNegative ? 'negative' : 'positive');
-  }, [coin, address, niceHashPriceBTC, orderedHashrateGH, niceHashOrderId, notify]);
-
-  // Check and alert on profit change
-  useEffect(() => {
-    if (!profit) return;
-
-    const isNegative = profit.netProfitPerHour < 0;
-
-    const shouldAlert = 
-      lastAlertType === null ||
-      (isNegative !== (lastAlertType === 'negative')) ||
-      (isNegative && !alertSent);
-
-    if (shouldAlert) {
-      sendProfitAlert(profit, isNegative);
-    }
-
-    if (!isNegative) {
-      setAlertSent(false);
-    }
-  }, [profit, lastAlertType, alertSent, sendProfitAlert]);
-
   // Manual refresh
   const handleRefresh = useCallback(async () => {
     await checkProfit();
   }, [checkProfit]);
 
   if (!pair) return null;
+
+  const orderDisplayDetails = useMemo(() => {
+    if (!niceHashOrder) return '';
+    return [
+      niceHashOrder.poolName && niceHashOrder.poolName !== 'N/A' ? niceHashOrder.poolName : null,
+      niceHashOrder.account
+    ].filter(Boolean).join(' - ');
+  }, [niceHashOrder]);
 
   return (
     <div style={{
@@ -154,16 +107,17 @@ ${niceHashOrderId ? `🆔 Order: ${niceHashOrderId.slice(0, 8)}...` : ''}
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: '18px' }}>
+          <span style={{ fontSize: '14px' }}>
             {loading ? '⏳' : isProfitable === null ? '⚪' : isProfitable ? '🟢' : '🔴'}
           </span>
-          <span style={{ fontWeight: 700, color: '#e2e8f0' }}>
-            {coin} Profit Monitor
+          <span style={{ fontWeight: 600, color: '#e2e8f0' }}>
+            {/* {poolName ? `${poolName} - ` : ''} */}
+            {coin} Monitor
           </span>
           {niceHashOrderId && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
               <span style={{ fontSize: '9px', color: '#64748b' }}>
-                Order: {niceHashOrderId.slice(0, 8)}...
+                {orderDisplayDetails ? `${orderDisplayDetails} (${niceHashOrderId.slice(0, 8)}...)` : `Order: ${niceHashOrderId.slice(0, 8)}...`}
               </span>
               <button onClick={() => setIsOrderModalOpen(true)} style={{ fontSize: '9px', background: 'none', border: 'none', color: '#60a5fa', cursor: 'pointer', padding: '0 2px' }}>
                 (change)
@@ -172,7 +126,7 @@ ${niceHashOrderId ? `🆔 Order: ${niceHashOrderId.slice(0, 8)}...` : ''}
           )}
           {!niceHashOrderId && !loading && (
             <button onClick={() => setIsOrderModalOpen(true)} style={{ fontSize: '10px', background: 'rgba(96,165,250,0.1)', border: '1px solid rgba(96,165,250,0.2)', color: '#60a5fa', borderRadius: '4px', padding: '1px 6px', cursor: 'pointer' }}>
-              Select Order
+              Select Nicehash
             </button>
           )}
           {error && (
@@ -203,14 +157,16 @@ ${niceHashOrderId ? `🆔 Order: ${niceHashOrderId.slice(0, 8)}...` : ''}
       {profit && (
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+          gridTemplateColumns: 'repeat(2, 1fr)',
           gap: '6px',
         }}>
-          <StatItem label="Hashrate" value={profit.hashrate} color="#60a5fa" />
-          <StatItem label="Workers" value={profit.workers} color="#94a3b8" />
+          <StatItem 
+            label="Profit/Hour" 
+            value={`$${profit.netProfitPerHour.toFixed(2)}`} 
+            color={profit.isProfitable ? '#34d399' : '#f87171'}
+            bold
+          />
           <StatItem label="ROI" value={`${profit.roi.toFixed(2)}%`} color={profit.roi > 0 ? '#34d399' : '#f87171'} />
-          <StatItem label="Pending" value={profit.pendingBalance} color="#fbbf24" />
-          
           <StatItem 
             label="Income (24h)" 
             value={`$${profit.paid24hUSD.toFixed(2)}`} 
@@ -220,22 +176,6 @@ ${niceHashOrderId ? `🆔 Order: ${niceHashOrderId.slice(0, 8)}...` : ''}
             label="NH Cost (24h)" 
             value={`$${profit.costPerDayUSD.toFixed(2)}`} 
             color="#f87171"
-          />
-          <StatItem 
-            label="NH Paid (Total)" 
-            value={`$${(profit.nhTotalPaidUSD || 0).toFixed(2)}`} 
-            color="#f59e0b"
-          />
-          <StatItem 
-            label="Profit/Hour" 
-            value={`$${profit.netProfitPerHour.toFixed(2)}`} 
-            color={profit.isProfitable ? '#34d399' : '#f87171'}
-            bold
-          />
-          <StatItem 
-            label="BTC/Day" 
-            value={`${profit.netProfitBTC.toFixed(8)}`} 
-            color={profit.isProfitable ? '#34d399' : '#f87171'}
           />
         </div>
       )}

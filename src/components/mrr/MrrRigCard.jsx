@@ -169,11 +169,13 @@ const MrrRigCard = ({
   const normalizedAlgo = normalizeAlgoForNiceHash(rawAlgo);
   const mrrUnit = getMrrUnit(normalizedAlgo || rawAlgo);
   const isEquihash = (normalizedAlgo || '').toUpperCase().includes('EQUIHASH');
+  const isKheavy = (normalizedAlgo || "").toUpperCase().includes("KHEAVYHASH");
+  
   const nhUnit = getNiceHashUnit(normalizedAlgo || rawAlgo);
   const mrrApiKey = getMrrAlgoKey(normalizedAlgo);
   const isAsicBoostAlgo = isAsicBoost(normalizedAlgo);
 
-  // ── USD price helper ──
+  // --- USD price helper ---
   const getUsdPrice = useCallback(
     (currency) => {
       const map = {
@@ -361,9 +363,9 @@ const MrrRigCard = ({
 
   // The myOrders API generally returns price per TH, but for Equihash it's per Gsol.
   // We need to handle this exception for both display and ROI calculation.
-  const myNhUnit = isEquihash ? "Gsol" : "TH";
+  const myNhUnit = nhOrder?.algoUnit || getNiceHashUnit(normalizedAlgo);
 
-  // ── ROI (skip unit conversion — API already returns per-TH prices) ──
+  // ── ROI calculation ──
   const { niceHashPriceInMrrUnit, roiPercent, roiLabel } = useRoiCalculation({
     finalMrrRate,
     mrrUnit,
@@ -372,9 +374,9 @@ const MrrRigCard = ({
     normalizedAlgo,
     rawAlgo,
     isLoadingMrrRate,
-    // Always skip conversion. The `myOrders` API returns prices in a consistent unit (TH or Gsol),
-    // and `useRoiCalculation` will now handle the comparison between different units correctly.
-    skipUnitConversion: true,
+    // The `myOrders` API returns prices for a specific unit (e.g., BTC/EH/Day).
+    // The hook handles comparison between different units.
+    skipUnitConversion: true, // This likely means we pass the raw price without pre-conversion.
   });
 
   const displayAlgo = getAlgoDisplayName(normalizedAlgo || rawAlgo);

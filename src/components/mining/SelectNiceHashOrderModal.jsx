@@ -51,27 +51,32 @@ export default function SelectNiceHashOrderModal({
             <thead>
               <tr style={{ borderBottom: '1px solid rgba(148,163,184,0.2)' }}>
                 <th style={{ padding: '8px', textAlign: 'left', color: '#94a3b8' }}>ID</th>
+                <th style={{ padding: '8px', textAlign: 'left', color: '#94a3b8' }}>Pool</th>
                 <th style={{ padding: '8px', textAlign: 'right', color: '#94a3b8' }}>Price (BTC)</th>
                 <th style={{ padding: '8px', textAlign: 'right', color: '#94a3b8' }}>Speed</th>
                 <th style={{ padding: '8px', textAlign: 'left', color: '#94a3b8' }}>Account</th>
-                <th style={{ padding: '8px', textAlign: 'right' }}></th>
+                <th style={{ padding: '8px', textAlign: 'right' }} />
               </tr>
             </thead>
             <tbody>
-              {orders.map(order => (
-                <tr key={order.id} style={{ borderBottom: '1px solid rgba(148,163,184,0.1)' }}>
-                  <td style={{ padding: '8px', fontFamily: 'monospace' }}>{order.id.slice(0, 8)}...</td>
-                  <td style={{ padding: '8px', textAlign: 'right', color: '#fbbf24' }}>{parseFloat(order.price || 0).toFixed(8)}</td>
-                  <td style={{ padding: '8px', textAlign: 'right' }}>{parseFloat(order.acceptedCurrentSpeed || 0).toFixed(2)} GH/s</td>
-                  <td style={{ padding: '8px', color: '#60a5fa' }}>{order.nhClient || 'N/A'}</td>
-                  <td style={{ padding: '8px', textAlign: 'right' }}>
-                    <button className="btn-pro primary" onClick={() => onSelect(order)} style={{ fontSize: '11px', padding: '4px 12px' }}>Select</button>
-                  </td>
-                </tr>
-              ))}
+              {orders.map(order => {
+                const poolName = order.pool?.name || order.pool?.stratumHostname || 'N/A';
+                return (
+                  <tr key={order.id} style={{ borderBottom: '1px solid rgba(148,163,184,0.1)' }}>
+                    <td style={{ padding: '8px', fontFamily: 'monospace' }}>{order.id.slice(0, 8)}...</td>
+                    <td style={{ padding: '8px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '150px' }}>{poolName}</td>
+                    <td style={{ padding: '8px', textAlign: 'right', color: '#fbbf24' }}>{parseFloat(order.price || 0).toFixed(8)}</td>
+                    <td style={{ padding: '8px', textAlign: 'right' }}>{parseFloat(order.acceptedCurrentSpeed || 0).toFixed(2)} GH/s</td>
+                    <td style={{ padding: '8px', color: '#60a5fa' }}>{order.nhClient || 'N/A'}</td>
+                    <td style={{ padding: '8px', textAlign: 'right' }}>
+                      <button className="btn-pro primary" onClick={() => onSelect(order)} style={{ fontSize: '11px', padding: '4px 12px' }}>Select</button>
+                    </td>
+                  </tr>
+                );
+              })}
               {orders.length === 0 && (
                 <tr>
-                  <td colSpan="5" style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>
+                  <td colSpan="6" style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>
                     No active orders found for {algorithm}.
                   </td>
                 </tr>

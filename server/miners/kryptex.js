@@ -1,5 +1,6 @@
 // server/miners/kryptex.js - Kryptex pool proxy (API → HTML scrape → INITIAL_STATE fallback)
 import { COMMON_HEADERS, CONFIG } from "../config.js";
+import { getCoinPricesFromDb } from "../coinGecko/coinGeckoClient.js";
 
 const CACHE = new Map();
 const CACHE_TTL = 30000;
@@ -57,6 +58,16 @@ export async function getKryptexMinerStats(coin, address) {
         minerData = pageData?.props?.pageProps?.minerData;
         if (minerData) {
           const result = formatKryptexResponse(minerData, coinLower, address);
+          // Add coin price to the response
+          try {
+            const prices = await getCoinPricesFromDb([coin.toUpperCase()]);
+            const coinPrice = prices[coin.toUpperCase()]?.usd || 0;
+            if (result.stats) {
+              result.stats.coinPrice = coinPrice;
+            }
+          } catch (priceError) {
+            console.warn(`[Kryptex] Could not fetch price for ${coin}: ${priceError.message}`);
+          }
           CACHE.set(cacheKey, { data: result, timestamp: Date.now() });
           return result;
         }
@@ -77,6 +88,16 @@ export async function getKryptexMinerStats(coin, address) {
           minerData = parseNuxtPayload(nuxtMatch[1], coinLower, address);
           if (minerData) {
             const result = formatKryptexResponse(minerData, coinLower, address);
+            // Add coin price to the response
+            try {
+              const prices = await getCoinPricesFromDb([coin.toUpperCase()]);
+              const coinPrice = prices[coin.toUpperCase()]?.usd || 0;
+              if (result.stats) {
+                result.stats.coinPrice = coinPrice;
+              }
+            } catch (priceError) {
+              console.warn(`[Kryptex] Could not fetch price for ${coin}: ${priceError.message}`);
+            }
             CACHE.set(cacheKey, { data: result, timestamp: Date.now() });
             return result;
           }
@@ -94,6 +115,16 @@ export async function getKryptexMinerStats(coin, address) {
         minerData = initData?.minerData;
         if (minerData) {
           const result = formatKryptexResponse(minerData, coinLower, address);
+          // Add coin price to the response
+          try {
+            const prices = await getCoinPricesFromDb([coin.toUpperCase()]);
+            const coinPrice = prices[coin.toUpperCase()]?.usd || 0;
+            if (result.stats) {
+              result.stats.coinPrice = coinPrice;
+            }
+          } catch (priceError) {
+            console.warn(`[Kryptex] Could not fetch price for ${coin}: ${priceError.message}`);
+          }
           CACHE.set(cacheKey, { data: result, timestamp: Date.now() });
           return result;
         }
@@ -144,6 +175,16 @@ export async function getKryptexMinerStats(coin, address) {
     // Only use scraped data if it looks valid
     if (scrapedData.hashrate !== '0 H/s' || scrapedData.balance > 0 || scrapedData.workers.length > 0 || scrapedData.workersTotal > 0) {
       const result = formatKryptexResponse(scrapedData, coinLower, address);
+      // Add coin price to the response
+      try {
+        const prices = await getCoinPricesFromDb([coin.toUpperCase()]);
+        const coinPrice = prices[coin.toUpperCase()]?.usd || 0;
+        if (result.stats) {
+          result.stats.coinPrice = coinPrice;
+        }
+      } catch (priceError) {
+        console.warn(`[Kryptex] Could not fetch price for ${coin}: ${priceError.message}`);
+      }
       CACHE.set(cacheKey, { data: result, timestamp: Date.now() });
       return result;
     }

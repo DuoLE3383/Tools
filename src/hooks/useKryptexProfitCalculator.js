@@ -216,7 +216,7 @@ export function useKryptexProfitCalculator({
 
     // Try to get coin price
     const coinSymbol = coin?.toLowerCase() || '';
-    const coinPrice = 0; // Will be set from outside
+    const coinPrice = stats.coinPrice || 0;
 
     const grossBtcPerDay = coinPrice > 0 ? (paid24hCoin * coinPrice / btcPriceUsd) : 0;
     const hourlyIncomeUSD = hourlyIncomeCoin * coinPrice;

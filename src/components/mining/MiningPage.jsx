@@ -11,6 +11,7 @@ import {
   useMiningWorkspace,
 } from "./MiningWorkspaceProvider";
 import { btcValue, compactNumber, percentValue } from "./miningWorkspaceData";
+import { NiceHashOrderProvider } from "../nicehash/NiceHashContext.jsx";
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { useAsyncButtonState } from "./useAsyncButtonState.js";
 import TelegramSendModal from "./TelegramSendModal.jsx";
@@ -402,9 +403,11 @@ export default function MiningPage({
     <RentedRigProvider callApi={onCall}>
       <MiningWorkspaceProvider onCall={onCall} nhClient={nhClient} mrrClient={state?.mrrClient || "BT"}>
         <CoinPriceProvider onCall={onCall}>
-          <div className="page-full">
-            <MiningWorkspaceShell {...{ onNavigateHome, onCall, nhClient, state, dispatch, currentUser, isAdmin, forceCheckStatus, handleLogout, onNavigate }} />
-          </div>
+          <NiceHashOrderProvider callApi={onCall} nhClient="VN">
+            <div className="page-full">
+              <MiningWorkspaceShell {...{ onNavigateHome, onCall, nhClient, state, dispatch, currentUser, isAdmin, forceCheckStatus, handleLogout, onNavigate }} />
+            </div>
+          </NiceHashOrderProvider>
         </CoinPriceProvider>
       </MiningWorkspaceProvider>
     </RentedRigProvider>

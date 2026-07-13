@@ -2,6 +2,20 @@
 import { useState, useCallback, useMemo } from "react";
 import KryptexProfitAlert from "./KryptexProfitAlert.jsx";
 
+const COIN_STORAGE_KEY = "kryptex_monitor_coin";
+const ADDRESS_STORAGE_KEY = "kryptex_monitor_address";
+
+function loadFromStorage(key, defaultValue) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw || defaultValue;
+  } catch { return defaultValue; }
+}
+
+function saveToStorage(key, value) {
+  try { localStorage.setItem(key, value); } catch {}
+}
+
 function formatUsd(value) {
   const v = parseFloat(value);
   if (isNaN(v) || v <= 0) return "";
@@ -18,8 +32,8 @@ function parseAmount(str) {
 
 
 export default function KryptexCard({ onCall, coinPrices }) {
-  const [coin, setCoin] = useState("etc");
-  const [address, setAddress] = useState("");
+  const [coin, setCoin] = useState(() => loadFromStorage(COIN_STORAGE_KEY, "etc"));
+  const [address, setAddress] = useState(() => loadFromStorage(ADDRESS_STORAGE_KEY, ""));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [data, setData] = useState(null);
@@ -108,10 +122,10 @@ export default function KryptexCard({ onCall, coinPrices }) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div>
           <h4 style={{ margin: 0, color: "#34d399", fontSize: "clamp(12px, 1vw, 14px)" }}>
-            🟢 Kryptex Pool
+            Kryptex Pool
           </h4>
           <div style={{ fontSize: "clamp(9px, 0.7vw, 11px)", color: "#94a3b8", marginTop: "2px" }}>
-            Wallet address lookup
+            Wallet address
           </div>
         </div>
         {data && (
@@ -129,7 +143,11 @@ export default function KryptexCard({ onCall, coinPrices }) {
       <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
         <input
           value={coin}
-          onChange={(e) => setCoin(e.target.value)}
+          onChange={(e) => {
+            const newCoin = e.target.value;
+            setCoin(newCoin);
+            saveToStorage(COIN_STORAGE_KEY, newCoin);
+          }}
           placeholder="Coin (e.g. etc)"
           style={{
             width: "100%",
@@ -146,7 +164,11 @@ export default function KryptexCard({ onCall, coinPrices }) {
         <div style={{ display: "flex", gap: "6px" }}>
           <input
             value={address}
-            onChange={(e) => setAddress(e.target.value)}
+            onChange={(e) => {
+              const newAddress = e.target.value;
+              setAddress(newAddress);
+              saveToStorage(ADDRESS_STORAGE_KEY, newAddress);
+            }}
             placeholder="Wallet address"
             style={{
               flex: "1",

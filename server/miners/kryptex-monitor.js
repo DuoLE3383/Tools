@@ -121,31 +121,48 @@ async function saveSnapshot(coin, address, label, data) {
     const workers = stats.workers || {};
     const workerTable = stats.workerTable || [];
 
+    // Using INSERT ON CONFLICT (UPSERT) to keep only the latest snapshot per address.
+    // This prevents the database from growing indefinitely with redundant historical data.
+    // This requires a PRIMARY KEY or UNIQUE constraint on (coin, address) in the table schema.
+    // e.g., CREATE TABLE kryptex_snapshots (..., PRIMARY KEY (coin, address));
     await db.run(`
-      INSERT INTO kryptex_snapshots (coin, address, label, timestamp, hashrate_current, hashrate_30m, hashrate_3h, hashrate_24h, balance_unpaid, balance_immature, balance_total_paid, balance_reward_7d, balance_reward_30d, workers_online, workers_offline, workers_total, worker_count, raw_json)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO kryptex_snapshots (
+        coin, address, label, timestamp, hashrate_current, hashrate_30m, 
+        hashrate_3h, hashrate_24h, balance_unpaid, balance_immature, 
+        balance_total_paid, balance_reward_7d, balance_reward_30d, 
+        workers_online, workers_offline, workers_total, worker_count, raw_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(coin, address) DO UPDATE SET
+        label = excluded.label,
+        timestamp = excluded.timestamp,
+        hashrate_current = excluded.hashrate_current,
+        hashrate_30m = excluded.hashrate_30m,
+        hashrate_3h = excluded.hashrate_3h,
+        hashrate_24h = excluded.hashrate_24h,
+        balance_unpaid = excluded.balance_unpaid,
+        balance_immature = excluded.balance_immature,
+        balance_total_paid = excluded.balance_total_paid,
+        balance_reward_7d = excluded.balance_reward_7d,
+        balance_reward_30d = excluded.balance_reward_30d,
+        workers_online = excluded.workers_online,
+        workers_offline = excluded.workers_offline,
+        workers_total = excluded.workers_total,
+        worker_count = excluded.worker_count,
+        raw_json = excluded.raw_json
     `, [
-      coin,
-      address,
-      label || null,
-      Date.now(),
-      hashrate.current || '0 H/s',
-      hashrate['30min'] || '0 H/s',
-      hashrate['3h'] || '0 H/s',
-      hashrate['24h'] || '0 H/s',
-      balance.unpaid || 0,
-      balance.immature || 0,
-      balance.totalPaid || 0,
-      balance.reward7d || 0,
-      balance.reward30d || 0,
-      workers.online || 0,
-      workers.offline || 0,
-      workers.total || 0,
-      workerTable.length,
-      JSON.stringify(data)
+      coin, address, label || null, Date.now(),
+      hashrate.current || '0 H/s', hashrate['30min'] || '0 H/s', hashrate['3h'] || '0 H/s', hashrate['24h'] || '0 H/s',
+      balance.unpaid || 0, balance.immature || 0, balance.totalPaid || 0,
+      balance.reward7d || 0, balance.reward30d || 0,
+      workers.online || 0, workers.offline || 0, workers.total || 0,
+      workerTable.length, JSON.stringify(data)
     ]);
   } catch (error) {
     console.error('[Kryptex Monitor] Failed to save snapshot:', error.message);
+    // Add a check for older SQLite versions that don't support UPSERT
+    if (error.message.includes('no such column: excluded.label') || error.message.includes('near "ON"')) {
+        console.error('[Kryptex Monitor] UPSERT failed. Your version of SQLite might be too old. UPSERT was added in SQLite 3.24.0 (2018-06-04).');
+    }
   }
 }
 

@@ -4,6 +4,7 @@ import { scrapeHeroMinersGlobal, scrapeHeroMinersAddress, COIN_TO_ALGO_MAP } fro
 import { HeroMinersAPI } from './herominers-api.js';
 import { parseHeroMinersResponse, buildDashboardData } from './herominers-parser.js';
 import { getCoinPricesFromDb } from '../coinGecko/coinGeckoClient.js';
+import { getDb } from '../db.js';
 
 const router = express.Router();
 
@@ -59,14 +60,18 @@ router.get('/herominers', async (req, res) => {
     // If price is 0 or missing, try a live fetch from coingecko as a fallback
     if (!priceData?.usd || priceData.usd === 0) {
       try {
-        const coinId = COIN_TO_ALGO_MAP[coinUpper]?.coinId || coinUpper.toLowerCase();
-        const cgRes = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${coinId}&vs_currencies=usd`, {
-          signal: AbortSignal.timeout(5000)
-        });
-        if (cgRes.ok) {
-          const cgData = await cgRes.json();
-          if (cgData[coinId]?.usd > 0) {
-            priceData = { ...priceData, usd: cgData[coinId].usd, symbol: coinUpper };
+        const db = await getDb();
+        const meta = await db.get('SELECT coin_id FROM coin_metadata WHERE symbol = ?', [coinUpper]);
+        const coinId = meta?.coin_id;
+        if (coinId) {
+          const cgRes = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${coinId}&vs_currencies=usd`, {
+            signal: AbortSignal.timeout(5000)
+          });
+          if (cgRes.ok) {
+            const cgData = await cgRes.json();
+            if (cgData[coinId]?.usd > 0) {
+              priceData = { ...priceData, usd: cgData[coinId].usd, symbol: coinUpper };
+            }
           }
         }
       } catch (e) { console.warn(`[herominers-route] Live price fallback failed for ${coinUpper}: ${e.message}`); }

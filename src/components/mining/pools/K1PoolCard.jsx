@@ -2,13 +2,56 @@
 import { useState, useCallback, useMemo } from "react";
 import ProfitAlert from "../ProfitAlert.jsx";
 
+const POOL_STORAGE_KEY = "k1pool_monitor_pool";
+const ADDRESS_STORAGE_KEY = "k1pool_monitor_address";
+
+function loadFromStorage(key, defaultValue) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw || defaultValue;
+  } catch { return defaultValue; }
+}
+
+function saveToStorage(key, value) {
+  try { localStorage.setItem(key, value); } catch {}
+}
+
+// Re-implementing MiniStat and StatItem for consistent styling, similar to KryptexCard.
+function MiniStat({ label, value, color }) {
+  return (
+    <div style={{
+      padding: "6px 8px",
+      borderRadius: "6px",
+      background: "rgba(255,255,255,0.02)",
+      border: "1px solid rgba(148,163,184,0.06)",
+    }}>
+      <div style={{ color: "#64748b", fontSize: "8px", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+        {label}
+      </div>
+      <div style={{ color, fontSize: "clamp(11px, 0.9vw, 13px)", fontWeight: 800, marginTop: "1px", overflow: "hidden", textOverflow: "ellipsis" }}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function StatItem({ label, value }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 6px", fontSize: "clamp(10px, 0.8vw, 12px)", borderBottom: '1px solid rgba(148,163,184,0.05)' }}>
+      <span style={{ color: "#94a3b8" }}>{label}</span>
+      <span style={{ color: "#e2e8f0", fontWeight: 600 }}>{value}</span>
+    </div>
+  );
+}
+
 export default function K1PoolCard({ onCall }) {
-  const [pool, setPool] = useState("quaikawpowsolo");
-  const [address, setAddress] = useState("");
+  const [pool, setPool] = useState(() => loadFromStorage(POOL_STORAGE_KEY, "quaikawpowsolo"));
+  const [address, setAddress] = useState(() => loadFromStorage(ADDRESS_STORAGE_KEY, ""));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [data, setData] = useState(null);
   const [lastUpdate, setLastUpdate] = useState(null);
+  const [viewRaw, setViewRaw] = useState(false);
 
   const handleLookup = useCallback(async () => {
     if (!address || !pool) {
@@ -73,20 +116,35 @@ export default function K1PoolCard({ onCall }) {
       flexDirection: "column",
       gap: "10px",
     }}>
-      <div>
-        <h4 style={{ margin: 0, color: "#a78bfa", fontSize: "clamp(12px, 1vw, 14px)" }}>
-          🏛 K1Pool
-        </h4>
-        <div style={{ fontSize: "clamp(9px, 0.7vw, 11px)", color: "#94a3b8", marginTop: "2px" }}>
-          Wallet address lookup
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div>
+          <h4 style={{ margin: 0, color: "#a78bfa", fontSize: "clamp(12px, 1vw, 14px)" }}>
+            🏛 K1Pool
+          </h4>
+          <div style={{ fontSize: "clamp(9px, 0.7vw, 11px)", color: "#94a3b8", marginTop: "2px" }}>
+            Wallet address lookup
+          </div>
         </div>
+        {data && (
+          <button
+            className="btn-sm"
+            onClick={() => setViewRaw(!viewRaw)}
+            style={{ fontSize: "clamp(9px, 0.7vw, 11px)" }}
+          >
+            {viewRaw ? "Dashboard" : "Raw"}
+          </button>
+        )}
       </div>
 
       {/* Input Row */}
       <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
         <input
           value={pool}
-          onChange={(e) => setPool(e.target.value)}
+          onChange={(e) => {
+            const newPool = e.target.value;
+            setPool(newPool);
+            saveToStorage(POOL_STORAGE_KEY, newPool);
+          }}
           placeholder="Pool slug (e.g. quaikawpowsolo)"
           style={{
             width: "100%",
@@ -102,7 +160,11 @@ export default function K1PoolCard({ onCall }) {
         <div style={{ display: "flex", gap: "6px" }}>
           <input
             value={address}
-            onChange={(e) => setAddress(e.target.value)}
+            onChange={(e) => {
+              const newAddress = e.target.value;
+              setAddress(newAddress);
+              saveToStorage(ADDRESS_STORAGE_KEY, newAddress);
+            }}
             placeholder="Wallet address"
             style={{
               flex: "1",
@@ -127,16 +189,17 @@ export default function K1PoolCard({ onCall }) {
       )}
 
       {/* Profit Monitor — same profit-alert pattern as HeroMinersLookup/KryptexCard */}
-      {data && address && (
+      {data && !viewRaw && address && (
         <ProfitAlert
           pair={{ coin: derivedCoin, address }}
           onCall={onCall}
+          poolName="K1Pool"
           nhClient="VN"
         />
       )}
 
       {/* Results Dashboard */}
-      {data && (
+      {data && !viewRaw && (
         <div style={{
           background: "rgba(0,0,0,0.18)",
           borderRadius: "8px",
@@ -145,66 +208,53 @@ export default function K1PoolCard({ onCall }) {
           flexDirection: "column",
           gap: "8px",
         }}>
-          {/* Summary cards */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(80px, 1fr))", gap: "6px" }}>
-            <MiniBlock label="Workers" value={`${workerStats.online}/${workerStats.total}`} tone="#34d399" />
-            <MiniBlock label="Hashrate" value={miner.curHashrateStr || "0 H/s"} tone="#60a5fa" />
-            <MiniBlock label="Avg (3h)" value={miner.avgHashrateStr || "0 H/s"} tone="#fbbf24" />
-            <MiniBlock label="Day Avg" value={miner.dayHashrateStr || "0 H/s"} tone="#818cf8" />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px" }}>
+            <MiniStat label="Hashrate" value={miner.curHashrateStr || "0 H/s"} color="#60a5fa" />
+            <MiniStat label="Avg (3h)" value={miner.avgHashrateStr || "0 H/s"} color="#34d399" />
           </div>
 
-          {/* Balance & Stats */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: "6px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px" }}>
+            <MiniStat label="Workers" value={`${workerStats.online} / ${workerStats.total}`} color="#e2e8f0" />
+            <MiniStat label="Luck" value={miner.soloLuck ? `${miner.soloLuck}%` : "N/A"} color="#f472b6" />
+          </div>
+
+          <div style={{paddingTop: '4px'}}>
             <StatItem label="Immature" value={miner.immatureBalance?.toFixed(2) || "0"} />
-            <StatItem label="Paid (total)" value={miner.paidBalance?.toFixed(2) || "0"} />
             <StatItem label="Pending" value={miner.pendingBalance || "0"} />
+            <StatItem label="Total Paid" value={miner.paidBalance?.toFixed(2) || "0"} />
             <StatItem label="24h Reward" value={miner["24hReward"] || "0"} />
-            <StatItem label="Blocks" value={miner.totalBlocksFound || 0} />
-            <StatItem label="Luck" value={miner.soloLuck ? `${miner.soloLuck}%` : "N/A"} />
+            <StatItem label="Blocks Found" value={miner.totalBlocksFound || 0} />
           </div>
 
           {/* Last share */}
           {miner.lastShare && (
-            <div style={{ fontSize: "clamp(8px, 0.6vw, 10px)", color: "#64748b" }}>
+            <div style={{ fontSize: "clamp(8px, 0.6vw, 10px)", color: "#64748b", paddingTop: '4px', borderTop: '1px solid rgba(148,163,184,0.08)' }}>
               Last share: {new Date((miner.lastShare > 1e12 ? miner.lastShare : miner.lastShare * 1000)).toLocaleString()}
             </div>
           )}
 
           {lastUpdate && (
-            <div style={{ fontSize: "clamp(8px, 0.6vw, 10px)", color: "#64748b", fontStyle: "italic" }}>
+            <div style={{ fontSize: "clamp(8px, 0.6vw, 10px)", color: "#64748b", fontStyle: "italic", textAlign: "right" }}>
               Updated: {lastUpdate.toLocaleTimeString()}
             </div>
           )}
         </div>
       )}
-    </div>
-  );
-}
 
-function MiniBlock({ label, value, tone }) {
-  return (
-    <div style={{
-      padding: "8px",
-      borderRadius: "6px",
-      background: "rgba(255,255,255,0.02)",
-      border: "1px solid rgba(148,163,184,0.08)",
-      textAlign: "center",
-    }}>
-      <div style={{ color: "#64748b", fontSize: "clamp(8px, 0.6vw, 10px)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-        {label}
-      </div>
-      <div style={{ color: tone, fontSize: "clamp(12px, 1vw, 14px)", fontWeight: 800, marginTop: "3px" }}>
-        {value}
-      </div>
-    </div>
-  );
-}
-
-function StatItem({ label, value }) {
-  return (
-    <div style={{ display: "flex", justifyContent: "space-between", padding: "3px 6px", fontSize: "clamp(9px, 0.7vw, 11px)" }}>
-      <span style={{ color: "#94a3b8" }}>{label}</span>
-      <span style={{ color: "#e2e8f0", fontWeight: 600 }}>{value}</span>
+      {/* Raw JSON */}
+      {data && viewRaw && (
+        <pre style={{
+          background: "rgba(0,0,0,0.25)",
+          borderRadius: "6px",
+          padding: "10px",
+          fontSize: "clamp(8px, 0.6vw, 10px)",
+          maxHeight: "300px",
+          overflow: "auto",
+          color: "#94a3b8",
+        }}>
+          {JSON.stringify(data, null, 2)}
+        </pre>
+      )}
     </div>
   );
 }

@@ -321,6 +321,12 @@ function NiceHashOrderManager({ onCall, nhClient, setNhClient }) {
               <h4 style={{ margin: 0, color: "#3b82f6", fontSize: "clamp(12px, 1.2vw, 14px)" }}>📋 Order Info</h4>
               <button className="btn-pro secondary" style={{ fontSize: "10px", padding: "2px 8px" }} onClick={() => setOrderDetail(null)}>✕</button>
             </div>
+            <div style={{ marginBottom: "10px", paddingBottom: "8px", borderBottom: "1px solid rgba(59, 130, 246, 0.1)" }}>
+              <div style={{ opacity: 0.5, fontSize: "9px", textTransform: "uppercase" }}>POOL</div>
+              <div style={{ fontSize: "clamp(11px, 1vw, 13px)", fontWeight: "bold", color: "#e2e8f0", overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {orderDetail.pool?.name || orderDetail.pool?.stratumHostname || 'N/A'}
+              </div>
+            </div>
             {orderDetail?.nhClient && (
               <div style={{ marginBottom: "10px", paddingBottom: "8px", borderBottom: "1px solid rgba(255,255,255,0.1)" }}>
                 <div style={{ opacity: 0.5, fontSize: "9px", textTransform: "uppercase" }}>ACCOUNT</div>

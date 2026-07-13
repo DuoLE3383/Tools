@@ -115,8 +115,8 @@ export const ALGO_MAPPING = {
   AUTOLYKOS: { displayName: 'Autolykos', niceHash: 'AUTOLYKOS', unit: 'GH', niceHashUnit: 'TH', mrrUnit: 'GH' },
   OCTOPUS: { displayName: 'Octopus', niceHash: 'OCTOPUS', unit: 'GH', niceHashUnit: 'TH', mrrUnit: 'GH' },
   VERUSHASH: { displayName: 'VerusHash', niceHash: 'VERUSHASH', unit: 'GH', niceHashUnit: 'TH', mrrUnit: 'GH' },
-  KHEAVYHASH: { displayName: 'kHeavyHash', niceHash: 'KHEAVYHASH', unit: 'TH', niceHashUnit: 'PH', mrrUnit: 'TH' },
-  'KASPA': { displayName: 'kHeavyHash', niceHash: 'KHEAVYHASH', unit: 'TH', niceHashUnit: 'PH', mrrUnit: 'TH' },
+  KHEAVYHASH: { displayName: 'kHeavyHash', niceHash: 'KHEAVYHASH', unit: 'TH', niceHashUnit: 'EH', mrrUnit: 'TH' },
+  'KASPA': { displayName: 'kHeavyHash', niceHash: 'KHEAVYHASH', unit: 'TH', niceHashUnit: 'EH', mrrUnit: 'TH' },
   NEXAPOW: { displayName: 'NexaPow', niceHash: 'NEXAPOW', unit: 'GH', niceHashUnit: 'TH', mrrUnit: 'GH' },
   ALEPHIUM: { displayName: 'Alephium', niceHash: 'ALEPHIUM', unit: 'GH', niceHashUnit: 'PH', mrrUnit: 'GH' },
   FISHHASH: { displayName: 'FishHash', niceHash: 'FISHHASH', unit: 'GH', niceHashUnit: 'TH', mrrUnit: 'GH' },
@@ -207,17 +207,16 @@ export function isAsicBoost(algoName) {
 // ============================================
 
 export function cleanUnit(unit) {
-  if (!unit) return 'H';
-  const str = String(unit).toUpperCase().trim();
-  const unitMap = {
-    'EH': 'EH', 'PH': 'PH', 'TH': 'TH', 'GH': 'GH', 'MH': 'MH', 'KH': 'KH', 'H': 'H',
-    'EHS': 'EH', 'PHS': 'PH', 'THS': 'TH', 'GHS': 'GH', 'MHS': 'MH', 'KHS': 'KH',
-    'EH/S': 'EH', 'PH/S': 'PH', 'TH/S': 'TH', 'GH/S': 'GH', 'MH/S': 'MH', 'KH/S': 'KH', 'H/S': 'H',
-    'EH/DAY': 'EH', 'PH/DAY': 'PH', 'TH/DAY': 'TH', 'GH/DAY': 'GH', 'MH/DAY': 'MH', 'KH/DAY': 'KH',
-  };
-  if (unitMap[str]) return unitMap[str];
-  const match = str.match(/\b(EH|PH|TH|GH|MH|KH|H)\b/);
-  return match ? match[1] : 'H';
+  const str = String(unit || "").toUpperCase().trim();
+  // Match longer units first to avoid partial matches (e.g., 'GHS' vs 'G')
+  const m = str.match(/(GSOL|MSOL|KSOL|SOL|EHS|PHS|THS|GHS|MHS|KHS|EH|PH|TH|GH|MH|KH|H)/) ||
+    str.match(/\b(E|P|T|G|M|K)\b/); // Single letters as fallback
+  if (!m) return "H"; // Default to base unit if no match
+
+  let matchedUnit = m[0];
+  // Map single letters to full units
+  const singleMap = { E: "EH", P: "PH", T: "TH", G: "GH", M: "MH", K: "KH" };
+  return singleMap[matchedUnit] || matchedUnit;
 }
 
 export function convertPrice(price, from, to) {
@@ -252,14 +251,21 @@ export function convertMrrToNiceHash(value, algoName) {
   return convertUnit(value, getMrrUnit(algoName), getNiceHashUnit(algoName));
 }
 
-export function calculatePriceComparison(mrrPrice, mrrAlgoOrUnit, nhPrice, nhAlgoOrUnit) {
+export function calculatePriceComparison(mrrPrice, mrrUnit, nhPrice, nhUnit) {
   const nhPriceNum = Number.parseFloat(nhPrice || 0);
   const mrrPriceNum = Number.parseFloat(mrrPrice || 0);
   if (nhPriceNum <= 0 || mrrPriceNum <= 0) return null;
-  const mrrUnit = getMrrUnit(mrrAlgoOrUnit);
-  const nhUnit = getNiceHashUnit(nhAlgoOrUnit);
-  const mrrPriceNorm = normalizeValue(mrrPriceNum, mrrUnit, 'TH');
-  const nhPriceNorm = normalizeValue(nhPriceNum, nhUnit, 'TH') / 1000;
+
+  const mrrUnitClean = cleanUnit(mrrUnit);
+  const nhUnitClean = cleanUnit(nhUnit);
+
+  const mrrP = UNIT_TO_POWER[mrrUnitClean] ?? -6; // Default to TH power
+  const nhP = UNIT_TO_POWER[nhUnitClean] ?? -6; // Default to TH power
+
+  // Normalize both prices to a common base (EH)
+  const mrrPriceNorm = mrrPriceNum / Math.pow(10, mrrP);
+  const nhPriceNorm = nhPriceNum / Math.pow(10, nhP);
+
   if (nhPriceNorm > 0) {
     return ((mrrPriceNorm - nhPriceNorm) / nhPriceNorm) * 100;
   }

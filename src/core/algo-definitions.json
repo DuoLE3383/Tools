@@ -48,7 +48,7 @@
   "AUTOLYKOS": { "displayName": "Autolykos", "niceHash": "AUTOLYKOS", "unit": "GH", "niceHashUnit": "TH", "mrrUnit": "GH" },
   "OCTOPUS": { "displayName": "Octopus", "niceHash": "OCTOPUS", "unit": "GH", "niceHashUnit": "TH", "mrrUnit": "GH" },
   "VERUSHASH": { "displayName": "VerusHash", "niceHash": "VERUSHASH", "unit": "GH", "niceHashUnit": "TH", "mrrUnit": "GH" },
-  "KHEAVYHASH": { "displayName": "kHeavyHash", "niceHash": "KHEAVYHASH", "unit": "TH", "niceHashUnit": "PH", "mrrUnit": "TH" },
+  "KHEAVYHASH": { "displayName": "kHeavyHash", "niceHash": "KHEAVYHASH", "unit": "TH", "niceHashUnit": "EH", "mrrUnit": "TH" },
   "NEXAPOW": { "displayName": "NexaPow", "niceHash": "NEXAPOW", "unit": "GH", "niceHashUnit": "TH", "mrrUnit": "GH" },
   "ALEPHIUM": { "displayName": "Alephium", "niceHash": "ALEPHIUM", "unit": "GH", "niceHashUnit": "PH", "mrrUnit": "GH" },
   "FISHHASH": { "displayName": "FishHash", "niceHash": "FISHHASH", "unit": "GH", "niceHashUnit": "TH", "mrrUnit": "GH" },
@@ -62,9 +62,9 @@
   "AXIOM": { "displayName": "Axiom", "niceHash": "AXIOM", "unit": "MH", "niceHashUnit": "TH", "mrrUnit": "MH" },
   "SCRYPTJANENX16": { "displayName": "ScryptJaneN16", "niceHash": "SCRYPTJANENX16", "unit": "kH", "niceHashUnit": "TH", "mrrUnit": "kH" },
   "BLAKE256R8VNL": { "displayName": "Blake (256r8vnl)", "niceHash": "BLAKE256R8VNL", "unit": "MH", "niceHashUnit": "TH", "mrrUnit": "MH" },
-  "SHA256AB": { "displayName": "SHA256AsicBoost", "niceHash": "SHA256ASICBOOST", "unit": "TH" },
+  "SHA256AB": { "displayName": "SHA256AsicBoost", "niceHash": "SHA256ASICBOOST", "unit": "EH" },
   "HASHIMOTOS": { "displayName": "DaggerHashimoto", "niceHash": "DAGGERHASHIMOTO", "unit": "MH" },
   "ETHASH": { "displayName": "DaggerHashimoto", "niceHash": "DAGGERHASHIMOTO", "unit": "MH" },
   "RANDOMX": { "displayName": "RandomX", "niceHash": "RANDOMXMONERO", "unit": "kH" },
-  "KASPA": { "displayName": "kHeavyHash", "niceHash": "KHEAVYHASH", "unit": "TH" }
+  "KASPA": { "displayName": "kHeavyHash", "niceHash": "KHEAVYHASH", "unit": "EH" }
 }

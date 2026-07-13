@@ -266,47 +266,22 @@ export default function HeroMinersLookup({ onCall, coinPrices }) {
                 {data && !isLoading && (
                   <>
                     {/* Hashrate row */}
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "4px" }}>
                       <MiniStat label="Hashrate" value={ls.currentHashrate || "0"} color={accent} />
-                      <MiniStat label="Avg 24h" value={ls.avg24h || "0"} color="#34d399" />
-                    </div>
-
-                    {/* Pending + Total Paid with USD */}
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px" }}>
-                      <MiniStatUSD label="Pending" value={ps.pendingBalance || "0"} usd={pendingUsd} color="#f59e0b" />
-                      <MiniStatUSD label="Total Paid" value={ps.totalPaid || "0"} usd={totalPaidUsd} color="#34d399" />
-                    </div>
-
-                    {/* 1h Profit + 24h Paid with USD */}
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px" }}>
-                      {(() => {
-                        const paid24hNum = parseAmount(ps.paid24h || "0");
-                        const paid24hVal = paid24hNum || 0;
-                        const profit1h = paid24hVal / 24;
-                        const profit1hUsd = formatUsd(profit1h * price);
-                        return (
-                          <>
-                            <MiniStatUSD label="Profit 1h" value={`${profit1h.toFixed(4)} ${pair.coin}`} usd={profit1hUsd} color="#38bdf8" />
-                            <MiniStatUSD label="24h Paid" value={ps.paid24h || "0"} usd={paid24hUsd} color="#a78bfa" />
-                          </>
-                        );
-                      })()}
-                    </div>
-
-                    {/* Workers + Blocks */}
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px" }}>
                       <MiniStat label="Workers" value={`${ls.workersOnline || 0}`} color="#94a3b8" />
-                      <MiniStat label="Avg 1h" value={ls.avg1h || "0"} color="#f472b6" />
+                      <MiniStatUSD label="Pending" value={ps.pendingBalance || "0"} usd={pendingUsd} color="#f59e0b" />
+                      <MiniStatUSD label="Paid (24h)" value={ps.paid24h || "0"} usd={paid24hUsd} color="#a78bfa" />
                     </div>
 
                     {/* Shares + Blocks */}
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "10px", color: "#64748b", borderTop: "1px solid rgba(148,163,184,0.08)", paddingTop: "4px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "10px", color: "#64748b", borderTop: "1px solid rgba(148,163,184,0.08)", paddingTop: "4px", marginTop: '2px' }}>
                       <span>Valid: {(ss.valid || 0).toLocaleString()} · Stale: {(ss.stale || 0).toLocaleString()}</span>
                       <span>⛓ {bs.totalBlocks || 0}</span>
                     </div>
                     <ProfitAlert
                       pair={pair}
                       onCall={onCall}
+                      poolName="HeroMiners"
                       nhClient="VN"
                     />
                   </>

@@ -36,6 +36,7 @@ export function NiceHashOrderProvider({ children, nhClient, callApi }) {
   const [summary, setSummary] = useState({ totalPaid: "0.00000000", count: 0 });
   const [marketPrices, setMarketPrices] = useState({}); // algo:market -> { value, unit }
   const [loading, setLoading] = useState(false);
+  const isLoadingRef = React.useRef(false); // Ref to prevent overlapping fetches
   const [error, setError] = useState(null);
   const [selectedOrderId, setSelectedOrderId] = useState(null);
   const [showPriceLookupModal, setShowPriceLookupModal] = useState(false);
@@ -86,11 +87,16 @@ export function NiceHashOrderProvider({ children, nhClient, callApi }) {
 
   // Main fetch function
   const fetchNiceHashOrders = useCallback(async () => {
+    // Prevent overlapping fetches from the auto-refresh interval.
+    if (isLoadingRef.current) {
+      console.warn("[NiceHashOrderContext] Refresh skipped: a fetch is already in progress.");
+      return;
+    }
     if (!nhClient || !callApi) {
-      console.warn("[NiceHashOrderContext] Missing nhClient or callApi");
       return;
     }
 
+    isLoadingRef.current = true;
     setLoading(true);
     setError(null);
 
@@ -232,6 +238,7 @@ export function NiceHashOrderProvider({ children, nhClient, callApi }) {
       setNicehashOrders([]);
       setSummary({ totalPaid: "0.00000000", count: 0 });
     } finally {
+      isLoadingRef.current = false;
       setLoading(false);
     }
   }, [nhClient, callApi]);
