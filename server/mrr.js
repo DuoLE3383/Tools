@@ -751,22 +751,34 @@ export async function fetchAggregatedRentals(query = {}, clientParam = 'BT') {
         });
         
         if (statusCode === 200 && poolsData?.success) {
-      const poolItems = Array.isArray(poolsData.data) 
-        ? poolsData.data 
-        : (Array.isArray(poolsData.data?.result) ? poolsData.data.result : []);
-      
+          const poolItems = Array.isArray(poolsData.data) 
+            ? poolsData.data 
+            : (Array.isArray(poolsData.data?.result) ? poolsData.data.result : []);
+          
           poolItems.forEach(item => {
             const key = String(item.rigid || item.id || item.rentalid || item.rental_id);
             poolMap.set(key, item.pools || []);
           });
-        } else if (statusCode === 404 || statusCode === 400) {
-          // Mark rentals in this chunk as ghosts
-          chunk.forEach(id => {
-            if (id && String(id) !== 'false' && String(id) !== 'null') {
-              console.log(`[mrr:${clientName}] Rental ${id} not found - marking as ghost`);
-              markGhostRental(id);
+        } else if (statusCode >= 400) {
+          // If the chunk fails, try each rental individually. This is more robust than marking all as ghosts.
+          console.warn(`[mrr:${clientName}] Pool chunk failed with status ${statusCode}, retrying individually for ${chunk.length} rentals...`);
+          for (const rentalId of chunk) {
+            try {
+              const { data: singlePoolData, statusCode: singleStatusCode } = await mrrApiCall({ endpoint: `/rental/${rentalId}/pool`, clientNameRaw: clientName });
+              if (singleStatusCode === 200 && singlePoolData?.success) {
+                const singlePoolItems = Array.isArray(singlePoolData.data) ? singlePoolData.data : (Array.isArray(singlePoolData.data?.result) ? singlePoolData.data.result : []);
+                singlePoolItems.forEach(item => {
+                  const key = String(item.rigid || item.id || item.rentalid || item.rental_id);
+                  poolMap.set(key, item.pools || []);
+                });
+              } else {
+                markGhostRental(rentalId);
+              }
+            } catch (individualError) {
+              console.warn(`[mrr:${clientName}] Individual pool fetch failed for rental ${rentalId}: ${individualError.message}`);
+              markGhostRental(rentalId);
             }
-          });
+          }
         }
       } catch (error) {
         console.warn(`[mrr:${clientName}] Error fetching pools chunk: ${error.message}`);
