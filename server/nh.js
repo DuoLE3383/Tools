@@ -170,8 +170,10 @@ export async function getCachedNhPools(clientNameRaw) {
       const db = await getDb();
       // Use savepoints to allow nesting within other transactions, preventing the error.
       const savepointName = `nh_pools_sync_${clientName.replace(/[^a-zA-Z0-9]/g, "")}`;
-      await db.run(`SAVEPOINT ${savepointName}`);
+      let savepointCreated = false;
       try {
+        await db.run(`SAVEPOINT ${savepointName}`);
+        savepointCreated = true;
         const stmt = await db.prepare(`INSERT OR REPLACE INTO nh_pools 
           (id, name, algorithm, stratumHostname, port, username, password, nhClient, last_updated) 
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`);
@@ -182,9 +184,11 @@ export async function getCachedNhPools(clientNameRaw) {
         await db.run(`RELEASE SAVEPOINT ${savepointName}`);
       } catch (e) {
         console.error(`[nh:pools] DB sync failed for ${clientName}:`, e.message);
-        try {
-          await db.run(`ROLLBACK TO SAVEPOINT ${savepointName}`);
-        } catch (rollbackErr) { console.warn(`[nh:pools] Savepoint rollback failed for ${clientName}: ${rollbackErr.message}`); }
+        if (savepointCreated) {
+          try {
+            await db.run(`ROLLBACK TO SAVEPOINT ${savepointName}`);
+          } catch (rollbackErr) { console.warn(`[nh:pools] Savepoint rollback failed for ${clientName}: ${rollbackErr.message}`); }
+        }
       }
     }
 
@@ -451,29 +455,6 @@ export const getNiceHashApp = (client) => {
       try {
         return await client.call({ method: 'GET', path: `/main/api/v2/hashpower/order/${orderId}`, query: { ts: Date.now().toString() } });
       } catch (err) {
-        // If we get a permission error, it might be because we're using the wrong client.
-        // Try to find the correct owner and retry ONCE if the owner is different.
-        if (err.statusCode === 403 || (err.message && (err.message.includes('Forbidden') || err.message.includes('permission')))) {
-          console.warn(`[nh:getOrderDetail] Permission error for client ${client.name}. Attempting fallback search for order ${orderId}.`);
-          
-          const allOrdersResult = await getAggregatedMyOrders({ op: 'LE', limit: 1000 });
-          const order = allOrdersResult.list.find(o => o.id === orderId);
-
-          // IMPORTANT: Only retry if the found owner is DIFFERENT from the current client to prevent a loop.
-          if (order && order.nhClient && order.nhClient !== client.name) {
-            console.log(`[nh:getOrderDetail] Found order owner is ${order.nhClient}. Retrying with correct client...`);
-            const { client: singleClient } = resolveNhClient(order.nhClient);
-            if (singleClient && !singleClient.isAggregate) {
-              // This is a one-time retry. The next call will not have this fallback logic if it's the right client.
-              return getNiceHashApp(singleClient).hashpower.getOrderDetail(orderId);
-            }
-          }
-
-          // If we're here, the order wasn't found, or the owner is the client that just failed.
-          // In either case, we should not retry. Re-throw the original error.
-          console.error(`[nh:getOrderDetail] Fallback failed for order ${orderId}. The owner is likely ${client.name}, but the API key is missing 'VIEW_ORDERS' permissions.`);
-          throw err;
-        }
         throw err;
       }
     },

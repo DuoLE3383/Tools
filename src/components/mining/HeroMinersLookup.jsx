@@ -1,5 +1,6 @@
 // HeroMinersLookup.jsx - Wallet address lookup with multi-coin monitoring dashboard
 import { useState, useCallback, useEffect, useRef } from "react";
+import ProfitAlert from './ProfitAlert.jsx';
 
 // Default saved pairs (loaded from localStorage)
 const STORAGE_KEY = "herominers_monitor_pairs";
@@ -303,6 +304,11 @@ export default function HeroMinersLookup({ onCall, coinPrices }) {
                       <span>Valid: {(ss.valid || 0).toLocaleString()} · Stale: {(ss.stale || 0).toLocaleString()}</span>
                       <span>⛓ {bs.totalBlocks || 0}</span>
                     </div>
+                    <ProfitAlert
+                      pair={pair}
+                      onCall={onCall}
+                      nhClient="VN"
+                    />
                   </>
                 )}
                 {!data && !isLoading && !error && (

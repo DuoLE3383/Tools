@@ -48,7 +48,7 @@
   "AUTOLYKOS": { "displayName": "Autolykos", "niceHash": "AUTOLYKOS", "unit": "GH", "niceHashUnit": "TH", "mrrUnit": "GH" },
   "OCTOPUS": { "displayName": "Octopus", "niceHash": "OCTOPUS", "unit": "GH", "niceHashUnit": "TH", "mrrUnit": "GH" },
   "VERUSHASH": { "displayName": "VerusHash", "niceHash": "VERUSHASH", "unit": "GH", "niceHashUnit": "TH", "mrrUnit": "GH" },
-  "KHEAVYHASH": { "displayName": "kHeavyHash", "niceHash": "KHEAVYHASH", "unit": "TH", "niceHashUnit": "EH", "mrrUnit": "TH" },
+  "KHEAVYHASH": { "displayName": "kHeavyHash", "niceHash": "KHEAVYHASH", "unit": "TH", "niceHashUnit": "PH", "mrrUnit": "TH" },
   "NEXAPOW": { "displayName": "NexaPow", "niceHash": "NEXAPOW", "unit": "GH", "niceHashUnit": "TH", "mrrUnit": "GH" },
   "ALEPHIUM": { "displayName": "Alephium", "niceHash": "ALEPHIUM", "unit": "GH", "niceHashUnit": "PH", "mrrUnit": "GH" },
   "FISHHASH": { "displayName": "FishHash", "niceHash": "FISHHASH", "unit": "GH", "niceHashUnit": "TH", "mrrUnit": "GH" },

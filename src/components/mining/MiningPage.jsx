@@ -72,6 +72,7 @@ function MiningRouteHero({ onCall }) {
   const heartbeatTimerRef = useRef(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const heartbeatCooldownRef = useRef(0);
+  const [opportunityAlertsEnabled, setOpportunityAlertsEnabled] = useState(true);
 
   const bestRoute = opportunities[0] || null;
   const activeRouteCount = opportunities.filter(
@@ -97,13 +98,39 @@ function MiningRouteHero({ onCall }) {
     } catch (err) { setHeartbeatStatus("error"); return null; }
   }, [onCall, refresh]);
 
+  const fetchOpportunityAlertsStatus = useCallback(async () => {
+    try {
+      const res = await onCall("/api/v2/notify/opportunity-alerts/status", { silent: true });
+      if (res && typeof res.enabled === 'boolean') {
+        setOpportunityAlertsEnabled(res.enabled);
+      }
+    } catch {}
+  }, [onCall]);
+
+  const handleToggleOpportunityAlerts = useCallback(async () => {
+    const newState = !opportunityAlertsEnabled;
+    try {
+      const res = await onCall("/api/v2/notify/opportunity-alerts/status", {
+        method: "POST",
+        body: { enabled: newState },
+        silent: true,
+      });
+      if (res && typeof res.enabled === 'boolean') {
+        setOpportunityAlertsEnabled(res.enabled);
+      }
+    } catch (err) {}
+  }, [onCall, opportunityAlertsEnabled]);
+
   useEffect(() => {
     if (!autoRefresh) { if (heartbeatTimerRef.current) clearInterval(heartbeatTimerRef.current); return; }
     heartbeatTimerRef.current = setInterval(() => runHeartbeat(true), HEARTBEAT_INTERVAL_MS);
     return () => { if (heartbeatTimerRef.current) clearInterval(heartbeatTimerRef.current); };
   }, [runHeartbeat, autoRefresh]);
 
-  useEffect(() => { if (!lastUpdated) refresh(true); }, [lastUpdated, refresh]);
+  useEffect(() => {
+    if (!lastUpdated) refresh(true);
+    fetchOpportunityAlertsStatus();
+  }, [lastUpdated, refresh, fetchOpportunityAlertsStatus]);
 
   const handleForceHeartbeat = useCallback(async () => {
     try {
@@ -140,6 +167,7 @@ function MiningRouteHero({ onCall }) {
         </div>
         <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center" }}>
           <ToggleBtn active={autoRefresh} onToggle={() => setAutoRefresh(p => !p)} label={autoRefresh ? "Auto ON" : "Auto OFF"} />
+          <ToggleBtn active={opportunityAlertsEnabled} onToggle={handleToggleOpportunityAlerts} label={opportunityAlertsEnabled ? "Opp. Alerts ON" : "Opp. Alerts OFF"} />
           <button className="btn-pro secondary" onClick={handleForceHeartbeat} disabled={heartbeatStatus === "running"} style={{ fontSize: "clamp(9px, 0.7vw, 11px)", padding: "2px 8px" }}>
             {heartbeatStatus === "running" ? "⏳" : "💓"}
           </button>
@@ -190,8 +218,8 @@ function MiningRouteHero({ onCall }) {
               </tr>
             </thead>
             <tbody>
-              {opportunities.slice(0, 15).map((row) => (
-                <tr key={row.nicehashAlgo} style={{ borderBottom: "1px solid rgba(148,163,184,0.04)" }}>
+              {opportunities.slice(0, 15).map((row, index) => (
+                <tr key={`${row.nicehashAlgo}-${index}`} style={{ borderBottom: "1px solid rgba(148,163,184,0.04)" }}>
                   <td style={{ padding: "3px 6px", color: "#e2e8f0", whiteSpace: "nowrap" }}>
                     {row.label}
                     <span style={{ color: "#64748b", fontSize: "8px", marginLeft: "4px" }}>{row.nicehashAlgo}</span>

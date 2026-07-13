@@ -215,16 +215,59 @@ export function registerMiningStatsRoutes(app) {
       return res.status(400).json({ success: false, error: "coin query parameter is required (e.g. 'etc')" });
     }
 
+    if (!address) {
+      return res.status(400).json({
+        success: false,
+        error: 'Wallet address is required'
+      });
+    }
+
     try {
-      if (address) {
-        const result = await getKryptexMinerStats(coin, address);
-        return res.json(result);
-      }
-      // If no address, return global pool stats
-      const global = await getKryptexGlobalStats(coin);
-      res.json(global);
+      const result = await getKryptexMinerStats(coin, address);
+      return res.json(result);
     } catch (err) {
-      res.status(500).json({ success: false, error: err.message });
+      console.error('[Kryptex Route Error]', err.message);
+      
+      // Classify errors by HTTP status
+      if (err.message.includes('not found')) {
+        return res.status(404).json({ success: false, error: err.message });
+      }
+      if (err.message.includes('Unsupported coin')) {
+        return res.status(400).json({ success: false, error: err.message });
+      }
+      if (err.message.includes('timeout') || err.message.includes('abort')) {
+        return res.status(504).json({ success: false, error: 'Request to Kryptex pool timed out. Please try again.' });
+      }
+      
+      return res.status(500).json({ success: false, error: err.message });
+    }
+  }));
+
+  // ─── Kryptex History (monitor snapshots) ────────────────────
+  app.get("/api/v2/mining-stats/kryptex/history", asyncHandler(async (req, res) => {
+    const { getKryptexHistory } = await import("../miners/kryptex-monitor.js");
+    const { coin, address, limit = 50 } = req.query;
+
+    if (!coin || !address) {
+      return res.status(400).json({ success: false, error: "coin and address are required" });
+    }
+
+    try {
+      const snapshots = await getKryptexHistory(coin, address, parseInt(limit) || 50);
+      return res.json({ success: true, data: snapshots, count: snapshots.length });
+    } catch (err) {
+      return res.status(500).json({ success: false, error: err.message });
+    }
+  }));
+
+  // ─── Kryptex Monitor Summary ───────────────────────────────
+  app.get("/api/v2/mining-stats/kryptex/monitor-summary", asyncHandler(async (req, res) => {
+    const { getKryptexMonitorSummary } = await import("../miners/kryptex-monitor.js");
+    try {
+      const summary = await getKryptexMonitorSummary();
+      return res.json({ success: true, data: summary });
+    } catch (err) {
+      return res.status(500).json({ success: false, error: err.message });
     }
   }));
 }

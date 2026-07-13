@@ -526,11 +526,21 @@ export function registerNiceHashRoutes(app) {
         processedClients.add(clientName);
         try {
           const data = await getNiceHashApp(client).hashpower.getOrderDetail(req.params.orderId);
-          if (data && !data.error) { res.set("X-NH-Client", clientName); return res.json(data); }
-        } catch {}
+          if (data && !data.error) {
+            res.set("X-NH-Client", clientName);
+            // Add the client name to the response body for easier frontend consumption
+            data.nhClient = clientName;
+            return res.json(data);
+          }
+        } catch (err) {
+          // This client doesn't own the order, or another error occurred. Continue to the next client.
+        }
       }
     }
-    res.json(await req.nhApp.hashpower.getOrderDetail(req.params.orderId));
+    const data = await req.nhApp.hashpower.getOrderDetail(req.params.orderId);
+    // Also add client name for non-aggregate calls
+    data.nhClient = res.get("X-NH-Client");
+    res.json(data);
   }));
   app.post("/api/v2/hashpower/order", asyncHandler(async (req, res) => res.json(await req.nhApp.hashpower.createOrder(req.body))));
   app.get("/api/v2/hashpower/order-book", asyncHandler(async (req, res) => res.json(await req.nhApp.hashpower.getOrderBook(req.query))));

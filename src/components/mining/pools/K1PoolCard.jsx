@@ -1,5 +1,6 @@
 // K1PoolCard.jsx - Address lookup card for K1Pool
 import { useState, useCallback, useMemo } from "react";
+import ProfitAlert from "../ProfitAlert.jsx";
 
 export default function K1PoolCard({ onCall }) {
   const [pool, setPool] = useState("quaikawpowsolo");
@@ -41,6 +42,25 @@ export default function K1PoolCard({ onCall }) {
     online: miner.workersOnline || 0,
     offline: miner.workersOffline || 0,
   }), [miner]);
+
+  // Derive a likely coin from pool slug (e.g., "quaikawpowsolo" -> "QUAI")
+  const derivedCoin = useMemo(() => {
+    if (!pool) return "RVN";
+    const p = pool.toLowerCase();
+    if (p.includes('quai')) return 'QUAI';
+    if (p.includes('kawpow')) return 'RVN';
+    if (p.includes('nexa')) return 'NEXA';
+    if (p.includes('kas')) return 'KAS';
+    if (p.includes('beam')) return 'BEAM';
+    if (p.includes('xmr') || p.includes('monero')) return 'XMR';
+    if (p.includes('zeph')) return 'ZEPH';
+    if (p.includes('eth') || p.includes('etchash')) return 'ETC';
+    if (p.includes('octopus')) return 'CFX';
+    // Default: try coin name at start (e.g., "cfxsolo" -> "CFX")
+    const match = p.match(/^([a-z]+)/);
+    if (match) return match[1].toUpperCase();
+    return 'RVN';
+  }, [pool]);
 
   return (
     <div style={{
@@ -104,6 +124,15 @@ export default function K1PoolCard({ onCall }) {
         <div style={{ color: "#f87171", fontSize: "clamp(10px, 0.8vw, 12px)", padding: "4px 0" }}>
           ❌ {error}
         </div>
+      )}
+
+      {/* Profit Monitor — same profit-alert pattern as HeroMinersLookup/KryptexCard */}
+      {data && address && (
+        <ProfitAlert
+          pair={{ coin: derivedCoin, address }}
+          onCall={onCall}
+          nhClient="VN"
+        />
       )}
 
       {/* Results Dashboard */}

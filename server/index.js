@@ -6,6 +6,7 @@ import dotenv from 'dotenv';
 import { registerRoutes } from './routes.js';
 import { setupWebSocket } from './ws.js';
 import { startMiningOpportunityScanner } from './miningOpportunityNotifier.js';
+import { startKryptexMonitor } from './miners/kryptex-monitor.js';
 
 dotenv.config();
 
@@ -43,6 +44,9 @@ setupWebSocket(server);
 
 // Start mining opportunity scanner
 startMiningOpportunityScanner();
+
+// Start Kryptex monitor (periodic snapshots of configured addresses)
+startKryptexMonitor();
 
 // Start server
 const PORT = process.env.PORT;

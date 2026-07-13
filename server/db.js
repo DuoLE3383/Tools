@@ -158,6 +158,30 @@ async function initTables(db) {
       client TEXT, 
       endpoint TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS kryptex_snapshots (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      coin TEXT NOT NULL,
+      address TEXT NOT NULL,
+      label TEXT,
+      timestamp INTEGER NOT NULL,
+      hashrate_current TEXT DEFAULT '0 H/s',
+      hashrate_30m TEXT DEFAULT '0 H/s',
+      hashrate_3h TEXT DEFAULT '0 H/s',
+      hashrate_24h TEXT DEFAULT '0 H/s',
+      balance_unpaid REAL DEFAULT 0,
+      balance_immature REAL DEFAULT 0,
+      balance_total_paid REAL DEFAULT 0,
+      balance_reward_7d REAL DEFAULT 0,
+      balance_reward_30d REAL DEFAULT 0,
+      workers_online INTEGER DEFAULT 0,
+      workers_offline INTEGER DEFAULT 0,
+      workers_total INTEGER DEFAULT 0,
+      worker_count INTEGER DEFAULT 0,
+      raw_json TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_kryptex_snapshots_lookup ON kryptex_snapshots(coin, address, timestamp);
   `);
 }
 

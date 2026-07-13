@@ -82,6 +82,14 @@ function all(db, sql, params = []) {
 //  Telegram send (TELEGRAM_MINE_BOT_TOKEN)
 // =========================
 async function sendMineTelegram(message) {
+  // This is a lazy import to avoid circular dependency issues if monitor.js imports this file.
+  const { getOpportunityAlertsStatus } = await import("./monitor.js");
+  const tgStatus = await getOpportunityAlertsStatus();
+  if (!tgStatus.enabled) {
+    console.log("[mine:tg] Opportunity notifications disabled via global setting.");
+    return { ok: true, description: "Notifications disabled" };
+  }
+
   const botToken = process.env.TELEGRAM_MINE_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_GROUP_ID;
   if (!botToken || !chatId) {
@@ -506,7 +514,7 @@ export function startMiningOpportunityScanner() {
     scanMiningOpportunities(false).catch((err) => {
       console.error("[mine:scan] Scheduled scan failed:", err.message);
     });
-  }, 15 * 60 * 1000);
+  }, 600 * 60 * 1000);
 }
 
 export function stopMiningOpportunityScanner() {

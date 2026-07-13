@@ -156,7 +156,7 @@ export default function MiningPoolCard({
             </thead>
             <tbody>
               {filteredRows.map((row, i) => (
-                <tr key={row.nicehashAlgo || row.algorithm || i} style={{ borderBottom: "1px solid #1e293b" }}>
+                <tr key={`${row.nicehashAlgo || row.algorithm || 'pool-row'}-${i}`} style={{ borderBottom: "1px solid #1e293b" }}>
                   <td style={{ padding: "5px 4px", color: "#e2e8f0" }}>
                     <strong>{row.algorithm || row.coin || "N/A"}</strong>
                     {row.nicehashAlgo && row.nicehashAlgo !== "UNKNOWN" && (

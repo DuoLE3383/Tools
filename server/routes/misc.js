@@ -3,8 +3,8 @@
 import { asyncHandler } from "../utils.js";
 import { 
   sendTelegramInternal, 
-  getTelegramStatus, 
-  setTelegramStatus,
+  getOpportunityAlertsStatus, 
+  setOpportunityAlertsStatus,
   getTelegramHealth 
 } from "../monitor.js";
 import { saveMiningTrainingSnapshot } from "../miningTrainingDb.js";
@@ -45,10 +45,11 @@ export function registerMiscRoutes(app) {
     try {
       // ✅ Use the centralized sender from monitor.js
       const data = await sendTelegramInternal(message, 'MINE_BOT');
-      res.json(data);
+      res.json({ success: data.ok, data: data.data, description: data.description });
     } catch (err) {
-      console.warn(`[telegram:mine] ${err.message}`);
-      res.status(400).json({ success: false, error: err.message });
+      const errorMessage = err?.message || 'An unknown error occurred while sending the Telegram message.';
+      console.warn(`[telegram:mine] ${errorMessage}`);
+      res.status(400).json({ success: false, error: errorMessage });
     }
   }));
 
@@ -82,14 +83,14 @@ export function registerMiscRoutes(app) {
   }));
 
   // ─── Telegram Status ─────────────────────────────────────────
-  app.get("/api/v2/notify/telegram/status", asyncHandler(async (req, res) => {
-    const status = await getTelegramStatus();
+  app.get("/api/v2/notify/opportunity-alerts/status", asyncHandler(async (req, res) => {
+    const status = await getOpportunityAlertsStatus();
     res.json(status);
   }));
 
-  app.post("/api/v2/notify/telegram/status", asyncHandler(async (req, res) => {
+  app.post("/api/v2/notify/opportunity-alerts/status", asyncHandler(async (req, res) => {
     const { enabled } = req.body;
-    const result = await setTelegramStatus(enabled);
+    const result = await setOpportunityAlertsStatus(enabled);
     res.json(result);
   }));
 

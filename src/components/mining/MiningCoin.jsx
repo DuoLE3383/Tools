@@ -328,8 +328,8 @@ export default function MiningCoin({ onCall, nhClient = "VN" }) {
                   </td>
                 </tr>
               ) : (
-                visibleRows.map((row) => (
-                  <tr key={row.nicehashAlgo} style={{ borderBottom: "1px solid rgba(148,163,184,0.08)" }}>
+                visibleRows.map((row, index) => (
+                  <tr key={`${row.nicehashAlgo}-${index}`} style={{ borderBottom: "1px solid rgba(148,163,184,0.08)" }}>
                     <BodyCell align="left">
                       <strong style={{ color: "#e2e8f0" }}>{row.label}</strong>
                       <div style={{ color: "#64748b", marginTop: "2px" }}>{row.unit}/day comparison</div>

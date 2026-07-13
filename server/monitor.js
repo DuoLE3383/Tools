@@ -74,6 +74,18 @@ const ghostCache = new TTLMap(300000);
 //  HELPERS
 // ==========================
 
+function extractArray(payload) {
+  if (!payload) return [];
+  if (Array.isArray(payload)) return payload;
+  if (payload.data && Array.isArray(payload.data)) return payload.data;
+  if (payload.data && payload.data.rentals && Array.isArray(payload.data.rentals)) return payload.data.rentals;
+  if (payload.data && payload.data.rigs && Array.isArray(payload.data.rigs)) return payload.data.rigs;
+  if (payload.list && Array.isArray(payload.list)) return payload.list;
+  if (payload.myOrders && Array.isArray(payload.myOrders)) return payload.myOrders;
+  if (payload.miningRigs && Array.isArray(payload.miningRigs)) return payload.miningRigs;
+  return [];
+}
+
 async function maybeDelay(key) {
   if (!monitorInitTracker.has(key)) {
     console.log(`[Monitor] First-time load delay (1s) for: ${key}`);
@@ -188,27 +200,27 @@ export async function getTelegramHealth() {
 /**
  * Get Telegram notification status
  */
-export async function getTelegramStatus() {
+export async function getOpportunityAlertsStatus() {
   const db = await getDb();
   try {
     await db.run("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)");
-    const row = await db.get("SELECT value FROM settings WHERE key = 'telegram_enabled'");
+    const row = await db.get("SELECT value FROM settings WHERE key = 'opportunity_alerts_enabled'");
     return { enabled: row ? row.value === 'true' : true };
   } catch (err) {
-    console.warn('[monitor:db] Failed to fetch telegram status:', err.message);
+    console.warn('[monitor:db] Failed to fetch opportunity alerts status:', err.message);
     return { enabled: true };
   }
 }
 
 /**
- * Set Telegram notification status
+ * Set Telegram opportunity alerts status
  */
-export async function setTelegramStatus(enabled) {
+export async function setOpportunityAlertsStatus(enabled) {
   const db = await getDb();
   const val = enabled ? 'true' : 'false';
   await db.run("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)");
   await db.run(
-    "INSERT INTO settings (key, value) VALUES ('telegram_enabled', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+    "INSERT INTO settings (key, value) VALUES ('opportunity_alerts_enabled', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
     [val]
   );
   return { enabled: !!enabled };
@@ -221,13 +233,6 @@ export async function setTelegramStatus(enabled) {
  * @param {object} options - Additional options
  */
 export async function sendTelegramInternal(message, botType = 'MAIN_BOT', options = {}) {
-  // Check if notifications are globally enabled
-  const status = await getTelegramStatus();
-  if (!status.enabled) {
-    console.log('[telegram] Notifications are globally disabled');
-    return { ok: true, description: 'Notifications disabled' };
-  }
-
   // Get bot configuration
   const botConfig = TELEGRAM_BOTS[botType];
   if (!botConfig) {

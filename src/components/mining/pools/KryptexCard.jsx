@@ -1,5 +1,6 @@
 // KryptexCard.jsx - Address lookup card for Kryptex Pool
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
+import KryptexProfitAlert from "./KryptexProfitAlert.jsx";
 
 function formatUsd(value) {
   const v = parseFloat(value);
@@ -47,7 +48,19 @@ export default function KryptexCard({ onCall, coinPrices }) {
         query: { coin: coin.trim().toLowerCase(), address: address.trim() },
         silent: true,
       });
-      if (result?.success && result.data) {
+
+      // Handle error response
+      if (result?.error) {
+        throw new Error(result.error);
+      }
+
+      // Response shape is { success: true, stats: {...}, coin, address, fetchedAt }
+      if (result?.success && result?.stats) {
+        setData(result);
+        setLastUpdate(new Date());
+      }
+      // Handle wrapped shape { success: true, data: { stats: {...} } }
+      else if (result?.success && result?.data?.stats) {
         setData(result.data);
         setLastUpdate(new Date());
       } else {
@@ -55,6 +68,7 @@ export default function KryptexCard({ onCall, coinPrices }) {
       }
     } catch (err) {
       setError(err.message);
+      console.error("[KryptexCard] Error:", err.message);
     } finally {
       setLoading(false);
     }
@@ -154,6 +168,15 @@ export default function KryptexCard({ onCall, coinPrices }) {
         <div style={{ color: "#f87171", fontSize: "clamp(10px, 0.8vw, 12px)", padding: "4px 0" }}>
           ❌ {error}
         </div>
+      )}
+
+      {/* Profit Monitor — Kryptex-native, uses pool data instead of HeroMiners */}
+      {data && !viewRaw && address && coin && (
+        <KryptexProfitAlert
+          pair={{ coin: coin.toUpperCase(), address }}
+          onCall={onCall}
+          nhClient="VN"
+        />
       )}
 
       {/* Results Dashboard */}

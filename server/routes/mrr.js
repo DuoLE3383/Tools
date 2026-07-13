@@ -67,10 +67,12 @@ export function registerMrrRoutes(app) {
               const poolMap = new Map(await Promise.all(poolItems.map(async (item) => {
                 const id = String(item.rigId || item.rigid || item.id || item.rentalid || '');
                 if (Array.isArray(item.pools) && item.pools.length > 0) {
-                  // Use savepoints to allow nesting within other transactions.
                   const savepointName = `mrr_rig_pool_sync_${id.replace(/[^a-zA-Z0-9]/g, "")}`;
-                  await db.run(`SAVEPOINT ${savepointName}`);
+                  let savepointCreated = false;
                   try {
+                    // Use savepoints to allow nesting within other transactions.
+                    await db.run(`SAVEPOINT ${savepointName}`);
+                    savepointCreated = true;
                     const stmt = await db.prepare(`INSERT OR REPLACE INTO mrr_pools (id, name, algo, host, port, user, mrrClient, last_updated) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`);
                     for (const p of item.pools) {
                       const algo = p.algo || p.algorithm || p.type || item.algo || item.algorithm || '';
@@ -80,9 +82,11 @@ export function registerMrrRoutes(app) {
                     await db.run(`RELEASE SAVEPOINT ${savepointName}`);
                   } catch (e) {
                     console.error(`[mrr:rigs] DB pool sync failed for rig ${id}:`, e.message);
-                    try {
-                      await db.run(`ROLLBACK TO SAVEPOINT ${savepointName}`);
-                    } catch (rollbackErr) { console.warn(`[mrr:rigs] Savepoint rollback failed for rig ${id}: ${rollbackErr.message}`); }
+                    if (savepointCreated) {
+                      try {
+                        await db.run(`ROLLBACK TO SAVEPOINT ${savepointName}`);
+                      } catch (rollbackErr) { console.warn(`[mrr:rigs] Savepoint rollback failed for rig ${id}: ${rollbackErr.message}`); }
+                    }
                   }
                 }
                 if (Array.isArray(item.pools)) {
@@ -378,8 +382,10 @@ export function registerMrrRoutes(app) {
       const pools = data.data || [];
       if (pools.length > 0) {
         const savepointName = `mrr_acct_pool_sync_${clientName.replace(/[^a-zA-Z0-9]/g, "")}`;
-        await db.run(`SAVEPOINT ${savepointName}`);
+        let savepointCreated = false;
         try {
+          await db.run(`SAVEPOINT ${savepointName}`);
+          savepointCreated = true;
           const stmt = await db.prepare(`INSERT OR REPLACE INTO mrr_pools (id, name, algo, host, port, user, mrrClient, last_updated) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`);
           for (const p of pools) {
             await stmt.run(p.id, p.name, p.algo, p.host, p.port, p.user, clientName);
@@ -387,9 +393,11 @@ export function registerMrrRoutes(app) {
           await stmt.finalize();
           await db.run(`RELEASE SAVEPOINT ${savepointName}`);
         } catch (e) {
-          try {
-            await db.run(`ROLLBACK TO SAVEPOINT ${savepointName}`);
-          } catch (rollbackErr) { console.warn(`[mrr:acct-pool] Savepoint rollback failed: ${rollbackErr.message}`); }
+          if (savepointCreated) {
+            try {
+              await db.run(`ROLLBACK TO SAVEPOINT ${savepointName}`);
+            } catch (rollbackErr) { console.warn(`[mrr:acct-pool] Savepoint rollback failed: ${rollbackErr.message}`); }
+          }
         }
       }
     }

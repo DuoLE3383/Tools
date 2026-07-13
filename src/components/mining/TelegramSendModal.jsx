@@ -145,8 +145,9 @@ ${emoji} <b>Mining Heartbeat - ${forceLabel}</b>
 
             await notify(monitorMessage);
           } catch (monitorErr) {
+            const errorMessage = monitorErr?.message || 'Unknown monitor error';
             console.error("Monitor run failed:", monitorErr);
-            await notify(`⚠️ Monitor run failed: ${monitorErr.message}`);
+            await notify(`⚠️ Monitor run failed: ${errorMessage}`);
           }
         }
 
@@ -260,7 +261,8 @@ ${emoji} <b>Mining Heartbeat - ${forceLabel}</b>
         throw new Error(result?.error || "Failed to send message.");
       }
     } catch (err) {
-      setSendStatus(`❌ Error: ${err.message}`);
+      const errorMessage = err?.message || 'An unknown error occurred.';
+      setSendStatus(`❌ Error: ${errorMessage}`);
     } finally {
       setIsSending(false);
     }

@@ -510,7 +510,8 @@ export async function mrrApiCall({ endpoint, method = 'GET', query, body, client
 
         console.warn(`[mrr:${clientName}] ☢️ NUCLEAR JUMP: Baseline reset to ${newJumpedNonce} (${isSignificantFuture ? '+1h' : '+1m'}) for key ${clientConfig.apiKey.slice(0, 6)}...`);
         mrrLastNonceByClient.set(clientConfig.apiKey, newJumpedNonce);
-        db.run('INSERT OR REPLACE INTO mrr_nonces (client, last_nonce) VALUES (?, ?)', [clientConfig.apiKey, newJumpedNonce.toString()]);
+        const db = await getDb();
+        await db.run('INSERT OR REPLACE INTO mrr_nonces (client, last_nonce) VALUES (?, ?)', [clientConfig.apiKey, newJumpedNonce.toString()]);
 
         currentNonce = nextMrrNonce(clientConfig.apiKey, clientName);
         const retrySignString = `${clientConfig.apiKey}${currentNonce}${sigEndpoint}`;

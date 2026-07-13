@@ -1,50 +1,39 @@
-import React, { createContext, useContext, useCallback } from 'react';
+// src/mrr/TelegramMineContext.jsx
+import { createContext, useContext, useCallback } from 'react';
 
-const TelegramMineContext = createContext(null);
-
-export function useTelegramMine() {
-  const context = useContext(TelegramMineContext);
-  if (!context) {
-    throw new Error('useTelegramMine must be used within a TelegramMineProvider');
-  }
-  return context;
-}
+const TelegramMineContext = createContext();
 
 export function TelegramMineProvider({ children, onCall }) {
-  const sendTelegramMessage = useCallback(async (message, options = {}) => {
-    if (!message) return;
-
+  const notify = useCallback(async (message) => {
+    if (!onCall) {
+      console.warn('[TelegramMine] onCall not provided');
+      return { ok: false, error: 'onCall not configured' };
+    }
     try {
       const result = await onCall('/api/v2/telegram/send-mine', {
         method: 'POST',
-        body: { message, ...options },
+        body: { message },
         silent: true,
       });
-
-      if (!result.success) {
-        console.error('[TelegramMine] Failed to send message:', result.error);
+      if (!result?.success) {
+        // The error object from the API might be `err` itself
+        throw result;
       }
-      return result;
+      return { ok: true };
     } catch (err) {
-      console.error('[TelegramMine] Error sending message:', err.message);
-      return { success: false, error: err.message };
+      const errorMessage = err?.error || err?.message || 'An unknown error occurred while sending message.';
+      console.error('[TelegramMine] Failed to send message:', errorMessage, err);
+      return { ok: false, error: errorMessage };
     }
   }, [onCall]);
 
-  const notify = useCallback(async (message) => {
-    return sendTelegramMessage(message);
-  }, [sendTelegramMessage]);
-
-  const value = {
-    notify,
-    sendTelegramMessage,
-  };
-
   return (
-    <TelegramMineContext.Provider value={value}>
+    <TelegramMineContext.Provider value={{ notify }}>
       {children}
     </TelegramMineContext.Provider>
   );
 }
 
-export default TelegramMineContext;
+export function useTelegramMine() {
+  return useContext(TelegramMineContext);
+}
