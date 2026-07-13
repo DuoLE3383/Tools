@@ -90,35 +90,36 @@ export const isAggregate = (c) => {
 };
 
 export function resolveNhClient(clientNameRaw) {
-  const clientName = isAggregate(clientNameRaw) ? AGGREGATE_CLIENT : String(clientNameRaw || 'VN').trim().toUpperCase();
+  // Determine the target client name. Default to 'VN' (aggregate) if not provided.
+  const targetClientName = String(clientNameRaw || AGGREGATE_CLIENT).trim().toUpperCase();
 
   // 1. Handle Aggregate (VN) resolution
-  if (isAggregate(clientName)) {
+  if (isAggregate(targetClientName)) {
     // Return a special marker object for aggregation.
     // The 'client' property is a dummy object that getNiceHashApp will recognize.
     return { client: { isAggregate: true, name: AGGREGATE_CLIENT }, clientName: AGGREGATE_CLIENT };
   }
 
   // 2. Return cached instance
-  if (nhInstances.has(clientName)) {
-    return { client: nhInstances.get(clientName), clientName };
+  if (nhInstances.has(targetClientName)) {
+    return { client: nhInstances.get(targetClientName), clientName: targetClientName };
   }
 
   // 3. Initialize from config
-  const cfg = nhConfigs[clientName];
+  const cfg = nhConfigs[targetClientName];
   if (cfg?.apiKey && cfg?.apiSecret && cfg?.orgId) {
-    const newClient = new NiceHashClient({ ...cfg, name: clientName });
-    nhInstances.set(clientName, newClient);
-    return { client: newClient, clientName };
+    const newClient = new NiceHashClient({ ...cfg, name: targetClientName });
+    nhInstances.set(targetClientName, newClient);
+    return { client: newClient, clientName: targetClientName };
   }
 
   // 4. Recursive fallback to VN if client is unconfigured
-  if (clientName !== 'VN') {
-    console.warn(`[nh:resolve] Client "${clientName}" not found or unconfigured. Falling back to VN.`);
-    return resolveNhClient('VN');
+  if (targetClientName !== AGGREGATE_CLIENT) {
+    console.warn(`[nh:resolve] Client "${targetClientName}" not found or unconfigured. Falling back to ${AGGREGATE_CLIENT}.`);
+    return resolveNhClient(AGGREGATE_CLIENT);
   }
 
-  return { client: undefined, clientName: 'VN' };
+  return { client: undefined, clientName: AGGREGATE_CLIENT };
 }
 
 /**
@@ -215,6 +216,70 @@ export async function getCachedNhPools(clientNameRaw) {
 
 const nhInstances = new Map();
 
+async function getAggregatedBalances() {
+  const allClientNames = Object.keys(nhConfigs).filter(c => nhConfigs[c].apiKey && !isAggregate(c));
+  const allCurrencies = [];
+  const errors = [];
+  let total = { available: 0, pending: 0, totalBalance: 0, currency: "BTC" };
+
+  const promises = allClientNames.map(async (name) => {
+    try {
+      const { client: singleClient } = resolveNhClient(name);
+      if (singleClient && !singleClient.isAggregate) {
+        const result = await singleClient.call({
+          method: 'GET',
+          path: '/main/api/v2/accounting/accounts2',
+          query: { ts: Date.now().toString() }
+        });
+
+        if (result && result.total) {
+          total.available += parseFloat(result.total.available || 0);
+          total.pending += parseFloat(result.total.pending || 0);
+          total.totalBalance += parseFloat(result.total.totalBalance || 0);
+          if (result.currencies) {
+            allCurrencies.push(...result.currencies.map(c => ({ ...c, nhClient: name })));
+          }
+        }
+      }
+    } catch (e) {
+      console.warn(`[nh:aggBalances] Failed to fetch balances for ${name}: ${e.message}`);
+      errors.push({ client: name, message: e.message });
+    }
+  });
+
+  await Promise.all(promises);
+  return {
+    currencies: allCurrencies,
+    total: {
+      available: total.available.toFixed(8),
+      pending: total.pending.toFixed(8),
+      totalBalance: total.totalBalance.toFixed(8),
+      currency: "BTC"
+    },
+    errors: errors.length > 0 ? errors : undefined
+  };
+}
+
+async function getAggregatedRigs() {
+  const allClientNames = Object.keys(nhConfigs).filter(c => nhConfigs[c].apiKey && !isAggregate(c));
+  const allRigs = [];
+  const errors = [];
+
+  const promises = allClientNames.map(async (name) => {
+    try {
+      const { client: singleClient } = resolveNhClient(name);
+      if (singleClient && !singleClient.isAggregate) {
+        const result = await singleClient.call({ method: 'GET', path: '/main/api/v2/mining/rigs2', query: { ts: Date.now().toString() } });
+        if (result && result.miningRigs) {
+          allRigs.push(...result.miningRigs.map(r => ({ ...r, nhClient: name })));
+        }
+      }
+    } catch (e) { errors.push({ client: name, message: e.message }); }
+  });
+  await Promise.all(promises);
+  return { miningRigs: allRigs, errors: errors.length > 0 ? errors : undefined };
+}
+
 async function getAggregatedMyOrders(query) {
   const allClientNames = Object.keys(nhConfigs).filter(c => nhConfigs[c].apiKey && !isAggregate(c));
   const allOrders = [];
@@ -254,6 +319,22 @@ async function getAggregatedMyOrders(query) {
   return { list: allOrders, pagination: { total: allOrders.length }, errors: errors.length > 0 ? errors : undefined };
 }
 
+async function getAggregatedPools() {
+  const allClientNames = Object.keys(nhConfigs).filter(c => nhConfigs[c].apiKey && !isAggregate(c));
+  const allPools = [];
+  const errors = [];
+
+  for (const name of allClientNames) {
+    try {
+      const pools = await getCachedNhPools(name);
+      allPools.push(...pools.map(p => ({ ...p, nhClient: name })));
+    } catch (e) {
+      errors.push({ client: name, message: e.message });
+    }
+  }
+  return { list: allPools, totalCount: allPools.length, errors: errors.length > 0 ? errors : undefined };
+}
+
 export const getNiceHashApp = (client) => {
   // If it's the aggregate client marker, return a special app object
   if (client && client.isAggregate) {
@@ -262,9 +343,21 @@ export const getNiceHashApp = (client) => {
 
     return {
       ...fallbackApp, // Inherit all methods from a fallback client ('BT')
+      accounting: {
+        ...fallbackApp.accounting,
+        getBalances: () => getAggregatedBalances(),
+      },
+      mining: {
+        ...fallbackApp.mining,
+        getRigs: () => getAggregatedRigs(),
+      },
       hashpower: {
         ...fallbackApp.hashpower,
         getMyOrders: (query) => getAggregatedMyOrders(query), // Override getMyOrders with the aggregate version
+      },
+      pools: {
+        ...fallbackApp.pools,
+        getPools: () => getAggregatedPools(),
       },
     };
   }
