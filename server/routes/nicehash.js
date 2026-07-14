@@ -374,6 +374,32 @@ export function registerNiceHashRoutes(app) {
     const query = { ...req.query };
     if (!query.ts) query.ts = Date.now().toString();
     const algorithm = normalizeAlgoForNiceHash(query.algorithm);
+    const market = query.market || "USA";
+
+    // --- Caching Layer ---
+    const db = await getDb();
+    const cacheKey = `nh:price:${algorithm}:${market}`;
+    const CACHE_TTL_MS = 60 * 1000; // 1 minute cache
+
+    try {
+      const cached = await db.get('SELECT value FROM key_value_cache WHERE key = ? AND expires_at > ?', [cacheKey, Date.now()]);
+      if (cached?.value) {
+        const cachedData = JSON.parse(cached.value);
+        res.set("X-Cache-Hit", "true");
+        return res.json(cachedData);
+      }
+    } catch (e) {
+      // This can happen if the table doesn't exist yet. It's safe to ignore and proceed.
+      console.warn(`[Cache] DB read error for ${cacheKey}: ${e.message}. This may be expected if the cache table is new.`);
+    }
+
+    const setCache = async (data) => {
+      try {
+        await db.run('INSERT OR REPLACE INTO key_value_cache (key, value, expires_at) VALUES (?, ?, ?)', [cacheKey, JSON.stringify(data), Date.now() + CACHE_TTL_MS]);
+      } catch (e) {
+        console.error(`[Cache] DB write error for ${cacheKey}: ${e.message}`);
+      }
+    };
 
     const matchActiveOrder = async (clientName, client) => {
       try {
@@ -390,7 +416,7 @@ export function registerNiceHashRoutes(app) {
 
     const matchMarketPrice = async (clientName, client) => {
       try {
-        const orderBook = await getNiceHashApp(client).hashpower.getOrderBook({ algorithm, market: query.market || "USA" });
+        const orderBook = await getNiceHashApp(client).hashpower.getOrderBook({ algorithm, market });
         const buyOrders = orderBook?.buy || [];
         if (Array.isArray(buyOrders) && buyOrders.length > 0) {
           const prices = buyOrders
@@ -415,7 +441,7 @@ export function registerNiceHashRoutes(app) {
 
     const matchCalculatePrice = async (clientName, client) => {
       try {
-        const result = await getNiceHashApp(client).hashpower.getOrderPrice({ algorithm, market: query.market || "USA", amount: "0.01" });
+        const result = await getNiceHashApp(client).hashpower.getOrderPrice({ algorithm, market, amount: "0.01" });
         if (result) {
           const price = parseFloat(result?.price ?? result?.fixedPrice ?? result?.marketPrice ?? 0);
           if (Number.isFinite(price) && price > 0) {
@@ -454,15 +480,27 @@ export function registerNiceHashRoutes(app) {
     // Try methods in order across all clients
     for (const { clientName, client } of clientsToTry) {
       const result = await matchActiveOrder(clientName, client);
-      if (result) { res.set("X-NH-Client", clientName); return res.json(result); }
+      if (result) {
+        res.set("X-NH-Client", clientName);
+        await setCache(result);
+        return res.json(result);
+      }
     }
     for (const { clientName, client } of clientsToTry) {
       const result = await matchMarketPrice(clientName, client);
-      if (result) { res.set("X-NH-Client", clientName); return res.json(result); }
+      if (result) {
+        res.set("X-NH-Client", clientName);
+        await setCache(result);
+        return res.json(result);
+      }
     }
     for (const { clientName, client } of clientsToTry) {
       const result = await matchCalculatePrice(clientName, client);
-      if (result) { res.set("X-NH-Client", clientName); return res.json(result); }
+      if (result) {
+        res.set("X-NH-Client", clientName);
+        await setCache(result);
+        return res.json(result);
+      }
     }
 
     // Last resort: try the global 24h stats to get a market price estimate
@@ -474,7 +512,7 @@ export function registerNiceHashRoutes(app) {
         if (match) {
           const price = parseFloat(match?.price ?? match?.marketPrice ?? match?.averagePrice ?? 0);
           if (Number.isFinite(price) && price > 0) {
-            return res.json({
+            const result = {
               fixedPrice: price.toFixed(8),
               speedUnit: ALGO_MAPPING(algorithm),
               price,
@@ -482,7 +520,9 @@ export function registerNiceHashRoutes(app) {
               marketUnit: ALGO_MAPPING(algorithm),
               source: "global-stats-24h",
               nhClient: clientsToTry[0]?.clientName || "BT"
-            });
+            };
+            await setCache(result);
+            return res.json(result);
           }
         }
       }
@@ -498,7 +538,7 @@ export function registerNiceHashRoutes(app) {
     };
     const fallbackPrice = fallbackPrices[algorithm] || 0.000001;
     console.log(`[NH Price] Using fallback estimate for ${algorithm}: ${fallbackPrice}`);
-    return res.json({
+    const result = {
       fixedPrice: fallbackPrice.toFixed(8),
       speedUnit: ALGO_MAPPING(algorithm),
       price: fallbackPrice,
@@ -506,7 +546,9 @@ export function registerNiceHashRoutes(app) {
       marketUnit: ALGO_MAPPING(algorithm),
       source: "fallback-estimate",
       nhClient: "BT"
-    });
+    };
+    await setCache(result);
+    return res.json(result);
   }));
   app.get("/api/v2/hashpower/orderBook/:algo/:market", asyncHandler(async (req, res) => {
     const { algo, market } = req.params;

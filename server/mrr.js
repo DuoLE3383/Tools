@@ -10,6 +10,52 @@ import { normalizeCredential, sanitizeMrrEndpoint } from './utils.js';
 import { isAggregate, resolveNhClient, getNiceHashApp } from './nh.js';
 
 // ============================================
+// ALGORITHM MAPPING (Minimal implementation to fix server error)
+// ============================================
+const ALGO_MAPPING = {
+  // From ProfitAlert.jsx and logs
+  KAWPOW: { displayName: 'Kawpow' },
+  OCTOPUS: { displayName: 'Octopus' },
+  RANDOMXMONERO: { displayName: 'RandomX' },
+  KHEAVYHASH: { displayName: 'kHeavyHash' },
+  ETCHASH: { displayName: 'Etchash' },
+  AUTOLYKOS2: { displayName: 'Autolykos2' },
+  BEAMV3: { displayName: 'BeamV3' },
+  ZELHASH: { displayName: 'ZelHash' },
+  BLAKE3: { displayName: 'Blake3' },
+  DYNEXSOLVE: { displayName: 'DynexSolve' },
+  NEXAPOW: { displayName: 'NexaPow' },
+  IRONFISH: { displayName: 'IronFish' },
+  EQUIHASH: { displayName: 'Equihash' },
+  HANDSHAKE: { displayName: 'Handshake' },
+  KECCAK: { displayName: 'Keccak' },
+  LBRY: { displayName: 'LBRY' },
+  LYRA2REV2: { displayName: 'Lyra2REv2' },
+  NEOSCRYPT: { displayName: 'NeoScrypt' },
+  QUBIT: { displayName: 'Qubit' },
+  SCRYPT: { displayName: 'Scrypt' },
+  SHA256: { displayName: 'SHA256' },
+  X11: { displayName: 'X11' },
+  X13: { displayName: 'X13' },
+  FISHHASH: { displayName: 'FishHash' },
+  KARLSENHASH: { displayName: 'KarlsenHash' },
+  PYRINHASH: { displayName: 'PyrinHash' },
+};
+
+function getAlgoMapping(algo) {
+  if (!algo) return { displayName: 'N/A' };
+  const upperAlgo = String(algo).toUpperCase().replace(/[-_\s]/g, '');
+  return ALGO_MAPPING[upperAlgo] || { displayName: algo };
+}
+
+export function getAlgoDisplayName(algo) {
+  if (!algo) return 'N/A';
+  const fallback = (s) => (s.toUpperCase() === s && s.toLowerCase() !== s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : s);
+  const mapping = getAlgoMapping(algo);
+  return mapping.displayName || fallback(algo);
+}
+
+// ============================================
 // STATE MANAGEMENT
 // ============================================
 const mrrLastNonceByClient = new Map();
@@ -631,6 +677,7 @@ export async function mrrRequest(endpoint, req, res, method = 'GET', body = unde
 // FETCH AGGREGATED RENTALS - UPGRADED
 // ============================================
 export async function fetchAggregatedRentals(query = {}, clientParam = 'BT') {
+  const db = await getDb();
   const isAll = isAggregate(clientParam);
   const allClientNames = isAll
     ? Object.keys(mrrConfigs).filter(c => mrrConfigs[c].apiKey && mrrConfigs[c].apiSecret && !isAggregate(c))
@@ -769,11 +816,13 @@ export async function fetchAggregatedRentals(query = {}, clientParam = 'BT') {
     // Add pool data and filter out ghosts
     const validRentals = [];
       uniqueList.forEach(r => {
+    for (const r of uniqueList) {
       const id = String(r.id);
       
       // Skip if marked as ghost
       if (ghostRentalIds.has(id)) {
         return;
+        continue;
       }
       
       const pools = poolMap.get(id);
@@ -782,13 +831,41 @@ export async function fetchAggregatedRentals(query = {}, clientParam = 'BT') {
           r.host = p0.host || p0.stratumHost;
           r.port = p0.port || p0.stratumPort;
           r.user = p0.user || p0.username;
+      if (pools && pools.length > 0) {
+        const p0 = pools.find(p => p.priority === 0 || p.priority === '0') || pools[0];
+        r.host = p0.host || p0.stratumHost;
+        r.port = p0.port || p0.stratumPort;
+        r.user = p0.user || p0.username;
         r.poolFound = true;
+
+        // Persist pool info to the database with a safe transaction
+        const savepointName = `mrr_rig_pool_sync_${id.replace(/[^a-zA-Z0-9]/g, "")}`;
+        try {
+          await db.run(`SAVEPOINT ${savepointName}`);
+          await db.run('DELETE FROM mrr_rig_pools WHERE rig_id = ?', [id]);
+          const stmt = await db.prepare('INSERT INTO mrr_rig_pools (rig_id, priority, type, host, port, username, password) VALUES (?, ?, ?, ?, ?, ?, ?)');
+          for (const pool of pools) {
+            await stmt.run(id, pool.priority, pool.type, pool.host, pool.port, pool.user, pool.pass);
+          }
+          await stmt.finalize();
+          await db.run(`RELEASE SAVEPOINT ${savepointName}`);
+        } catch (e) {
+          console.error(`[mrr:rigs] DB pool sync failed for rig ${id}: ${e.message}`);
+          try {
+            // Attempt rollback, but don't crash if the savepoint doesn't exist
+            await db.run(`ROLLBACK TO SAVEPOINT ${savepointName}`);
+          } catch (rollbackError) {
+            console.error(`[mrr:rigs] Savepoint rollback failed for rig ${id}: ${rollbackError.message}`);
+          }
+        }
       } else {
         r.poolFound = false;
         }
+      }
       
       validRentals.push(r);
       });
+    }
     
     return validRentals;
   };

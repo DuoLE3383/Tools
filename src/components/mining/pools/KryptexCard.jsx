@@ -30,6 +30,66 @@ function parseAmount(str) {
   return parseFloat(str.replace(/[^0-9.eE-]/g, "")) || 0;
 }
 
+function StatItem({ label, value, color }) {
+  return (
+    <div style={{
+      padding: '6px 8px',
+      background: 'rgba(0,0,0,0.15)',
+      borderRadius: '6px',
+    }}>
+      <div style={{
+        color: '#64748b',
+        fontSize: '9px',
+        textTransform: 'uppercase',
+        letterSpacing: '0.06em',
+      }}>
+        {label}
+      </div>
+      <div style={{
+        color: color || '#e2e8f0',
+        fontSize: '13px',
+        fontWeight: 800,
+        marginTop: '2px',
+        overflow: "hidden",
+        textOverflow: "ellipsis"
+      }}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function StatItemUSD({ label, value, usd, color }) {
+  return (
+    <div style={{
+      padding: '6px 8px',
+      background: 'rgba(0,0,0,0.15)',
+      borderRadius: '6px',
+    }}>
+      <div style={{
+        color: '#64748b',
+        fontSize: '9px',
+        textTransform: 'uppercase',
+        letterSpacing: '0.06em',
+      }}>
+        {label}
+      </div>
+      <div style={{
+        color: color || '#e2e8f0',
+        fontSize: '13px',
+        fontWeight: 800,
+        marginTop: '2px',
+        overflow: "hidden",
+        textOverflow: "ellipsis"
+      }}>
+        {value}
+      </div>
+      {usd && (
+        <div style={{ color: "#94a3b8", fontSize: "clamp(9px, 0.7vw, 11px)", marginTop: "2px" }}>{usd}</div>
+      )}
+    </div>
+  );
+}
 
 export default function KryptexCard({ onCall, coinPrices }) {
   const [coin, setCoin] = useState(() => loadFromStorage(COIN_STORAGE_KEY, "etc"));
@@ -210,25 +270,25 @@ export default function KryptexCard({ onCall, coinPrices }) {
           display: "flex",
           flexDirection: "column",
           gap: "8px",
-        }}>          
+        }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px" }}>
-            <MiniStat label="Current Hash" value={hashrate.current || "0 H/s"} color="#60a5fa" />
-            <MiniStat label="Hashrate 24h" value={hashrate["24h"] || "0 H/s"} color="#34d399" />
+            <StatItem label="Current Hash" value={hashrate.current || "0 H/s"} color="#60a5fa" />
+            <StatItem label="Hashrate 24h" value={hashrate["24h"] || "0 H/s"} color="#34d399" />
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px" }}>
-            <MiniStatUSD label="Confirmed" value={confirmed} usd={confirmedUsd} color="#f59e0b" />
-            <MiniStatUSD label="Immature" value={immature} usd={immatureUsd} color="#fbbf24" />
+            <StatItemUSD label="Confirmed" value={confirmed} usd={confirmedUsd} color="#f59e0b" />
+            <StatItemUSD label="Immature" value={immature} usd={immatureUsd} color="#fbbf24" />
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px" }}>
-            <MiniStatUSD label="Total Paid" value={totalPaid} usd={totalPaidUsd} color="#34d399" />
-            <MiniStatUSD label="30d Reward" value={reward30d} usd={reward30dUsd} color="#a78bfa" />
+            <StatItemUSD label="Total Paid" value={totalPaid} usd={totalPaidUsd} color="#34d399" />
+            <StatItemUSD label="30d Reward" value={reward30d} usd={reward30dUsd} color="#a78bfa" />
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px" }}>
-            <MiniStat label="Workers" value={`${workers.online || 0} online`} color="#94a3b8" />
-            <MiniStat label="7d Reward" value={reward7d} color="#f472b6" />
+            <StatItem label="Workers" value={`${workers.online || 0} online`} color="#94a3b8" />
+            <StatItem label="7d Reward" value={reward7d} color="#f472b6" />
           </div>
 
           {/* Workers table */}
@@ -283,47 +343,6 @@ export default function KryptexCard({ onCall, coinPrices }) {
         }}>
           {JSON.stringify(data, null, 2)}
         </pre>
-      )}
-    </div>
-  );
-}
-
-function MiniStat({ label, value, color }) {
-  return (
-    <div style={{
-      padding: "6px 8px",
-      borderRadius: "6px",
-      background: "rgba(255,255,255,0.02)",
-      border: "1px solid rgba(148,163,184,0.06)",
-    }}>
-      <div style={{ color: "#64748b", fontSize: "8px", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-        {label}
-      </div>
-      <div style={{ color, fontSize: "clamp(11px, 0.9vw, 13px)", fontWeight: 800, marginTop: "1px", overflow: "hidden", textOverflow: "ellipsis" }}>
-        {value}
-      </div>
-    </div>
-  );
-}
-
-function MiniStatUSD({ label, value, usd, color }) {
-  return (
-    <div style={{
-      padding: "6px 8px",
-      borderRadius: "6px",
-      background: "rgba(255,255,255,0.02)",
-      border: "1px solid rgba(148,163,184,0.06)",
-    }}>
-      <div style={{ color: "#64748b", fontSize: "8px", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-        {label}
-      </div>
-      <div style={{ color, fontSize: "clamp(11px, 0.9vw, 13px)", fontWeight: 800, marginTop: "1px", overflow: "hidden", textOverflow: "ellipsis" }}>
-        {value}
-      </div>
-      {usd && (
-        <div style={{ color: "#94a3b8", fontSize: "clamp(8px, 0.6vw, 10px)", marginTop: "1px" }}>
-          {usd}
-        </div>
       )}
     </div>
   );

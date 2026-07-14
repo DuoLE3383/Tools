@@ -1,20 +1,10 @@
 // K1PoolCard.jsx - Address lookup card for K1Pool
 import { useState, useCallback, useMemo } from "react";
 import ProfitAlert from "../ProfitAlert.jsx";
+import { loadStringFromStorage, saveStringToStorage } from "../../../core/storage.js";
 
 const POOL_STORAGE_KEY = "k1pool_monitor_pool";
 const ADDRESS_STORAGE_KEY = "k1pool_monitor_address";
-
-function loadFromStorage(key, defaultValue) {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw || defaultValue;
-  } catch { return defaultValue; }
-}
-
-function saveToStorage(key, value) {
-  try { localStorage.setItem(key, value); } catch {}
-}
 
 // Re-implementing MiniStat and StatItem for consistent styling, similar to KryptexCard.
 function MiniStat({ label, value, color }) {
@@ -22,13 +12,23 @@ function MiniStat({ label, value, color }) {
     <div style={{
       padding: "6px 8px",
       borderRadius: "6px",
-      background: "rgba(255,255,255,0.02)",
-      border: "1px solid rgba(148,163,184,0.06)",
+      background: "rgba(0,0,0,0.15)",
     }}>
-      <div style={{ color: "#64748b", fontSize: "8px", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+      <div style={{
+        color: '#64748b',
+        fontSize: '9px',
+        textTransform: 'uppercase',
+        letterSpacing: '0.06em',
+      }}>
         {label}
       </div>
-      <div style={{ color, fontSize: "clamp(11px, 0.9vw, 13px)", fontWeight: 800, marginTop: "1px", overflow: "hidden", textOverflow: "ellipsis" }}>
+      <div style={{
+        color: color || '#e2e8f0',
+        fontSize: '13px',
+        fontWeight: 800,
+        marginTop: '2px',
+        overflow: "hidden", textOverflow: "ellipsis"
+      }}>
         {value}
       </div>
     </div>
@@ -45,8 +45,8 @@ function StatItem({ label, value }) {
 }
 
 export default function K1PoolCard({ onCall }) {
-  const [pool, setPool] = useState(() => loadFromStorage(POOL_STORAGE_KEY, "quaikawpowsolo"));
-  const [address, setAddress] = useState(() => loadFromStorage(ADDRESS_STORAGE_KEY, ""));
+  const [pool, setPool] = useState(() => loadStringFromStorage(POOL_STORAGE_KEY, "quaikawpowsolo"));
+  const [address, setAddress] = useState(() => loadStringFromStorage(ADDRESS_STORAGE_KEY, ""));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [data, setData] = useState(null);
@@ -143,7 +143,7 @@ export default function K1PoolCard({ onCall }) {
           onChange={(e) => {
             const newPool = e.target.value;
             setPool(newPool);
-            saveToStorage(POOL_STORAGE_KEY, newPool);
+            saveStringToStorage(POOL_STORAGE_KEY, newPool);
           }}
           placeholder="Pool slug (e.g. quaikawpowsolo)"
           style={{
@@ -163,7 +163,7 @@ export default function K1PoolCard({ onCall }) {
             onChange={(e) => {
               const newAddress = e.target.value;
               setAddress(newAddress);
-              saveToStorage(ADDRESS_STORAGE_KEY, newAddress);
+              saveStringToStorage(ADDRESS_STORAGE_KEY, newAddress);
             }}
             placeholder="Wallet address"
             style={{
