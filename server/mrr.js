@@ -815,22 +815,15 @@ export async function fetchAggregatedRentals(query = {}, clientParam = 'BT') {
 
     // Add pool data and filter out ghosts
     const validRentals = [];
-      uniqueList.forEach(r => {
     for (const r of uniqueList) {
       const id = String(r.id);
       
       // Skip if marked as ghost
       if (ghostRentalIds.has(id)) {
-        return;
         continue;
       }
       
       const pools = poolMap.get(id);
-        if (pools && pools.length > 0) {
-          const p0 = pools.find(p => p.priority === 0 || p.priority === '0') || pools[0];
-          r.host = p0.host || p0.stratumHost;
-          r.port = p0.port || p0.stratumPort;
-          r.user = p0.user || p0.username;
       if (pools && pools.length > 0) {
         const p0 = pools.find(p => p.priority === 0 || p.priority === '0') || pools[0];
         r.host = p0.host || p0.stratumHost;
@@ -860,11 +853,9 @@ export async function fetchAggregatedRentals(query = {}, clientParam = 'BT') {
         }
       } else {
         r.poolFound = false;
-        }
       }
       
       validRentals.push(r);
-      });
     }
     
     return validRentals;
