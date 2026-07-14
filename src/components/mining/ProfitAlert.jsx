@@ -2,6 +2,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import { useProfitCalculator } from '../../hooks/useProfitCalculator';
 import SelectNiceHashOrderModal from './SelectNiceHashOrderModal.jsx';
+import { formatDisplayNumber } from '../../core/priceUtils.js';
 import { useProfitAlert } from '../../hooks/useProfitAlert.js';
 
 export default function ProfitAlert({ 
@@ -162,19 +163,19 @@ export default function ProfitAlert({
         }}>
           <StatItem 
             label="Profit/Hour" 
-            value={`$${profit.netProfitPerHour.toFixed(2)}`} 
+            value={`$${formatDisplayNumber(profit.netProfitPerHour)}`} 
             color={profit.isProfitable ? '#34d399' : '#f87171'}
             bold
           />
-          <StatItem label="ROI" value={`${profit.roi.toFixed(2)}%`} color={profit.roi > 0 ? '#34d399' : '#f87171'} />
+          <StatItem label="ROI" value={`${formatDisplayNumber(profit.roi)}%`} color={profit.roi > 0 ? '#34d399' : '#f87171'} />
           <StatItem 
             label="Income (24h)" 
             value={`$${profit.paid24hUSD.toFixed(2)}`} 
             color="#34d399"
           />
           <StatItem 
-            label="NH Cost (24h)" 
-            value={`$${profit.costPerDayUSD.toFixed(2)}`} 
+            label="NH Paid" 
+            value={`$${formatDisplayNumber(profit.nhTotalPaidUSD)}`} 
             color="#f87171"
           />
         </div>

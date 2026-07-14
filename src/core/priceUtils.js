@@ -112,3 +112,21 @@ export function calculateNhPriceWithFee(buyNhPrice, nhOrder, fallbackFeeRate = 0
   // Fallback: Apply a standard percentage-based fee to the base price.
   return buyNhPrice * (1 + fallbackFeeRate);
 }
+
+/**
+ * Formats a number for display, ensuring small negative numbers that round to zero
+ * are shown with a negative sign (e.g., -0.00).
+ * @param {number} value The number to format.
+ * @param {number} [precision=2] The number of decimal places.
+ * @returns {string} The formatted number as a string.
+ */
+export function formatDisplayNumber(value, precision = 2) {
+  if (typeof value !== 'number' || !isFinite(value)) {
+    return (0).toFixed(precision);
+  }
+  const fixedValue = value.toFixed(precision);
+  if (parseFloat(fixedValue) === 0 && value < 0) {
+    return `-${(0).toFixed(precision)}`;
+  }
+  return fixedValue;
+}

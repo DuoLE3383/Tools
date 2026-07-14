@@ -40,6 +40,7 @@ export default function MrrRigs({
   const [enrichedInfo, setEnrichedInfo] = useState({}); // rigId -> details object
   const [loadingInfoIds, setLoadingInfoIds] = useState(new Set());
   const [algoMarketPrices, setAlgoMarketPrices] = useState({}); // algoName -> priceData
+  const [loadingMarketPrices, setLoadingMarketPrices] = useState(false);
 
   const [expandedPools, setExpandedPools] = useState(new Set());
   const togglePoolInfo = (rigId) => {
@@ -101,6 +102,30 @@ export default function MrrRigs({
     });
     return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
   }, [filteredRigs, enrichedInfo]);
+
+  const uniqueAlgos = useMemo(() => {
+    return groupedRigs.map(([algoKey]) => algoKey).filter(key => key && key !== 'N/A' && key !== 'UNKNOWN');
+  }, [groupedRigs]);
+
+  useEffect(() => {
+    const fetchMarketPrices = async () => {
+      if (uniqueAlgos.length === 0 || typeof onCall !== 'function') return;
+      setLoadingMarketPrices(true);
+      const prices = {};
+      const pricePromises = uniqueAlgos.map(async (algo) => {
+        try {
+          const priceData = await onCall('/api/v2/hashpower/order/price', { query: { algorithm: algo, market: 'USA', client: mrrClient }, silent: true, background: true });
+          if (priceData && !priceData.error) prices[algo] = priceData;
+        } catch (e) {
+          console.error(`Failed to fetch market price for ${algo}`, e);
+        }
+      });
+      await Promise.all(pricePromises);
+      setAlgoMarketPrices(prices);
+      setLoadingMarketPrices(false);
+    };
+    fetchMarketPrices();
+  }, [uniqueAlgos, onCall, mrrClient]);
 
   const stats = useMemo(() => {
     return {

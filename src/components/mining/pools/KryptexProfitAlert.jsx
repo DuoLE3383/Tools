@@ -3,6 +3,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import { useKryptexProfitCalculator } from '../../../hooks/useKryptexProfitCalculator';
 import SelectNiceHashOrderModal from '../SelectNiceHashOrderModal';
+import { formatDisplayNumber } from '../../../core/priceUtils.js';
 import { useProfitAlert } from '../../../hooks/useProfitAlert.js';
 
 const COIN_TO_ALGO = {
@@ -120,10 +121,10 @@ export default function KryptexProfitAlert({
 
       {profit && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '6px' }}>
-          <StatItem label="Profit/H" value={`$${profit.netProfitPerHour.toFixed(2)}`} color={profit.isProfitable ? '#34d399' : '#f87171'} bold />
-          <StatItem label="ROI" value={`${profit.roi.toFixed(2)}%`} color={profit.roi > 0 ? '#34d399' : '#f87171'} />
+          <StatItem label="Profit/H" value={`$${formatDisplayNumber(profit.netProfitPerHour)}`} color={profit.isProfitable ? '#34d399' : '#f87171'} bold />
+          <StatItem label="ROI" value={`${formatDisplayNumber(profit.roi)}%`} color={profit.roi > 0 ? '#34d399' : '#f87171'} />
           <StatItem label="Income 24h" value={`$${profit.paid24hUSD.toFixed(2)}`} color="#34d399" />
-          <StatItem label="NH Cost 24h" value={`$${profit.costPerDayUSD.toFixed(2)}`} color="#f87171" />
+          <StatItem label="NH Paid" value={`$${formatDisplayNumber(profit.nhTotalPaidUSD)}`} color="#f87171" />
         </div>
       )}
 

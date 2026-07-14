@@ -121,7 +121,7 @@ export function useKryptexProfitCalculator({
     for (const field of speedFields) {
       if (order[field] !== undefined && order[field] !== null) {
         const val = parseFloat(order[field]);
-        if (val > 0) { speed = val; speedField = field; break; }
+        if (val >= 0) { speed = val; speedField = field; break; }
       }
     }
     const isActive = (order.status?.code || order.status) === 'ACTIVE';
@@ -224,12 +224,15 @@ export function useKryptexProfitCalculator({
     const order = orderInfo?.order || null;
     const speedInfo = orderInfo?.speedInfo || { speed: 0, unit: 'GH', isActive: false };
     const orderPrice = parseFloat(order?.price || 0);
-    const orderSpeedGH = convertToGH(speedInfo.speed, speedInfo.unit);
+
+    // Use order.limit for cost calculation, not current speed.
+    const orderedSpeed = parseFloat(order?.limit || 0);
+    const orderUnit = getOrderUnit(order);
     const isActive = speedInfo.isActive || false;
 
     let costPerDay = 0, costPerHour = 0, costPerDayUSD = 0, costPerHourUSD = 0;
-    if (isActive && speedInfo.speed > 0) {
-      costPerDay = orderPrice * speedInfo.speed;
+    if (isActive && orderedSpeed > 0) {
+      costPerDay = orderPrice * orderedSpeed;
       costPerHour = costPerDay / 24;
       costPerDayUSD = costPerDay * btcPriceUsd;
       costPerHourUSD = costPerHour * btcPriceUsd;
@@ -247,8 +250,8 @@ export function useKryptexProfitCalculator({
       paid24hCoin, paid24hUSD: paid24hCoin * coinPrice,
       grossBtcPerDay,
       niceHashPrice: orderPrice,
-      orderedHashrate: orderSpeedGH,
-      orderSpeedRaw: speedInfo.speed,
+      orderedHashrate: convertToGH(orderedSpeed, orderUnit),
+      orderSpeedRaw: speedInfo.speed, // Current speed
       orderUnit: speedInfo.unit,
       orderIsActive: isActive,
       costPerHour, costPerDay, costPerHourUSD, costPerDayUSD,
@@ -262,7 +265,7 @@ export function useKryptexProfitCalculator({
       timestamp: new Date().toISOString(),
       isProfitable: netProfitPerHour > 0,
     };
-  }, [coin, convertToGH]);
+  }, [coin, convertToGH, getOrderUnit]);
 
   // Check profit
   const checkProfit = useCallback(async () => {
@@ -279,8 +282,12 @@ export function useKryptexProfitCalculator({
       setOrderSpeedRaw(speedInfo.speed);
       setOrderUnit(speedInfo.unit);
       setOrderIsActive(speedInfo.isActive);
+
+      const orderedSpeed = parseFloat(order.limit || 0);
+      const orderCostUnit = getOrderUnit(order);
+      const orderedSpeedGH = convertToGH(orderedSpeed, orderCostUnit);
       const speedGH = convertToGH(speedInfo.speed, speedInfo.unit);
-      setOrderedHashrateGH(speedGH);
+      setOrderedHashrateGH(orderedSpeedGH);
       setCurrentHashrateGH(speedGH);
       setOrderData(order);
     } else {
@@ -289,7 +296,7 @@ export function useKryptexProfitCalculator({
     setProfitHistory(prev => [...prev, profit].slice(-100));
     setIsProfitable(profit.isProfitable);
     return profit;
-  }, [fetchStats, syncNiceHashOrder, calculateProfit, btcPrice, convertToGH]);
+  }, [fetchStats, syncNiceHashOrder, calculateProfit, btcPrice, convertToGH, getOrderUnit]);
 
   // Auto-check on interval
   useEffect(() => {

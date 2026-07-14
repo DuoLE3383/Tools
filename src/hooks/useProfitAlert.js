@@ -34,6 +34,10 @@ export function useProfitAlert({
       ? `🆔 ${orderDetails ? `${orderDetails} (${niceHashOrderId.slice(0, 8)}...)` : `Order: ${niceHashOrderId.slice(0, 8)}...`}`
       : '';
 
+    const nhPoolInfo = (niceHashOrder?.poolName && niceHashOrder.poolName !== 'N/A')
+      ? `• Pool: <b>${niceHashOrder.poolName}</b>\n`
+      : '';
+
     const message = `
 ${emoji} <b>${alertTitle} - ${status}</b>
 
@@ -47,13 +51,10 @@ ${emoji} <b>${alertTitle} - ${status}</b>
 • $${profitData.paid24hUSD.toFixed(2)}
 • ${profitData.grossBtcPerDay.toFixed(8)} BTC
 
-💸 <b>NiceHash Cost (24h)</b>
-• ${niceHashPriceBTC.toFixed(8)} BTC/GH/day × ${orderedHashrateGH.toFixed(2)} GH/s
-• ${profitData.costPerDay.toFixed(8)} BTC
-• Paid: <b>${(profitData.nhTotalPaidBTC || 0).toFixed(8)} BTC</b>
-• $${profitData.costPerDayUSD.toFixed(2)}
-
-📈 <b>Profit</b>
+💸 <b>NiceHash Cost</b>
+• Paid: <b>${(profitData.nhTotalPaidBTC || 0).toFixed(8)} BTC</b> ($${profitData.nhTotalPaidUSD.toFixed(2)})
+• Rate: ${niceHashPriceBTC.toFixed(8)} BTC/GH/day @ ${orderedHashrateGH.toFixed(2)} GH/s
+� <b>Profit</b>
 • Hourly: <b>$${profitData.netProfitPerHour.toFixed(2)}/h</b>
 • Daily: <b>$${profitData.netProfitPerDay.toFixed(2)}/day</b>
 • Daily BTC: <b>${profitData.netProfitBTC.toFixed(8)} BTC</b>

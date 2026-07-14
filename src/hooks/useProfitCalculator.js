@@ -175,7 +175,7 @@ export function useProfitCalculator({
     for (const field of speedFields) {
       if (order[field] !== undefined && order[field] !== null) {
         const val = parseFloat(order[field]);
-        if (val > 0) {
+        if (val >= 0) {
           speed = val;
           speedField = field;
           break;
@@ -316,9 +316,11 @@ export function useProfitCalculator({
     const speedInfo = orderInfo?.speedInfo || { speed: 0, unit: 'GH', isActive: false };
     
     const orderPrice = parseFloat(order?.price || 0);
-    const orderSpeedRaw = speedInfo.speed || 0;
-    const orderUnit = speedInfo.unit || 'GH';
-    const orderSpeedGH = convertToGH(orderSpeedRaw, orderUnit);
+
+    // ✅ Use order.limit for cost calculation, not current speed (speedInfo.speed).
+    const orderedSpeed = parseFloat(order?.limit || 0);
+    const orderUnit = getOrderUnit(order);
+    const orderSpeedGH = convertToGH(speedInfo.speed, speedInfo.unit); // This is current hashrate for display
     const isActive = speedInfo.isActive || false;
     
     // If order is not active or speed is 0, cost is 0
@@ -329,8 +331,8 @@ export function useProfitCalculator({
     
     // The price from NH is in BTC per [speed unit] per day. The speed is in [speed unit]/s.
     // So, cost per day = price * speed.
-    if (isActive && orderSpeedRaw > 0) {
-      costPerDay = orderPrice * orderSpeedRaw;
+    if (isActive && orderedSpeed > 0) {
+      costPerDay = orderPrice * orderedSpeed;
       costPerHour = costPerDay / 24;
       costPerDayUSD = costPerDay * btcPriceUsd;
       costPerHourUSD = costPerHour * btcPriceUsd;
@@ -355,8 +357,8 @@ export function useProfitCalculator({
       grossBtcPerDay,
       
       niceHashPrice: orderPrice,
-      orderedHashrate: orderSpeedGH,
-      orderSpeedRaw: orderSpeedRaw,
+      orderedHashrate: convertToGH(orderedSpeed, orderUnit),
+      orderSpeedRaw: speedInfo.speed,
       orderUnit: orderUnit,
       orderIsActive: isActive,
       costPerHour,
@@ -382,7 +384,7 @@ export function useProfitCalculator({
       timestamp: new Date().toISOString(),
       isProfitable: netProfitPerHour > 0,
     };
-  }, [convertToGH]);
+  }, [convertToGH, getOrderUnit]);
 
   // Check profit
   const checkProfit = useCallback(async () => {
@@ -407,8 +409,12 @@ export function useProfitCalculator({
       setOrderUnit(speedInfo.unit);
       setOrderIsActive(speedInfo.isActive);
       
+      // The cost is based on the order's limit, so orderedHashrateGH should reflect that.
+      const orderedSpeed = parseFloat(order.limit || 0);
+      const orderCostUnit = getOrderUnit(order);
+      const orderedSpeedGH = convertToGH(orderedSpeed, orderCostUnit);
       const speedGH = convertToGH(speedInfo.speed, speedInfo.unit);
-      setOrderedHashrateGH(speedGH);
+      setOrderedHashrateGH(orderedSpeedGH);
       setCurrentHashrateGH(speedGH);
       setOrderData(order);
     } else {
@@ -423,7 +429,7 @@ export function useProfitCalculator({
     setIsProfitable(profit.isProfitable);
 
     return profit;
-  }, [fetchStats, syncNiceHashOrder, calculateProfit, btcPrice, convertToGH]);
+  }, [fetchStats, syncNiceHashOrder, calculateProfit, btcPrice, convertToGH, getOrderUnit]);
 
   // Auto-check on interval
   useEffect(() => {
