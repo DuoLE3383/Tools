@@ -148,7 +148,9 @@ const MrrRigCard = ({
     typeof rig.status === "object" ? rig.status.status : rig.status || "",
   ).toLowerCase();
   const rentalId = rig.rentalid || rig.current_rental_id || rig.rental_id;
+  const isLoadingDetails = loadingInfoIds.has(rig.id);
   const isRented =
+    info?.isRental === true || // Trust the detailed info from /rental/:id endpoint first
     statusStr.includes("rented") ||
     statusStr.includes("active") ||
     Boolean(rentalId);
@@ -282,11 +284,11 @@ const MrrRigCard = ({
   );
 
   const advertisedUnit =
-    rig.hashrate?.suffix ||
-    rig.hashrate?.advertised?.type ||
     info?.hashrate?.suffix ||
     info?.hashrate_unit ||
     info?.unit ||
+    rig.hashrate?.suffix ||
+    rig.hashrate?.advertised?.type ||
     mrrUnit;
   const adsInMrrUnit =
     adsVal > 0 ? convertHashrateValue(adsVal, advertisedUnit, mrrUnit) : 0;
@@ -296,11 +298,9 @@ const MrrRigCard = ({
   const {
     mrrMarketRate,
     isLoadingMrrRate,
-    mrrRateError,
     mrrUsedKey,
     finalMrrRate,
     mrrDailyRateSource,
-    calculatedMrrRate,
   } = useMrrRate({
     info,
     rig,
@@ -310,6 +310,8 @@ const MrrRigCard = ({
     paidBtcAmount,
     adsInMrrUnit,
     durationDays,
+    isRented,
+    displayId,
   });
 
   // ── NiceHash Price ──
@@ -484,6 +486,7 @@ const MrrRigCard = ({
           paidCurrency={paidCurrency}
           usdValue={usdValue}
           finalMrrRate={finalMrrRate}
+          mrrMarketRate={mrrMarketRate}
           mrrApiKey={mrrApiKey}
           mrrUsedKey={mrrUsedKey}
           mrrUnit={mrrUnit}

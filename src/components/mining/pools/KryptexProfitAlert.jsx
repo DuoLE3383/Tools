@@ -15,14 +15,30 @@ const COIN_TO_ALGO = {
   'BEAM': 'BEAMV3',
   'FLUX': 'ZELHASH',
   'ALPH': 'BLAKE3',
+  'FB': 'SHA256ASICBOOST',
 };
+
+const ORDER_STORAGE_PREFIX = 'kryptex_profit_alert_order_';
+
+function loadSavedOrderId(pairId) {
+  try {
+    return localStorage.getItem(`${ORDER_STORAGE_PREFIX}${pairId}`) || null;
+  } catch { return null; }
+}
+
+function saveOrderId(pairId, orderId) {
+  try {
+    if (orderId) localStorage.setItem(`${ORDER_STORAGE_PREFIX}${pairId}`, orderId);
+    else localStorage.removeItem(`${ORDER_STORAGE_PREFIX}${pairId}`);
+  } catch {}
+}
 
 export default function KryptexProfitAlert({
   pair,
   onCall,
   nhClient = 'VN',
 }) {
-  const [manualOrderId, setManualOrderId] = useState(null);
+  const [manualOrderId, setManualOrderId] = useState(() => pair?.id ? loadSavedOrderId(pair.id) : null);
   const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
 
   const {

@@ -1,5 +1,5 @@
 // HeroMinersLookup.jsx - Wallet address lookup with multi-coin monitoring dashboard
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import ProfitAlert from './ProfitAlert.jsx';
 
 // Default saved pairs (loaded from localStorage)
@@ -30,6 +30,24 @@ function saveAutoRefresh(val) {
 
 const COIN_COLORS = ["#60a5fa", "#34d399", "#f59e0b", "#a78bfa", "#f472b6", "#38bdf8"];
 
+function SummaryStat({ label, value, color }) {
+  return (
+    <div style={{
+      padding: '10px',
+      background: 'rgba(0,0,0,0.2)',
+      borderRadius: '8px',
+      textAlign: 'center'
+    }}>
+      <div style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '4px' }}>
+        {label}
+      </div>
+      <div style={{ fontSize: '18px', fontWeight: 'bold', color: color || '#e2e8f0' }}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
 function formatUsd(value) {
   const v = parseFloat(value);
   if (isNaN(v) || v <= 0) return "";
@@ -52,6 +70,7 @@ export default function HeroMinersLookup({ onCall, coinPrices }) {
   const [results, setResults] = useState({});
   const [errors, setErrors] = useState({});
   const [autoRefresh, setAutoRefresh] = useState(() => loadAutoRefresh());
+  const [profits, setProfits] = useState({});
   const [lastFetched, setLastFetched] = useState(null);
   const pollTimerRef = useRef(null);
 
@@ -63,6 +82,26 @@ export default function HeroMinersLookup({ onCall, coinPrices }) {
     const priceData = Object.values(coinPrices).find(p => p.symbol?.toLowerCase() === symbol);
     return priceData?.usd || 0;
   }, [coinPrices]);
+
+  const handleProfitUpdate = useCallback((pairId, profitData) => {
+    setProfits(prev => ({
+      ...prev,
+      [pairId]: profitData,
+    }));
+  }, []);
+
+  const profitSummary = useMemo(() => {
+    return Object.values(profits).reduce((acc, p) => {
+      if (p) {
+        acc.netProfitPerHour += p.netProfitPerHour || 0;
+        acc.nhTotalPaidUSD += p.nhTotalPaidUSD || 0;
+        acc.paid24hUSD += p.paid24hUSD || 0;
+      }
+      return acc;
+    }, { netProfitPerHour: 0, nhTotalPaidUSD: 0, paid24hUSD: 0 });
+  }, [profits]);
+
+
 
   const fetchAll = useCallback(async (forceRefresh = false) => {
     if (pairs.length === 0) return;
@@ -283,6 +322,7 @@ export default function HeroMinersLookup({ onCall, coinPrices }) {
                       onCall={onCall}
                       poolName="HeroMiners"
                       nhClient="VN"
+                      onProfitUpdate={handleProfitUpdate}
                     />
                   </>
                 )}

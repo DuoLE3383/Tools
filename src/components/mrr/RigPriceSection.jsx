@@ -8,6 +8,7 @@ export const RigPriceSection = ({
   paidCurrency,
   usdValue,
   finalMrrRate,
+  mrrMarketRate,
   mrrApiKey,
   mrrUsedKey,
   mrrUnit,
@@ -33,9 +34,16 @@ export const RigPriceSection = ({
           marginBottom: "4px",
         }}
       >
-        {/* <div style={{ fontSize: "8px", color: "#94a3b8" }}>
+        <div style={{
+          fontSize: "8px",
+          color: "#94a3b8",
+          fontStyle: "italic",
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+        }}>
           {mrrDailyRateSource}
-        </div> */}
+        </div>
         {isLoadingMrrRate && (
           <span style={{ fontSize: "7px", color: "#60a5fa" }}>loading...</span>
         )}
@@ -134,18 +142,6 @@ export const RigPriceSection = ({
                   {" "}
                   BTC/{mrrUnit}/Day
                 </span>
-                {mrrUsedKey && (
-                  <span
-                    style={{
-                      marginLeft: "4px",
-                      fontSize: "6px",
-                      opacity: 0.4,
-                      fontFamily: "monospace",
-                    }}
-                  >
-                    ({mrrUsedKey || mrrApiKey})
-                  </span>
-                )}
               </>
             ) : isLoadingMrrRate ? (
               "Loading..."
@@ -153,6 +149,14 @@ export const RigPriceSection = ({
               "N/A"
             )}
           </div>
+          {mrrDailyRateSource.includes("Rental") && mrrMarketRate > 0 && (
+            <div style={{ marginTop: '4px', paddingTop: '4px', borderTop: '1px solid rgba(255,255,255,0.05)', fontSize: '8px' }}>
+              <span style={{ opacity: 0.6 }}>Market:</span>
+              <span style={{ color: '#94a3b8', fontWeight: 600, marginLeft: '4px' }}>
+                {mrrMarketRate.toFixed(8)}
+              </span>
+            </div>
+          )}
         </div>
         <div
           style={{

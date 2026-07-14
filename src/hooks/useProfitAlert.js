@@ -2,6 +2,12 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNiceHashOrders } from '../components/nicehash/NiceHashContext';
 import { useTelegramMine } from '../components/mrr/TelegramMineContext';
 
+/**
+ * Every 10 minutes, if profit/hour <= 0 is NEGATIVE, re-sends the alert.
+ * Also alerts on initial status change (positive ↔ negative).
+ */
+const NEGATIVE_REALERT_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
+
 export function useProfitAlert({
   profit,
   pairData,
@@ -13,6 +19,8 @@ export function useProfitAlert({
   const [alertSent, setAlertSent] = useState(false);
   const [lastAlertType, setLastAlertType] = useState(null);
   const alertedProfitRef = useRef(null);
+  const lastNegativeAlertTimeRef = useRef(0);
+  const negativeTimerRef = useRef(null);
   const { notify } = useTelegramMine();
   const { getOrderById } = useNiceHashOrders();
 
@@ -34,10 +42,6 @@ export function useProfitAlert({
       ? `🆔 ${orderDetails ? `${orderDetails} (${niceHashOrderId.slice(0, 8)}...)` : `Order: ${niceHashOrderId.slice(0, 8)}...`}`
       : '';
 
-    const nhPoolInfo = (niceHashOrder?.poolName && niceHashOrder.poolName !== 'N/A')
-      ? `• Pool: <b>${niceHashOrder.poolName}</b>\n`
-      : '';
-
     const message = `
 ${emoji} <b>${alertTitle} - ${status}</b>
 
@@ -54,7 +58,7 @@ ${emoji} <b>${alertTitle} - ${status}</b>
 💸 <b>NiceHash Cost</b>
 • Paid: <b>${(profitData.nhTotalPaidBTC || 0).toFixed(8)} BTC</b> ($${profitData.nhTotalPaidUSD.toFixed(2)})
 • Rate: ${niceHashPriceBTC.toFixed(8)} BTC/GH/day @ ${orderedHashrateGH.toFixed(2)} GH/s
-� <b>Profit</b>
+💰 <b>Profit</b>
 • Hourly: <b>$${profitData.netProfitPerHour.toFixed(2)}/h</b>
 • Daily: <b>$${profitData.netProfitPerDay.toFixed(2)}/day</b>
 • Daily BTC: <b>${profitData.netProfitBTC.toFixed(8)} BTC</b>
@@ -68,6 +72,11 @@ ${orderInfo}
     await notify(message);
     setAlertSent(true);
     setLastAlertType(isNegative ? 'negative' : 'positive');
+
+    // Track time of last NEGATIVE alert for periodic re-alert
+    if (isNegative) {
+      lastNegativeAlertTimeRef.current = Date.now();
+    }
   }, [
     coin,
     address,
@@ -79,12 +88,13 @@ ${orderInfo}
     alertTitle,
   ]);
 
+  // ── Alert on status change ──
   useEffect(() => {
     if (!profit || alertedProfitRef.current === profit) {
       return;
     }
 
-    const isNegative = profit.netProfitPerHour < 0;
+    const isNegative = profit.netProfitPerHour <= 0;
     const shouldAlert =
       lastAlertType === null ||
       (isNegative !== (lastAlertType === 'negative')) ||
@@ -99,6 +109,35 @@ ${orderInfo}
       setAlertSent(false);
     }
   }, [profit, lastAlertType, alertSent, sendProfitAlert]);
+
+  // ── Periodic 10-minute re-alert while NEGATIVE ──
+  useEffect(() => {
+    // Clear any previous timer
+    if (negativeTimerRef.current) {
+      clearInterval(negativeTimerRef.current);
+      negativeTimerRef.current = null;
+    }
+
+    // Only schedule the periodic timer when profit is NEGATIVE
+    const isNegative = profit && profit.netProfitPerHour <= 0;
+
+    if (isNegative) {
+      negativeTimerRef.current = setInterval(() => {
+        // Check if enough time has passed since the last NEGATIVE alert
+        if (Date.now() - lastNegativeAlertTimeRef.current >= NEGATIVE_REALERT_INTERVAL_MS) {
+          console.log(`[ProfitAlert] 🔴 NEGATIVE profit persists — re-alerting ($${profit.netProfitPerHour.toFixed(2)}/h)`);
+          sendProfitAlert(profit, true);
+        }
+      }, NEGATIVE_REALERT_INTERVAL_MS);
+    }
+
+    return () => {
+      if (negativeTimerRef.current) {
+        clearInterval(negativeTimerRef.current);
+        negativeTimerRef.current = null;
+      }
+    };
+  }, [profit, sendProfitAlert]);
 
   return { niceHashOrder };
 }

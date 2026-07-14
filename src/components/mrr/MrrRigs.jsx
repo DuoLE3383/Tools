@@ -472,13 +472,25 @@ export default function MrrRigs({
       statusStr.includes("rented") || statusStr.includes("active");
 
     // Extract physical Rig ID and Rental ID correctly for fetching detailed info
-    const rigId =
-      rig.rigid || rig.rig_id || rig.rig?.id || (isRented ? "" : rig.id);
-    const rentalId =
-      rig.rentalid ||
-      rig.current_rental_id ||
-      rig.rental_id ||
-      (isRented ? rig.id : "");
+    const rigId = rig.rigid || rig.rig_id || rig.rig?.id || (isRented ? "" : rig.id);
+
+    // More robust rental ID extraction, inspired by backend logic.
+    // This ensures we correctly identify the rental and use the rental-specific endpoint.
+    const rentalIdCandidates = [
+      rig.rentalid,
+      rig.current_rental_id,
+      rig.rental_id,
+      rig.rental?.id,
+      rig.status?.rentalid,
+      rig.status?.rental_id,
+      rig.status?.rentalId,
+    ];
+    let rentalId = rentalIdCandidates.find(id => id && String(id).trim() && String(id).trim() !== '0');
+
+    // Fallback for when the rig object itself is a rental object (e.g. from /rental endpoint)
+    if (!rentalId && isRented) {
+      rentalId = rig.id;
+    }
 
     const effectiveClient = rig.mrrClient || rig.client || mrrClient;
 
@@ -491,8 +503,9 @@ export default function MrrRigs({
 
     setLoadingInfoIds((prev) => new Set(prev).add(rig.id));
     try {
+      // If we have a rental ID, always use the rental endpoint to get rental-specific data.
       const path =
-        isRented && rentalId
+        rentalId
           ? `/api/v2/mrr/rental/${encodeURIComponent(rentalId)}`
           : `/api/v2/mrr/rig/${encodeURIComponent(rigId || rig.id)}/info`;
 
@@ -513,6 +526,14 @@ export default function MrrRigs({
           // Normalize NH data if present in rental info
           const nhPriceData =
             rental.nicehashPrice?.price || rental.nicehashPrice;
+
+          // Extract rig's listed price from the rental.rig nested object
+          // This has the format: { type: "th", BTC: { currency: "BTC", price: "0.00056900", ... } }
+          const rigListedPrice = rental.rig?.price || null;
+          
+          // MRR rental API may also include price.advertised directly on the rental object:
+          // rental.price = { type: "legacy", advertised: "0.00056900", paid: "...", currency: "BTC" }
+          const rentalAdvertisedPrice = rental.price?.advertised || null;
 
           infoBoxData = {
             stratumHost:
@@ -553,7 +574,10 @@ export default function MrrRigs({
             rawAvg: normalized?.hashrate?.average || 0,
             rawCur: normalized?.hashrate?.current || 0,
             targetHashrate: normalized?.hashrate?.target || 0,
-            hashrate: { suffix: normalized?.hashrate?.suffix || "" },
+            hashrate: {
+              suffix:
+                normalized?.hashrate?.suffix || rental.hashrate?.advertised?.type || "",
+            },
             pools: pools.map((p) => ({
               host:
                 p.host ||
@@ -577,12 +601,16 @@ export default function MrrRigs({
             })),
             isRental: true,
             nicehashPrice: nhPriceData,
-            price: normalized?.price || rental.price || {}, // Prefer normalized rental price shape
+            price: normalized?.price || rental.price || {},
+            // Include the rig's listed price structure (with BTC.LTC.DOGE etc sub-keys)
+            rigListedPrice,
+            // Also expose it as mrrRate if available
+            mrrRate: rigListedPrice?.BTC?.price || null,
             currency:
               normalized?.price?.currency ||
               rental.currency ||
               normalized?.currency ||
-              "", // Preserve a usable currency label
+              "",
             price_converted:
               normalized?.price_converted || rental.price_converted || null,
             duration: rental.hours || rental.length || rental.duration || 0,

@@ -262,6 +262,11 @@ async function startServer() {
     app.use(express.static(distPath));
 
     // API 404 handler
+    app.use('/src', (req, res) => {
+        res.status(404).send('Source files are not served in this environment.');
+    });
+
+    // API 404 handler
     app.use("/api", (req, res) => {
       res.status(404).json({ success: false, error: "API endpoint not found", path: req.path });
     });

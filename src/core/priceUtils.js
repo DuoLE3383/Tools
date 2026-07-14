@@ -74,8 +74,9 @@ export function parsePriceValue(val) {
   if (val === undefined || val === null) return 0;
   if (typeof val === "number") return val;
   if (typeof val === "string") {
-    const cleaned = val.replace(/,/g, "");
-    const parsed = parseFloat(cleaned);
+    // More robust: remove commas and any non-numeric characters except dot and minus
+    const cleaned = val.replace(/,/g, "").replace(/[^\d.-]/g, "");
+    const parsed = parseFloat(cleaned || 0);
     return isNaN(parsed) ? 0 : parsed;
   }
   return 0;
@@ -129,4 +130,28 @@ export function formatDisplayNumber(value, precision = 2) {
     return `-${(0).toFixed(precision)}`;
   }
   return fixedValue;
+}
+
+/**
+ * Extracts the rental rate from the detailed rental info object from MRR.
+ * The most reliable rate is `price.advertised` or `price_converted.advertised`.
+ * @param {object} info - The detailed rental info object.
+ * @returns {number} The rental rate, or 0 if not found.
+ */
+export function getRentalRate(info) {
+  if (!info) return 0;
+
+  // Prioritize the 'advertised' rate, which is the actual rate of the rental.
+  const candidates = [
+    info.price?.advertised,
+    info.price_converted?.advertised,
+    info.price?.rate,
+  ];
+
+  for (const candidate of candidates) {
+    const parsedRate = parsePriceValue(candidate);
+    if (parsedRate > 0) return parsedRate;
+  }
+
+  return 0;
 }

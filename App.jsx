@@ -8,7 +8,7 @@ import MrrPage from './src/components/mrr/MrrPage.jsx';
 import NiceHashPage from './src/components/nicehash/NiceHashPage.jsx';
 import ActiveOrdersPage from './src/components/nicehash/ActiveOrdersPage.jsx';
 import { RentedRigProvider } from './src/components/mrr/RentedRigContext.jsx';
-import CryptoRatePage from './src/components/CryptoRatePage.jsx';
+import CryptoRatePage from './CryptoRatePage.jsx';
 import './src/App.css';
 
 const routeMap = {

@@ -5,7 +5,7 @@ import { getCoinPricesFromDb } from "../coinGecko/coinGeckoClient.js";
 const CACHE = new Map();
 const CACHE_TTL = 30000;
 
-const VALID_COINS = ['etc', 'xmr', 'cfx', 'ergo', 'rvn', 'beam', 'flux', 'alephium'];
+const VALID_COINS = ['etc', 'xmr', 'cfx', 'ergo', 'rvn', 'beam', 'flux', 'alephium', 'fb'];
 
 /**
  * Fetch miner stats from Kryptex pool

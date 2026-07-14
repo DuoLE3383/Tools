@@ -6,7 +6,7 @@ import Modal from "../Modal";
 import TelegramManager, { useTelegram } from "../TelegramManager";
 import { calculateRemainingTime, toUtcTimestamp } from "../../core/time";
 import ErrorBoundary from "../ErrorBoundary"; 
-import CryptoRatePage from "../CryptoRatePage.jsx"; 
+import CryptoRatePage from "../../../CryptoRatePage.jsx"; 
 
 // ============================================
 // UTILITY FUNCTIONS

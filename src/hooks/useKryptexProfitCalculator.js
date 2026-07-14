@@ -18,6 +18,7 @@ const COIN_TO_ALGO = {
   'BEAM': 'BEAMV3',
   'FLUX': 'ZELHASH',
   'ALPH': 'BLAKE3',
+  'FB': 'SHA256ASICBOOST',
 };
 
 export function useKryptexProfitCalculator({

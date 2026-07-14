@@ -1,17 +1,33 @@
 // src/mining/ProfitAlert.jsx
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useProfitCalculator } from '../../hooks/useProfitCalculator';
 import SelectNiceHashOrderModal from './SelectNiceHashOrderModal.jsx';
 import { formatDisplayNumber } from '../../core/priceUtils.js';
 import { useProfitAlert } from '../../hooks/useProfitAlert.js';
+
+const ORDER_STORAGE_PREFIX = 'profit_alert_order_';
+
+function loadSavedOrderId(pairId) {
+  try {
+    return localStorage.getItem(`${ORDER_STORAGE_PREFIX}${pairId}`) || null;
+  } catch { return null; }
+}
+
+function saveOrderId(pairId, orderId) {
+  try {
+    if (orderId) localStorage.setItem(`${ORDER_STORAGE_PREFIX}${pairId}`, orderId);
+    else localStorage.removeItem(`${ORDER_STORAGE_PREFIX}${pairId}`);
+  } catch {}
+}
 
 export default function ProfitAlert({ 
   pair,           // Auto-detected from pool monitor
   onCall,
   nhClient = 'VN',
   poolName,
+  onProfitUpdate,
 }) {
-  const [manualOrderId, setManualOrderId] = useState(null);
+  const [manualOrderId, setManualOrderId] = useState(() => pair?.id ? loadSavedOrderId(pair.id) : null);
   const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
 
   const {
@@ -33,6 +49,12 @@ export default function ProfitAlert({
     manualNiceHashOrderId: manualOrderId,
   });
 
+  useEffect(() => {
+    if (onProfitUpdate) {
+      onProfitUpdate(pair.id, profit);
+    }
+  }, [profit, pair.id, onProfitUpdate]);
+
   const { coin, address } = pairData || {};
 
   const { niceHashOrder } = useProfitAlert({
@@ -42,6 +64,7 @@ export default function ProfitAlert({
     orderedHashrateGH,
     niceHashOrderId,
     alertTitle: `${poolName ? `${poolName} ` : ''}Mining Profit Alert`,
+    poolName,
   });
 
   // This is a copy from useProfitCalculator.js to determine the algo for the modal
@@ -77,6 +100,7 @@ export default function ProfitAlert({
 
   const handleSelectOrder = (order) => {
     setManualOrderId(order.id);
+    saveOrderId(pair.id, order.id);
     setIsOrderModalOpen(false);
   };
 
