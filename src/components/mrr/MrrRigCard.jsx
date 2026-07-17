@@ -351,17 +351,28 @@ const MrrRigCard = ({
     });
   }, [sortedOrders, normalizedCardAlgo, rig.mrrClient, mrrClient]);
 
-  // The NiceHash myOrders API actually returns prices per TH (not per the mapping's niceHashUnit).
-  // For example SHA256 (listed as EH in mapping) returns 0.4558 BTC/TH/Day, not BTC/EH/Day.
-  // getNiceHashPriceValue returns the raw number — this IS the correct per-TH price.
-  // BUGFIX: The comment above is misleading. `getNiceHashPriceValue` incorrectly converts Equihash (Gsol) to TH.
-  // We must use `parsePriceValueLocal` to get the raw price number without any unit conversion,
-  // as the calling context is aware of the special case for Equihash units.
-  const niceHashSourcePrice = nhOrder
+  // Primary source: find price from NiceHash active orders (nhOrders context).
+  // This gives us an exact match when we own an active order for this algo.
+  const nhOrderPrice = nhOrder
     ? parsePriceValueLocal(nhOrder?.price ?? nhOrder?.rawOrder?.price ?? nhOrder)
     : 0;
 
-  console.log(`[MrrRigCard] ${normalizedCardAlgo} nhOrder account=${nhOrder?.account} rawPrice=${nhOrder?.rawOrder?.price} niceHashSourcePrice=${niceHashSourcePrice}`);
+  // Fallback source: algoMarketPrices from the dedicated /order/price endpoint.
+  // MrrRigs fetches this for every unique algo — use it when nhOrders has no match.
+  const marketPriceData = algoMarketPrices?.[normalizedCardAlgo];
+  const marketPrice = marketPriceData
+    ? parsePriceValueLocal(
+        marketPriceData.fixedPrice ??
+        marketPriceData.price ??
+        marketPriceData.marketPrice ??
+        0
+      )
+    : 0;
+
+  // Use the primary source if we got a valid price; otherwise fall back to market price
+  const niceHashSourcePrice = nhOrderPrice > 0 ? nhOrderPrice : marketPrice;
+
+  console.log(`[MrrRigCard] ${normalizedCardAlgo} nhOrder account=${nhOrder?.account} rawPrice=${nhOrder?.rawOrder?.price} nhPrice=${nhOrderPrice} marketPrice=${marketPrice} final=${niceHashSourcePrice}`);
 
   // The myOrders API generally returns price per TH, but for Equihash it's per Gsol.
   // We need to handle this exception for both display and ROI calculation.
@@ -491,6 +502,8 @@ const MrrRigCard = ({
           mrrUsedKey={mrrUsedKey}
           mrrUnit={mrrUnit}
           niceHashPriceInMrrUnit={niceHashPriceInMrrUnit}
+          niceHashSourcePrice={niceHashSourcePrice}
+          niceHashSourceUnit={myNhUnit}
           myNhUnit={myNhUnit}
           rentalStartTime={rentalStartTime}
         />

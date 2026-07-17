@@ -317,22 +317,24 @@ export function useProfitCalculator({
     
     const orderPrice = parseFloat(order?.price || 0);
 
-    // ✅ Use order.limit for cost calculation, not current speed (speedInfo.speed).
-    const orderedSpeed = parseFloat(order?.limit || 0);
-    const orderUnit = getOrderUnit(order);
-    const orderSpeedGH = convertToGH(speedInfo.speed, speedInfo.unit); // This is current hashrate for display
+    // ✅ Use acceptedCurrentSpeed for cost calculation (the actual hashrate from miners).
+    // order.limit is the BTC deposit amount — NOT hashrate — so using it produces wrong units.
+    const actualSpeedRaw = speedInfo.speed;                      // in native unit (e.g. TH, GH)
+    const actualUnit = speedInfo.unit;                           // e.g. 'TH', 'GH', 'KH'
+    const actualSpeedInOrderUnit = convertToGH(actualSpeedRaw, actualUnit); // convert to GH/s
     const isActive = speedInfo.isActive || false;
     
-    // If order is not active or speed is 0, cost is 0
     let costPerDay = 0;
     let costPerHour = 0;
     let costPerDayUSD = 0;
     let costPerHourUSD = 0;
     
-    // The price from NH is in BTC per [speed unit] per day. The speed is in [speed unit]/s.
-    // So, cost per day = price * speed.
-    if (isActive && orderedSpeed > 0) {
-      costPerDay = orderPrice * orderedSpeed;
+    // The price from NH is in BTC per [speed unit] per day.
+    // The order stores it per TH by default, so we need to convert:
+    //   cost = price (BTC/TH/day) × speed_in_TH
+    if (isActive && actualSpeedRaw > 0) {
+      const actualSpeedInOrderNative = convertToGH(actualSpeedRaw, actualUnit) / 1000; // convert GH → TH
+      costPerDay = orderPrice * actualSpeedInOrderNative;
       costPerHour = costPerDay / 24;
       costPerDayUSD = costPerDay * btcPriceUsd;
       costPerHourUSD = costPerHour * btcPriceUsd;
@@ -357,9 +359,9 @@ export function useProfitCalculator({
       grossBtcPerDay,
       
       niceHashPrice: orderPrice,
-      orderedHashrate: convertToGH(orderedSpeed, orderUnit),
-      orderSpeedRaw: speedInfo.speed,
-      orderUnit: orderUnit,
+      orderedHashrate: convertToGH(actualSpeedRaw, actualUnit),
+      orderSpeedRaw: actualSpeedRaw,
+      orderUnit: actualUnit,
       orderIsActive: isActive,
       costPerHour,
       costPerDay,

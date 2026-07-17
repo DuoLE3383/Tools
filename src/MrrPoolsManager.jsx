@@ -153,7 +153,7 @@ const MrrPoolsManager = ({ defaultClient = 'ALL', onCall }) => {
     BT: '#36d472b0',
     SL: '#d97706',
     LN: '#4708f3',
-    LUCKY: '#c0ec48',
+    LUCKY: '#7e9e25',
     VN: '#f31890',
   };
 

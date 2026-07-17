@@ -5,7 +5,7 @@ import { mrrApiCall, mrrConfigs, markGhostRental, mrrGetCache } from './mrr.js';
 import { resolveNhClient, getNiceHashApp, isAggregate, nhConfigs } from './nh.js';
 import { extractRentalInfo, extractRigInfo } from './utils.js';
 import { TELEGRAM_CONFIG, TelegramTemplates } from '../src/core/telegram.js';
-import { ALGO_DISPLAY_NAMES } from '../src/core/mapping.js';
+import { ALGO_DISPLAY_NAMES, getAlgoDisplayName, normalizeAlgoForNiceHash, calculatePriceComparison, getNiceHashUnit, getAlgoMapping } from '../src/core/mapping.js';
 
 // Helper to escape HTML for safe inclusion in Telegram message titles.
 function escapeHtml(unsafe) {
@@ -643,7 +643,7 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
                 if (matchedOrder) {
                   nhP = {
                     price: parseFloat(matchedOrder?.price ?? matchedOrder?.marketPrice ?? matchedOrder?.fixedPrice ?? 0) || 0,
-                    unit: getMonitorNhAlgoPriceUnit(matchedOrder, nhAlgo)
+                    unit: getNiceHashUnit(nhAlgo)
                   };
                   if (nhP.price > 0) nhPriceCache.set(cacheKey, nhP);
                 }
@@ -664,12 +664,16 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
             // Ignore - use default orderDiff
           }
 
-          // Save to database
+          // Fetch existing last_notified BEFORE the upsert to avoid TDZ error
+          const existingRow = await db.get(`SELECT last_notified FROM rentals WHERE id = ?`, [String(r.id)]).catch(() => null);
+          const existingLastNotified = existingRow?.last_notified || 0;
+
+          // Save to database - CRITICAL: include last_notified so we don't re-notify every cycle
           await db.run(
             `INSERT INTO rentals (
               id, name, client, start_time, end_time, algo, target_100, order_diff, 
-              last_updated, current_hashrate, average_hashrate, advertised_hashrate, price_paid
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              last_updated, current_hashrate, average_hashrate, advertised_hashrate, price_paid, last_notified
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET 
               name=excluded.name, client=excluded.client, algo=excluded.algo,
               start_time=excluded.start_time, end_time=excluded.end_time, 
@@ -678,11 +682,12 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
               current_hashrate=excluded.current_hashrate, 
               average_hashrate=excluded.average_hashrate,
               advertised_hashrate=excluded.advertised_hashrate, 
-              price_paid=excluded.price_paid`,
+              price_paid=excluded.price_paid,
+              last_notified=excluded.last_notified`,
             [
               String(r.id), r.name || r.id, acct, startT, endT, info.algo,
               displayTarget, orderDiff, now, currentHash, average, advertised,
-              info.price?.paid || 0
+              info.price?.paid || 0, existingLastNotified
             ]
           ).catch(err => console.error(`[monitor:db] Upsert error for ${r.id}: ${err.message}`));
 

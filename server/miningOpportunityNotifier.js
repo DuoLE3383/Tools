@@ -408,9 +408,9 @@ export async function scanMiningOpportunities(force = false) {
   }
 
   const profitable = opportunities.filter((o) => o.profitStatus === "profitable");
-  if (profitable.length > 0) {
-    await sendMiningSummary(profitable.slice(0, 10));
-  }
+  // if (profitable.length > 0) {
+  //   await sendMiningSummary(profitable.slice(0, 10));
+  // }
 
   const positiveCount = opportunities.filter(o => (o.spreadPct ?? 0) > 0).length;
 

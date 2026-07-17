@@ -2,14 +2,15 @@
 
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import Accounting from "../Accounting";
-import CryptoRatePage from "../CryptoRatePage";
+import CryptoRatePage from "../../../CryptoRatePage.jsx";
 import NiceHashOrderCard from "./NiceHashOrdersCard.jsx";
-import { getAlgoMapping } from "../../core/mapping.js";
+import { getAlgoMapping, getNiceHashUnit, convertUnit, convertPrice, normalizeAlgo, ALGO_MAPPING, HASHRATE_SUFFIXES } from "../../core/mapping.js";
 import { useNiceHashOrders } from "./NiceHashContext";
 
 function NiceHashOrderManager({ onCall, nhClient, setNhClient }) {
   const {
     nicehashOrders,
+    summary,
     refresh: refreshSummary,
     showPriceLookupModal,
     setShowPriceLookupModal,
@@ -196,7 +197,7 @@ function NiceHashOrderManager({ onCall, nhClient, setNhClient }) {
         <div style={{ background: "rgba(255,255,255,0.03)", padding: "6px 10px", borderRadius: "6px", textAlign: "center" }}>
           <div style={{ fontSize: "9px", opacity: 0.5 }}>Total Paid</div>
           <div style={{ fontSize: "clamp(14px, 1.5vw, 18px)", fontWeight: "bold", color: "#fbbf24" }}>
-            {refreshSummary} BTC
+            {summary.totalPaid} BTC
           </div>
         </div>
         <div style={{ background: "rgba(255,255,255,0.03)", padding: "6px 10px", borderRadius: "6px", textAlign: "center" }}>
@@ -212,6 +213,72 @@ function NiceHashOrderManager({ onCall, nhClient, setNhClient }) {
           </div>
         </div>
       </div>
+
+      {/* Rate Comparison: NiceHash vs MRR (ALGO_MAPPING-driven units) */}
+      {(() => {
+        // Pick the algorithm with the most active orders
+        const algoOrderCounts = {};
+        nicehashOrders.forEach(o => {
+          if (!o.isActive) return;
+          const rawAlgo = typeof o.rawOrder?.algorithm === "object" ? o.rawOrder.algorithm.algorithm : o.algo || '';
+          const key = normalizeAlgo(rawAlgo);
+          algoOrderCounts[key] = (algoOrderCounts[key] || 0) + 1;
+        });
+        const topAlgo = Object.keys(algoOrderCounts).sort((a,b) => algoOrderCounts[b] - algoOrderCounts[a])[0];
+        if (!topAlgo) return null;
+        
+        const mapping = ALGO_MAPPING[topAlgo];
+        if (!mapping) return null;
+
+        const nhUnit = mapping.niceHashUnit || 'TH';
+        const mrrUnitCol = mapping.mrrUnit || 'GH';
+        const displayName = mapping.displayName;
+        
+        // MRR reference rate: 0.00001495 BTC/GH/Day
+        // Both rates in a common base unit (TH) for comparison
+        const mrrRateTH = convertPrice(0.00001495, mrrUnitCol, 'TH');
+        
+        // Average NH price from active orders, convert to TH
+        const activeForAlgo = nicehashOrders.filter(o => {
+          if (!o.isActive) return false;
+          const rawAlgo = typeof o.rawOrder?.algorithm === "object" ? o.rawOrder.algorithm.algorithm : o.algo || '';
+          return normalizeAlgo(rawAlgo) === topAlgo;
+        });
+        const avgNh = activeForAlgo.reduce((s, o) => s + parseFloat(o.price || 0), 0) / activeForAlgo.length;
+        const nhInTH = convertPrice(avgNh || 0, nhUnit, 'TH');
+        
+        const diffPct = mrrRateTH > 0 ? ((nhInTH - mrrRateTH) / mrrRateTH) * 100 : 0;
+        const better = diffPct >= 0 ? "NiceHash" : "MRR";
+        const betterColor = diffPct >= 0 ? "#f59e0b" : "#10b981";
+
+        return (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "8px", marginBottom: "12px" }}>
+            <div style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.2)", padding: "8px 10px", borderRadius: "6px", textAlign: "center" }}>
+              <div style={{ fontSize: "8px", opacity: 0.5, textTransform: "uppercase", letterSpacing: "0.5px" }}>NiceHash • {displayName}</div>
+              <div style={{ fontSize: "clamp(13px, 1.2vw, 16px)", fontWeight: "bold", color: "#f59e0b" }}>
+                {avgNh.toFixed(6)} BTC/{nhUnit}
+              </div>
+              <div style={{ fontSize: "8px", opacity: 0.4 }}>per day</div>
+            </div>
+            <div style={{ background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.2)", padding: "8px 10px", borderRadius: "6px", textAlign: "center" }}>
+              <div style={{ fontSize: "8px", opacity: 0.5, textTransform: "uppercase", letterSpacing: "0.5px" }}>MRR Rate • {displayName}</div>
+              <div style={{ fontSize: "clamp(13px, 1.2vw, 16px)", fontWeight: "bold", color: "#10b981" }}>
+                0.00001495 BTC/{mrrUnitCol}
+              </div>
+              <div style={{ fontSize: "8px", opacity: 0.4 }}>per day</div>
+            </div>
+            <div style={{ background: `rgba(16,185,129,0.06)`, border: `1px solid ${betterColor}33`, padding: "8px 10px", borderRadius: "6px", textAlign: "center" }}>
+              <div style={{ fontSize: "8px", opacity: 0.5, textTransform: "uppercase", letterSpacing: "0.5px" }}>PNL (NH vs MRR)</div>
+              <div style={{ fontSize: "clamp(13px, 1.2vw, 16px)", fontWeight: "bold", color: diffPct >= 0 ? "#10b981" : "#f87171" }}>
+                {diffPct >= 0 ? "+" : ""}{diffPct.toFixed(1)}%
+              </div>
+              <div style={{ fontSize: "8px", opacity: 0.5 }}>
+                <span style={{ color: betterColor, fontWeight: "bold" }}>{better}</span> is better
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Quick Action Buttons */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "16px" }}>
@@ -368,6 +435,8 @@ function NiceHashOrderManager({ onCall, nhClient, setNhClient }) {
                   {sortedOrders.map((o, i) => {
                     const id = o.id || o.orderId || o.hashpowerOrderId;
                     const algo = typeof o.algorithm === "object" ? o.algorithm.algorithm : o.algorithm;
+                    const speedUnit = getNiceHashUnit(algo);
+                    const speedInDisplayUnit = convertUnit(parseFloat(o.acceptedCurrentSpeed || 0), 'H', speedUnit);
                     const poolName = o.pool?.name || o.pool?.stratumHostname || o.title || o.name || "N/A";
                     return (
                       <tr key={id || i} onClick={() => handleOrderSelect(id)} style={{ cursor: "pointer", borderBottom: "1px solid rgba(255,255,255,0.02)" }}>
@@ -375,7 +444,7 @@ function NiceHashOrderManager({ onCall, nhClient, setNhClient }) {
                         <td style={{ padding: "6px" }}>{algo}</td>
                         {nhClient === "VN" && <td style={{ padding: "6px", opacity: 0.7 }}>{o.nhClient}</td>}
                         <td style={{ padding: "6px", textAlign: "right", color: "#f59e0b" }}>{o.price}</td>
-                        <td style={{ padding: "6px", textAlign: "right" }}>{parseFloat(o.acceptedCurrentSpeed || 0).toFixed(4)}</td>
+                        <td style={{ padding: "6px", textAlign: "right" }}>{speedInDisplayUnit.toFixed(4)} {speedUnit}/s</td>
                       </tr>
                     );
                   })}

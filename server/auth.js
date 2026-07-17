@@ -5,7 +5,7 @@ import { randomUUID } from 'crypto';
 import { getDb } from './db.js';
 
 // ---------- Configuration ----------
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-for-dev-only';
+const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '1h';
 const BCRYPT_ROUNDS = parseInt(process.env.BCRYPT_ROUNDS, 10) || 10;
 const AUTH_EPOCH_KEY = 'auth_epoch';

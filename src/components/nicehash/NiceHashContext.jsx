@@ -217,7 +217,7 @@ export function NiceHashOrderProvider({ children, nhClient, callApi }) {
 
       // Create the final list: all active orders + the last 20 inactive ones
       const finalActive = processed.filter((p) => p.isActive);
-      const finalInactive = processed.filter((p) => !p.isActive).slice(0, 20);
+      const finalInactive = processed.filter((p) => !p.isActive).slice(0, 100);
       const combinedList = [...finalActive, ...finalInactive];
 
       // Calculate total paid

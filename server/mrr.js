@@ -113,7 +113,7 @@ const mrrInstances = new Map();
 // LOGGING WITH RATE LIMITING
 // ============================================
 const logCooldown = new Map();
-const LOG_COOLDOWN_MS = 5000; // 5 seconds cooldown for repeated logs
+const LOG_COOLDOWN_MS = 30000; // 30 seconds cooldown for repeated logs
 
 function shouldLog(key, message) {
   const now = Date.now();
@@ -135,7 +135,7 @@ function logOnce(level, key, message, ...args) {
 }
 
 const ghostRentalIds = new Set(); // Track ghost rental IDs
-const GHOST_RENTAL_CACHE_TTL = 3600000; // 1 hour
+const GHOST_RENTAL_CACHE_TTL = 43200000; // 12 hour
 
 // Function to check if a rental is a ghost
 function isGhostRental(rental) {

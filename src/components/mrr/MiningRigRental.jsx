@@ -5,8 +5,8 @@ import MrrRigs from "./MrrRigs";
 import Modal from "../Modal";
 import TelegramManager, { useTelegram } from "../TelegramManager";
 import { calculateRemainingTime, toUtcTimestamp } from "../../core/time";
-import ErrorBoundary from "../ErrorBoundary"; 
-import CryptoRatePage from "../../../CryptoRatePage.jsx"; 
+import ErrorBoundary from "../ErrorBoundary";
+import { NiceHashOrderProvider } from "../nicehash/NiceHashContext";
 
 // ============================================
 // UTILITY FUNCTIONS
@@ -289,7 +289,9 @@ export default function MiningRigRental({
   const [mrrSummaryData, setMrrSummaryData] = useState(null);
   const lastSummarySentTime = useRef(0);
   const [newRentalFound, setNewRentalFound] = useState(null);
+  const [completedRental, setCompletedRental] = useState(null);
   const knownRentalIds = useRef(new Set());
+  const completedRentalIds = useRef(new Set());
   const notifiedAlerts = useRef(new Set());
   const conditionTimers = useRef(new Map());
   const fetchInFlightRef = useRef(false);
@@ -316,6 +318,16 @@ export default function MiningRigRental({
           return endTs > now;
         });
 
+        // Detect completed rentals: IDs we knew about that are no longer in the active list
+        const currentActiveIds = new Set(newList.map(r => String(r.id)));
+        const completedIds = [];
+        for (const knownId of knownRentalIds.current) {
+          if (!currentActiveIds.has(knownId) && !completedRentalIds.current.has(knownId)) {
+            completedIds.push(knownId);
+            completedRentalIds.current.add(knownId);
+          }
+        }
+
         const fresh = newList.find((r) => {
           const isKnown = knownRentalIds.current.has(String(r.id));
           const startTime = toUtcTimestamp(r.start);
@@ -329,6 +341,30 @@ export default function MiningRigRental({
               body: `New rental active for ${fresh.hours}h`,
             });
           }
+        }
+
+        // Show completion notification for first completed rental
+        if (completedIds.length > 0) {
+          const completedRentalIdsList = completedIds;
+          // Fetch the most recent completed rental info from the API
+          onCall(`/api/v2/mrr/rentals?client=${mrrClient}`, { silent: true, query: { limit: 200 } }).then(fullResult => {
+            if (fullResult?.success) {
+              const fullList = extractArray(fullResult);
+              const completedRentals = fullList.filter(r => completedRentalIdsList.includes(String(r.id)));
+              if (completedRentals.length > 0) {
+                // Show notification for first completed rental
+                const comp = completedRentals[0];
+                setCompletedRental(comp);
+                if (Notification.permission === "granted") {
+                  new Notification(`✅ Rental Completed: ${comp.name || comp.id}`, {
+                    body: `Rig finished mining. Efficiency: ${comp.percent || 'N/A'}%`,
+                  });
+                }
+              }
+            }
+          }).catch(() => {});
+          // Also send Telegram notification
+          tg.notifyRentalCompleted(completedRentalIdsList).catch(() => {});
         }
 
         newList.forEach((r) => {
@@ -471,7 +507,22 @@ export default function MiningRigRental({
       return { success: false, message: err.message };
     }
   };
-  const [isCryptoRateModalOpen, setIsCryptoRateModalOpen] = useState(false);
+  // NiceHash price update modal
+  const [updateRatesModal, setUpdateRatesModal] = useState({ open: false, loading: false, result: null, premium: 0 });
+  
+  const handleUpdateNiceHashRates = useCallback(async () => {
+    setUpdateRatesModal(prev => ({ ...prev, open: true, loading: true, result: null }));
+    try {
+      const result = await onCall('/api/v2/hashpower/orders/update-prices', {
+        method: 'POST',
+        body: { client: mrrClient || 'VN', premium: updateRatesModal.premium },
+        silent: true,
+      });
+      setUpdateRatesModal(prev => ({ ...prev, loading: false, result }));
+    } catch (err) {
+      setUpdateRatesModal(prev => ({ ...prev, loading: false, result: { success: false, error: err.message } }));
+    }
+  }, [onCall, mrrClient, updateRatesModal.premium]);
 
   return (
     <div className="rig-section" style={{ 
@@ -491,7 +542,7 @@ export default function MiningRigRental({
         <button className="btn-pro secondary" onClick={() => openManagementModal("list")} style={{ fontSize: "clamp(10px, 1vw, 12px)", padding: "4px 12px" }}>
             📋 Rigs
           </button>
-          <button className="btn-pro secondary" onClick={() => setIsCryptoRateModalOpen(true)} style={{ fontSize: "clamp(10px, 1vw, 12px)", padding: "4px 12px" }}>
+          <button className="btn-pro primary" onClick={() => setUpdateRatesModal(prev => ({ ...prev, open: true, loading: false, result: null, premium: 0 }))} style={{ fontSize: "clamp(10px, 1vw, 12px)", padding: "4px 12px" }}>
             🚦Update Nicehash Rates
           </button>
         <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center" }}>
@@ -659,6 +710,103 @@ export default function MiningRigRental({
           <button className="btn-pro secondary" onClick={() => setActiveModal(null)}>Close</button>
         </div>
       </Modal>
+
+      {/* NiceHash Update Rates Modal */}
+      <Modal isOpen={updateRatesModal.open} onClose={() => setUpdateRatesModal(prev => ({ ...prev, open: false }))} title="🚦 Update NiceHash Order Prices" maxWidth="700px">
+        <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          {!updateRatesModal.loading && !updateRatesModal.result && (
+            <>
+              <div style={{ color: '#94a3b8', fontSize: '12px' }}>
+                This will update all <strong>ACTIVE</strong> NiceHash orders to current market prices.
+                Orders already within 1% of market price will be skipped.
+              </div>
+              {/* Premium slider */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <label style={{ color: '#94a3b8', fontSize: '11px', whiteSpace: 'nowrap' }}>Premium %:</label>
+                <input type="range" min="0" max="20" step="1" value={updateRatesModal.premium * 100}
+                  onChange={(e) => setUpdateRatesModal(prev => ({ ...prev, premium: parseFloat(e.target.value) / 100 }))}
+                  style={{ flex: 1 }} />
+                <span style={{ color: '#fbbf24', fontWeight: 700, fontSize: '13px', minWidth: '50px', textAlign: 'right' }}>
+                  {(updateRatesModal.premium * 100).toFixed(0)}%
+                </span>
+              </div>
+              <div style={{ color: '#64748b', fontSize: '10px', textAlign: 'center' }}>
+                Prices will be set to market rate {updateRatesModal.premium > 0 ? `+ ${(updateRatesModal.premium * 100).toFixed(0)}%` : ''}
+              </div>
+              <button className="btn-pro primary" onClick={handleUpdateNiceHashRates} style={{ padding: '8px', fontSize: '13px', fontWeight: 900 }}>
+                🚀 Update All Orders
+              </button>
+            </>
+          )}
+          {updateRatesModal.loading && (
+            <div style={{ textAlign: 'center', padding: '30px', color: '#94a3b8' }}>
+              ⏳ Fetching market prices and updating orders...
+            </div>
+          )}
+          {updateRatesModal.result && !updateRatesModal.loading && (
+            <>
+              {/* Summary */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '8px' }}>
+                <SummaryBox label="Updated" value={updateRatesModal.result.summary?.updated || 0} color="#34d399" />
+                <SummaryBox label="Skipped" value={updateRatesModal.result.summary?.skipped || 0} color="#94a3b8" />
+                <SummaryBox label="Errors" value={updateRatesModal.result.summary?.errors || 0} color="#f87171" />
+              </div>
+              {updateRatesModal.result.error && (
+                <div style={{ color: '#f87171', fontSize: '12px', padding: '8px', background: 'rgba(248,113,113,0.1)', borderRadius: '6px' }}>
+                  ⚠ {updateRatesModal.result.error}
+                </div>
+              )}
+              {/* Results table */}
+              {updateRatesModal.result.results?.length > 0 && (
+                <div style={{ maxHeight: '250px', overflowY: 'auto', background: 'rgba(0,0,0,0.15)', borderRadius: '6px' }}>
+                  <table style={{ width: '100%', fontSize: '10px', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid rgba(148,163,184,0.1)', color: '#94a3b8' }}>
+                        <th style={{ padding: '4px', textAlign: 'left' }}>Client</th>
+                        <th style={{ padding: '4px', textAlign: 'left' }}>Algo</th>
+                        <th style={{ padding: '4px', textAlign: 'right' }}>Old</th>
+                        <th style={{ padding: '4px', textAlign: 'right' }}>New</th>
+                        <th style={{ padding: '4px', textAlign: 'center' }}>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {updateRatesModal.result.results.map((clientResult, ci) => (
+                        (clientResult.orders || []).map((o, oi) => (
+                          <tr key={`${ci}-${oi}`} style={{ borderBottom: '1px solid rgba(148,163,184,0.04)' }}>
+                            <td style={{ padding: '3px 4px', color: '#60a5fa' }}>{clientResult.client}</td>
+                            <td style={{ padding: '3px 4px' }}>{o.algorithm || '-'}</td>
+                            <td style={{ padding: '3px 4px', textAlign: 'right', color: '#64748b' }}>{o.oldPrice?.toFixed(8) || '-'}</td>
+                            <td style={{ padding: '3px 4px', textAlign: 'right', color: o.status === 'updated' ? '#34d399' : '#64748b' }}>
+                              {o.newPrice?.toFixed(8) || '-'}
+                            </td>
+                            <td style={{ padding: '3px 4px', textAlign: 'center' }}>
+                              {o.status === 'updated' ? <span style={{ color: '#34d399' }}>✅</span> :
+                               o.status === 'skipped' ? <span style={{ color: '#94a3b8' }}>➖</span> :
+                               <span style={{ color: '#f87171' }}>❌</span>}
+                            </td>
+                          </tr>
+                        ))
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <button className="btn-pro secondary" onClick={() => setUpdateRatesModal(prev => ({ ...prev, open: false }))} style={{ padding: '6px' }}>
+                Close
+              </button>
+            </>
+          )}
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
+function SummaryBox({ label, value, color }) {
+  return (
+    <div style={{ background: 'rgba(0,0,0,0.15)', borderRadius: '6px', padding: '10px', textAlign: 'center' }}>
+      <div style={{ color: '#64748b', fontSize: '9px', textTransform: 'uppercase', marginBottom: '2px' }}>{label}</div>
+      <div style={{ color, fontSize: '20px', fontWeight: 900 }}>{value}</div>
     </div>
   );
 }

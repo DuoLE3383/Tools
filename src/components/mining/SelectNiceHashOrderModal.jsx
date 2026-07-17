@@ -1,6 +1,7 @@
 // src/components/mining/SelectNiceHashOrderModal.jsx
 import { useState, useEffect, useCallback } from 'react';
 import Modal from '../Modal';
+import { getNiceHashUnit, convertUnit } from '../../core/mapping';
 
 export default function SelectNiceHashOrderModal({
   isOpen,
@@ -61,12 +62,15 @@ export default function SelectNiceHashOrderModal({
             <tbody>
               {orders.map(order => {
                 const poolName = order.pool?.name || order.pool?.stratumHostname || 'N/A';
+                const orderAlgo = typeof order.algorithm === 'object' ? order.algorithm.algorithm : order.algorithm;
+                const speedUnit = getNiceHashUnit(orderAlgo);
+                const speedInDisplayUnit = convertUnit(parseFloat(order.acceptedCurrentSpeed || 0), 'H', speedUnit);
                 return (
                   <tr key={order.id} style={{ borderBottom: '1px solid rgba(148,163,184,0.1)' }}>
                     <td style={{ padding: '8px', fontFamily: 'monospace' }}>{order.id.slice(0, 8)}...</td>
                     <td style={{ padding: '8px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '150px' }}>{poolName}</td>
                     <td style={{ padding: '8px', textAlign: 'right', color: '#fbbf24' }}>{parseFloat(order.price || 0).toFixed(8)}</td>
-                    <td style={{ padding: '8px', textAlign: 'right' }}>{parseFloat(order.acceptedCurrentSpeed || 0).toFixed(2)} GH/s</td>
+                    <td style={{ padding: '8px', textAlign: 'right' }}>{speedInDisplayUnit.toFixed(4)} {speedUnit}/s</td>
                     <td style={{ padding: '8px', color: '#60a5fa' }}>{order.nhClient || 'N/A'}</td>
                     <td style={{ padding: '8px', textAlign: 'right' }}>
                       <button className="btn-pro primary" onClick={() => onSelect(order)} style={{ fontSize: '11px', padding: '4px 12px' }}>Select</button>

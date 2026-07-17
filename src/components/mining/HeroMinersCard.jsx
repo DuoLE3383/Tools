@@ -1,18 +1,15 @@
-// HeroMinersCard.jsx - Using ONLY mapping.js
+// HeroMinersCard.jsx - Profit estimates with NiceHash cost comparison
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { fetchMiningStats } from "./miningStatsFetcher.js";
 import { useRentedRigs } from "../mrr/RentedRigContext.jsx";
 import { useCoinPrice } from "./CoinPriceContext.jsx";
 import "./HeroMinersCard.css";
 
-// ✅ ONLY import from mapping - single source of truth
 import {
-  getAlgoDisplayName, // For display names
-  getAlgorithmUnit, // For units
-  mapNiceHashToMRR, // For MRR mapping
-  normalizeAlgoForNiceHash, // For NiceHash normalization
-  normalizeAlgo, // For general normalization
-  ALGO_MAPPING, // If you need the raw mapping
+  getAlgoDisplayName,
+  getAlgorithmUnit,
+  normalizeAlgo,
+  ALGO_MAPPING,
 } from "../../core/mapping";
 
 // ============================================
@@ -539,17 +536,90 @@ function HeroMinersTable({
 }
 
 // ============================================
-// MAIN COMPONENT - GLOBAL SNAPSHOT ONLY
+// PROFIT ESTIMATE TABLE
+// ============================================
+function ProfitEstimateTable({ estimates, onSort, sortConfig, filterMiningOnly, activeAlgos }) {
+  const sorted = useMemo(() => {
+    if (!estimates || !Array.isArray(estimates)) return [];
+    let list = [...estimates];
+    if (filterMiningOnly && activeAlgos.size > 0) {
+      list = list.filter(e => [...activeAlgos].some(a => normalizeAlgo(a) === normalizeAlgo(e.algorithm)));
+    }
+    list.sort((a, b) => {
+      const key = sortConfig.key;
+      let aVal, bVal;
+      if (key === 'netUsdPerDay') { aVal = a.netUsdPerDay || 0; bVal = b.netUsdPerDay || 0; }
+      else if (key === 'roiPercent') { aVal = a.roiPercent ?? -9999; bVal = b.roiPercent ?? -9999; }
+      else if (key === 'poolUsdPerDay') { aVal = a.poolUsdPerDay || 0; bVal = b.poolUsdPerDay || 0; }
+      else if (key === 'nhCostUsdPerDay') { aVal = a.nhCostUsdPerDay || 0; bVal = b.nhCostUsdPerDay || 0; }
+      else if (key === 'miners') { aVal = a.miners || 0; bVal = b.miners || 0; }
+      else { aVal = String(a.algorithmDisplay || '').toLowerCase(); bVal = String(b.algorithmDisplay || '').toLowerCase(); }
+      if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+    return list;
+  }, [estimates, sortConfig, filterMiningOnly, activeAlgos]);
+
+  if (!sorted.length) {
+    return <div style={{ padding: '10px', textAlign: 'center', color: '#64748b', fontSize: '10px' }}>No profit estimates available</div>;
+  }
+
+  return (
+    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '9px' }}>
+      <thead>
+        <tr style={{ background: '#000', color: '#f5f5f5' }}>
+          {[
+            { key: 'algorithmDisplay', label: 'ALGO' },
+            { key: 'miners', label: 'MIN' },
+            { key: 'poolUsdPerDay', label: 'REV $/D' },
+            { key: 'nhCostUsdPerDay', label: 'NH $/D' },
+            { key: 'netUsdPerDay', label: 'NET $/D' },
+            { key: 'roiPercent', label: 'ROI%' },
+          ].map(h => (
+            <th key={h.key}
+              style={{ padding: '4px', textAlign: h.key === 'algorithmDisplay' ? 'left' : 'right', fontWeight: 900, cursor: 'pointer' }}
+              onClick={() => onSort(h.key)}>{h.label}</th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {sorted.map((e, i) => {
+          const statusColor = e.status === 'profitable' ? '#34d399' : e.status === 'unprofitable' ? '#f87171' : '#94a3b8';
+          return (
+            <tr key={e.algorithm || i} style={{ borderBottom: '1px solid #000' }}>
+              <td style={{ padding: '3px 4px', color: '#f5f5f5', fontWeight: 700 }}>{e.algorithmDisplay}</td>
+              <td style={{ padding: '3px 4px', textAlign: 'right', color: '#94a3b8' }}>{formatNumber(e.miners, 0)}</td>
+              <td style={{ padding: '3px 4px', textAlign: 'right', color: '#fbbf24' }}>${(e.poolUsdPerDay || 0).toFixed(2)}</td>
+              <td style={{ padding: '3px 4px', textAlign: 'right', color: e.nhCostUsdPerDay > 0 ? '#f87171' : '#64748b' }}>{e.nhCostUsdPerDay > 0 ? `$${e.nhCostUsdPerDay.toFixed(2)}` : 'N/A'}</td>
+              <td style={{ padding: '3px 4px', textAlign: 'right', fontWeight: 900, color: statusColor }}>
+                ${(e.netUsdPerDay || 0).toFixed(2)}
+              </td>
+              <td style={{ padding: '3px 4px', textAlign: 'right', fontWeight: 900, color: e.roiPercent !== null ? (e.roiPercent > 0 ? '#34d399' : '#f87171') : '#64748b' }}>
+                {e.roiPercent !== null ? `${e.roiPercent.toFixed(0)}%` : '-'}
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+// ============================================
+// MAIN COMPONENT - GLOBAL SNAPSHOT + PROFIT ESTIMATES
 // ============================================
 export default function HeroMinersCard({
   onCall,
   pollInterval = 30000,
 }) {
   const [heroGlobalStats, setHeroGlobalStats] = useState(null);
+  const [profitEstimates, setProfitEstimates] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [sortConfig, setSortConfig] = useState({ key: "btcPerDay", direction: "desc" });
+  const [sortConfig, setSortConfig] = useState({ key: "netUsdPerDay", direction: "desc" });
   const [filterMiningOnly, setFilterMiningOnly] = useState(false);
+  const [viewMode, setViewMode] = useState('revenue'); // 'revenue' or 'profit'
   const pollTimerRef = useRef(null);
   const { rentedRigs } = useRentedRigs();
 
@@ -582,44 +652,94 @@ export default function HeroMinersCard({
     }));
   }, []);
 
-  const fetchHeroMiners = useCallback(async (force = false) => {
+  const fetchAllData = useCallback(async (force = false) => {
     setLoading(true);
     try {
-      const stats = await fetchMiningStats("herominers", "VN", null, null, 20000, force);
-      if (stats?.success) { setHeroGlobalStats(stats); setError(null); }
-      else { setHeroGlobalStats(null); setError(stats?.error || "Failed."); }
-    } catch (err) { setHeroGlobalStats(null); setError(err.message); }
-    finally { setLoading(false); }
+      // Fetch both in parallel
+      const [statsResult, profitResult] = await Promise.allSettled([
+        (async () => {
+          const stats = await fetchMiningStats("herominers", "VN", null, null, 20000, force);
+          return stats;
+        })(),
+        (async () => {
+          const res = await fetch(`/api/v2/mining-stats/herominers/profit-estimates?force=${force}`, {
+            signal: AbortSignal.timeout(25000),
+          });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return await res.json();
+        })(),
+      ]);
+
+      if (statsResult.status === 'fulfilled' && statsResult.value?.success) {
+        setHeroGlobalStats(statsResult.value);
+      }
+      if (profitResult.status === 'fulfilled' && profitResult.value?.success) {
+        setProfitEstimates(profitResult.value);
+      }
+      setError(null);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
-    queueMicrotask(() => void fetchHeroMiners());
+    queueMicrotask(() => void fetchAllData());
     if (pollInterval > 0) {
-      pollTimerRef.current = setInterval(() => void fetchHeroMiners(), pollInterval);
+      pollTimerRef.current = setInterval(() => void fetchAllData(), pollInterval);
     }
     return () => { if (pollTimerRef.current) clearInterval(pollTimerRef.current); };
-  }, [fetchHeroMiners, pollInterval]);
+  }, [fetchAllData, pollInterval]);
 
   const refreshData = useCallback(() => {
-    if (pollTimerRef.current) { clearInterval(pollTimerRef.current); pollTimerRef.current = setInterval(() => void fetchHeroMiners(), pollInterval); }
-    void fetchHeroMiners(true);
-  }, [fetchHeroMiners, pollInterval]);
+    if (pollTimerRef.current) { clearInterval(pollTimerRef.current); pollTimerRef.current = setInterval(() => void fetchAllData(), pollInterval); }
+    void fetchAllData(true);
+  }, [fetchAllData, pollInterval]);
 
   const heroStats = heroGlobalStats?.coinStats || [];
+  const estimates = profitEstimates?.estimates || [];
+
+  // Count profitable algos
+  const profitableCount = estimates.filter(e => e.status === 'profitable').length;
 
   return (
     <div style={{ padding: "12px", background: "#1e1e2e", border: "3px solid #000", boxShadow: "6px 6px 0px #000", display: "flex", flexDirection: "column", gap: "8px" }}>
+      {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
         <div>
-          <h4 style={{ margin: 0, color: "#38bdf8", fontSize: "14px", fontWeight: 900, textTransform: "uppercase" }}>🔍 HEROMINERS</h4>
-          <div style={{ fontSize: "9px", color: "#94a3b8", fontWeight: 700 }}>
-            {heroGlobalStats?.miners ? `${formatNumber(heroGlobalStats.miners)} miners` : "GLOBAL SNAPSHOT"}
+          <h4 style={{ margin: 0, color: "#38bdf8", fontSize: "14px", fontWeight: 900, textTransform: "uppercase" }}>
+            🔍 HEROMINERS PROFIT
+          </h4>
+          <div style={{ fontSize: "9px", color: "#94a3b8", fontWeight: 700, display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            {heroGlobalStats?.miners ? `${formatNumber(heroGlobalStats.miners)} miners` : ''}
+            {profitableCount > 0 && (
+              <span style={{ color: '#34d399' }}>{profitableCount} profitable</span>
+            )}
+            {profitEstimates?.btcPrice > 0 && (
+              <span style={{ color: '#fbbf24' }}>BTC: ${profitEstimates.btcPrice.toLocaleString()}</span>
+            )}
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+          {/* View mode toggle */}
+          <div style={{ display: 'flex', border: '2px solid #000', borderRadius: '2px', overflow: 'hidden' }}>
+            <button onClick={() => setViewMode('revenue')} style={{
+              fontSize: '8px', fontWeight: 900, padding: '2px 6px',
+              background: viewMode === 'revenue' ? '#38bdf8' : '#2d2d3d',
+              color: viewMode === 'revenue' ? '#000' : '#94a3b8',
+              border: 'none', cursor: 'pointer',
+            }}>REV</button>
+            <button onClick={() => setViewMode('profit')} style={{
+              fontSize: '8px', fontWeight: 900, padding: '2px 6px',
+              background: viewMode === 'profit' ? '#34d399' : '#2d2d3d',
+              color: viewMode === 'profit' ? '#000' : '#94a3b8',
+              border: 'none', cursor: 'pointer',
+            }}>PROFIT</button>
+          </div>
           <label style={{ fontSize: "9px", display: "flex", alignItems: "center", gap: "4px", cursor: "pointer", color: "#94a3b8", fontWeight: 700 }}>
             <input type="checkbox" checked={filterMiningOnly} onChange={(e) => setFilterMiningOnly(e.target.checked)} />
-            MINING ONLY{filterMiningOnly && <span style={{ color: "#38bdf8" }}>({activeAlgos.size})</span>}
+            MY RIGS{filterMiningOnly && <span style={{ color: "#38bdf8" }}>({activeAlgos.size})</span>}
           </label>
           <button onClick={refreshData} disabled={loading} style={{ fontSize: "9px", fontWeight: 900, padding: "2px 8px", background: "#2d2d3d", border: "2px solid #000", color: "#f5f5f5", cursor: "pointer" }}>
             {loading ? "⏳" : "⟳"}
@@ -627,7 +747,8 @@ export default function HeroMinersCard({
         </div>
       </div>
 
-      <div style={{ maxHeight: "260px", overflowY: "auto", background: "#16161e", border: "2px solid #000" }}>
+      {/* Table */}
+      <div style={{ maxHeight: "320px", overflowY: "auto", background: "#16161e", border: "2px solid #000" }}>
         {loading && !error && <div style={{ padding: "16px", textAlign: "center", color: "#64748b", fontWeight: 700, fontSize: "10px" }}>LOADING...</div>}
         {error && (
           <div style={{ padding: "10px", textAlign: "center" }}>
@@ -635,13 +756,13 @@ export default function HeroMinersCard({
             <button onClick={refreshData} style={{ marginTop: "4px", fontSize: "9px", fontWeight: 900, padding: "2px 8px", background: "#2d2d3d", border: "2px solid #000", color: "#f5f5f5", cursor: "pointer" }}>RETRY</button>
           </div>
         )}
-        {!error && !loading && (
+        {!error && !loading && viewMode === 'revenue' && (
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "9px" }}>
             <thead>
               <tr style={{ background: "#000", color: "#f5f5f5" }}>
-                {["ALGO", "MIN", "USD/D", "BTC/D"].map((h) => (
-                  <th key={h} style={{ padding: "4px", textAlign: h === "ALGO" ? "left" : "right", fontWeight: 900, cursor: "pointer" }}
-                    onClick={() => requestSort(h === "ALGO" ? "algorithm" : h === "MIN" ? "miners" : h === "USD/D" ? "usdPerDay" : "btcPerDay")}>{h}</th>
+                {["ALGO", "MIN", "USD/D", "BTC/D"].map((h, i) => (
+                  <th key={h} style={{ padding: "4px", textAlign: i === 0 ? "left" : "right", fontWeight: 900, cursor: "pointer" }}
+                    onClick={() => requestSort(i === 0 ? "algorithm" : i === 1 ? "miners" : i === 2 ? "usdPerDay" : "btcPerDay")}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -649,7 +770,7 @@ export default function HeroMinersCard({
               {(filterMiningOnly && activeAlgos.size > 0
                 ? heroStats.filter((item) => { const n = normalizeAlgo(item.algorithm || ""); return [...activeAlgos].some(a => n.includes(normalizeAlgo(a)) || normalizeAlgo(a).includes(n)); })
                 : heroStats
-              ).sort((a, b) => (b.btcPerDay || 0) - (a.btcPerDay || 0)).slice(0, 15).map((item, i) => (
+              ).sort((a, b) => (b.btcPerDay || 0) - (a.btcPerDay || 0)).slice(0, 20).map((item, i) => (
                 <tr key={`${item.algorithm || i}`} style={{ borderBottom: "1px solid #000" }}>
                   <td style={{ padding: "3px 4px", color: "#f5f5f5", fontWeight: 700 }}>{getAlgoDisplayName(item.algorithm || item.algo || "N/A")}</td>
                   <td style={{ padding: "3px 4px", textAlign: "right", color: "#94a3b8", fontWeight: 700 }}>{formatNumber(item.miners, 0)}</td>
@@ -660,7 +781,26 @@ export default function HeroMinersCard({
             </tbody>
           </table>
         )}
+        {!error && !loading && viewMode === 'profit' && (
+          <ProfitEstimateTable
+            estimates={estimates}
+            onSort={requestSort}
+            sortConfig={sortConfig}
+            filterMiningOnly={filterMiningOnly}
+            activeAlgos={activeAlgos}
+          />
+        )}
       </div>
+
+      {/* Legend */}
+      {viewMode === 'profit' && (
+        <div style={{ fontSize: '8px', color: '#64748b', display: 'flex', gap: '12px', padding: '2px 0' }}>
+          <span>REV: Pool revenue</span>
+          <span>NH: NiceHash cost</span>
+          <span style={{ color: '#34d399' }}>NET: Revenue - Cost</span>
+          <span style={{ color: '#fbbf24' }}>ROI: Return on Investment</span>
+        </div>
+      )}
     </div>
   );
 }

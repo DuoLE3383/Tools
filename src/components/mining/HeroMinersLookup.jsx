@@ -312,6 +312,66 @@ export default function HeroMinersLookup({ onCall, coinPrices }) {
                       <MiniStatUSD label="Paid (24h)" value={ps.paid24h || "0"} usd={paid24hUsd} color="#a78bfa" />
                     </div>
 
+                    {/* Mining Projections */}
+                    {(() => {
+                      const paid24hNum = parseAmount(ps.paid24h || '0');
+                      // Get BTC price from coinPrices (bitcoin entry) or use fallback
+                      const btcPriceCoin = Object.values(coinPrices || {}).find(p => p.symbol?.toLowerCase() === 'btc')?.usd || 64500;
+                      if (paid24hNum > 0) {
+                        const daily = paid24hNum;
+                        const weekly = daily * 7;
+                        const monthly = daily * 30;
+                        const fmtCoin = (v) => v >= 1000 ? v.toFixed(1) : v >= 1 ? v.toFixed(4) : v.toFixed(6);
+                        const fmtBtc = (v) => (v * price / btcPriceCoin).toFixed(6);
+                        const fmtUsd = (v) => (v * price).toFixed(2);
+                        return (
+                          <div style={{
+                            background: "rgba(0,0,0,0.2)",
+                            borderRadius: "6px",
+                            padding: "6px 8px",
+                            fontSize: "9px",
+                            border: "1px solid rgba(148,163,184,0.08)",
+                          }}>
+                            <div style={{ color: "#94a3b8", marginBottom: "4px", fontWeight: 700, fontSize: "8px", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                              📈 Mining Projections
+                            </div>
+                            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                              <thead>
+                                <tr style={{ color: "#64748b", borderBottom: "1px solid rgba(148,163,184,0.08)" }}>
+                                  <th style={{ padding: "2px 4px", textAlign: "left", fontWeight: 600 }}></th>
+                                  <th style={{ padding: "2px 4px", textAlign: "right", fontWeight: 600 }}>{pair.coin}</th>
+                                  <th style={{ padding: "2px 4px", textAlign: "right", fontWeight: 600 }}>USD</th>
+                                  <th style={{ padding: "2px 4px", textAlign: "right", fontWeight: 600 }}>BTC</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {[
+                                  { label: "Daily", value: daily },
+                                  { label: "Weekly", value: weekly },
+                                  { label: "Monthly", value: monthly },
+                                ].map(r => (
+                                  <tr key={r.label} style={{ borderBottom: "1px solid rgba(148,163,184,0.04)" }}>
+                                    <td style={{ padding: "2px 4px", color: "#94a3b8", fontWeight: 700 }}>{r.label}</td>
+                                    <td style={{ padding: "2px 4px", textAlign: "right", color: "#e2e8f0", fontFamily: "monospace" }}>{fmtCoin(r.value)}</td>
+                                    <td style={{ padding: "2px 4px", textAlign: "right", color: (r.value * price) >= 1 ? "#fbbf24" : "#64748b", fontFamily: "monospace" }}>
+                                      ${fmtUsd(r.value)}
+                                    </td>
+                                    <td style={{ padding: "2px 4px", textAlign: "right", color: "#34d399", fontFamily: "monospace", fontWeight: 700 }}>
+                                      {fmtBtc(r.value)} <span style={{ color: "#64748b", fontSize: "8px" }}>BTC</span>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                            <div style={{ fontSize: "8px", color: "#64748b", marginTop: "3px", fontStyle: "italic" }}>
+                              Based on 24h paid average
+                            </div>
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
+
                     {/* Shares + Blocks */}
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: "10px", color: "#64748b", borderTop: "1px solid rgba(148,163,184,0.08)", paddingTop: "4px", marginTop: '2px' }}>
                       <span>Valid: {(ss.valid || 0).toLocaleString()} · Stale: {(ss.stale || 0).toLocaleString()}</span>

@@ -86,7 +86,7 @@ export const convertPriceBetweenUnits = (price, fromUnit, toUnit) => {
   
   const fromPower = UNIT_TO_POWER[cleanUnit(fromUnit)] ?? -6;
   const toPower = UNIT_TO_POWER[cleanUnit(toUnit)] ?? -6;
-  return price * Math.pow(10, fromPower - toPower);
+  return price * Math.pow(10, toPower - fromPower);
 };
 
 /**

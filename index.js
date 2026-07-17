@@ -88,7 +88,6 @@ app.use(express.urlencoded({ extended: true }));
 app.use((req, res, next) => {
   res.setHeader(
     'Content-Security-Policy',
-    // This policy allows scripts and connections for the app, Cloudflare, and API subdomains.
     "default-src 'self'; " +
     "script-src 'self' 'unsafe-inline' https://huyenbao.com https://www.huyenbao.com https://static.cloudflareinsights.com; " +
     "style-src 'self' 'unsafe-inline'; " +
@@ -204,8 +203,27 @@ async function cleanupStoredClientTags() {
 // ============================================================
 async function startServer() {
   try {
+    // ============================================================
+    // PRE-FLIGHT: Kill stale process on our port
+    // ============================================================
+    try {
+      const { execSync } = await import("child_process");
+      const portCheck = execSync(`lsof -i :${PORT} -t 2>/dev/null || true`, { encoding: "utf-8" }).trim();
+      if (portCheck) {
+        const pids = portCheck.split("\n").filter(p => p && String(p).trim() !== String(process.pid));
+        if (pids.length > 0) {
+          console.log(`[init] ⚠️ Port ${PORT} is in use by PID(s): ${pids.join(", ")}. Killing...`);
+          execSync(`kill -9 ${pids.join(" ")} 2>/dev/null || true`);
+          await new Promise(r => setTimeout(r, 500));
+          console.log(`[init] ✅ Port ${PORT} freed`);
+        }
+      }
+    } catch (_) {
+      // lsof not available or other error — skip pre-flight
+    }
+
     console.log("[init] Initializing database...");
-    await getDb(); // This initializes and connects to the database.
+    await getDb();
 
     console.log("[init] Merging databases into stats.db...");
     try {
@@ -236,7 +254,16 @@ async function startServer() {
     console.log("[init] Initializing app...");
     await initializeApp(process.env);
 
-    // Register available-coins route BEFORE registerRoutes (must be before the /api 404 catch-all)
+    // ============================================================
+    // ✅ REGISTER ALL ROUTES (INCLUDING AUTH) - BEFORE ANY API 404 HANDLER
+    // ============================================================
+    console.log("[init] Registering routes...");
+    registerRoutes(app);
+    console.log("[Routes] All routes registered");
+
+    // ============================================================
+    // ✅ Register available-coins route (already in routes, but keep for safety)
+    // ============================================================
     app.get('/api/v2/db/available-coins', authMiddleware, async (req, res) => {
       try {
         const db = await getDb();
@@ -249,26 +276,29 @@ async function startServer() {
         res.json({ success: true, data: rows });
       } catch (error) {
         console.error('[DB] Error fetching available coins:', error);
-        // Never return 500 — return empty array so frontend doesn't break
         res.json({ success: true, data: [] });
       }
     });
 
-    console.log("[init] Registering routes...");
-    registerRoutes(app);
-    console.log("[Routes] All routes registered");
-
-    // Serve static files
-    app.use(express.static(distPath));
-
-    // API 404 handler
-    app.use('/src', (req, res) => {
-        res.status(404).send('Source files are not served in this environment.');
+    // ============================================================
+    // ✅ API 404 HANDLER - MUST BE AFTER ALL ROUTES
+    // ============================================================
+    app.use("/api", (req, res) => {
+      console.log(`[404] API endpoint not found: ${req.method} ${req.path}`);
+      res.status(404).json({ 
+        success: false, 
+        error: "API endpoint not found", 
+        path: req.path 
+      });
     });
 
-    // API 404 handler
-    app.use("/api", (req, res) => {
-      res.status(404).json({ success: false, error: "API endpoint not found", path: req.path });
+    // ============================================================
+    // SERVE STATIC FILES
+    // ============================================================
+    app.use(express.static(distPath));
+
+    app.use('/src', (req, res) => {
+        res.status(404).send('Source files are not served in this environment.');
     });
 
     app.use((req, res) => {
@@ -309,6 +339,8 @@ async function startServer() {
       console.log(`WebSocket on: ws://localhost:${PORT}/api/v2/prices/ws`);
       console.log(`Heartbeat: http://localhost:${PORT}/api/heartbeat`);
       console.log(`Ping: http://localhost:${PORT}/ping`);
+      console.log(`Auth Login: http://localhost:${PORT}/api/auth/login`);
+      console.log(`Auth Profile: http://localhost:${PORT}/api/auth/profile`);
 
       setTimeout(() => {
         console.log("[Mining Scanner] Initializing...");

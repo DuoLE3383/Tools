@@ -13,6 +13,8 @@ export const RigPriceSection = ({
   mrrUsedKey,
   mrrUnit,
   niceHashPriceInMrrUnit,
+  niceHashSourcePrice,
+  niceHashSourceUnit,
   myNhUnit,
   rentalStartTime,
 }) => {
@@ -175,12 +177,12 @@ export const RigPriceSection = ({
             NiceHash
           </div>
           <div style={{ color: "#60a5fa", fontWeight: 800, marginTop: "3px" }}>
-            {niceHashPriceInMrrUnit > 0 ? (
+            {niceHashSourcePrice > 0 ? (
               <>
-                {niceHashPriceInMrrUnit.toFixed(8)}
+                {niceHashSourcePrice.toFixed(8)}
                 <span style={{ opacity: 0.5, fontSize: "8px" }}>
                   {" "}
-                  BTC/{myNhUnit}/Day
+                  BTC/{niceHashSourceUnit}/Day
                 </span>
               </>
             ) : (

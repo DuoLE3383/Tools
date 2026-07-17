@@ -52,11 +52,11 @@ export const ALGO_MAPPING = {
 
   // DaggerHashimoto / Ethash
   DAGGERHASHIMOTO: { displayName: 'DaggerHashimoto', niceHash: 'DAGGERHASHIMOTO', unit: 'MH', niceHashUnit: 'TH', mrrUnit: 'MH' },
-  'ETHASH': { displayName: 'DaggerHashimoto', niceHash: 'DAGGERHASHIMOTO', unit: 'MH', niceHashUnit: 'TH', mrrUnit: 'MH' },
+  'ETHASH': { displayName: 'DaggerHashimoto', niceHash: 'DAGGERHASHIMOTO', unit: 'GH', niceHashUnit: 'TH', mrrUnit: 'GH' },
   'HASHIMOTOS': { displayName: 'DaggerHashimoto', niceHash: 'DAGGERHASHIMOTO', unit: 'MH', niceHashUnit: 'TH', mrrUnit: 'MH' },
 
   // Etchash
-  ETCHASH: { displayName: 'ETCHash', niceHash: 'ETCHASH', unit: 'MH', niceHashUnit: 'TH', mrrUnit: 'MH' },
+  ETCHASH: { displayName: 'ETCHash', niceHash: 'ETCHASH', unit: 'GH', niceHashUnit: 'TH', mrrUnit: 'GH' },
 
   // Equihash
   EQUIHASH: { displayName: 'Equihash', niceHash: 'EQUIHASH', unit: 'Gsol', niceHashUnit: 'GSol', mrrUnit: 'GSol' },
@@ -223,7 +223,7 @@ export function convertPrice(price, from, to) {
   const a = PRICE_UNIT_MULTIPLIER[String(from || 'H').toUpperCase()];
   const b = PRICE_UNIT_MULTIPLIER[String(to || 'H').toUpperCase()];
   if (!a || !b || a === b) return price;
-  return price * (a / b);
+  return price * (b / a);
 }
 
 export function convertUnit(value, fromUnit, toUnit) {
@@ -243,12 +243,12 @@ export function normalizeValue(value, unit, targetUnit = 'H') {
 
 export function convertNiceHashToMrr(value, algoName) {
   if (!value || value <= 0) return 0;
-  return convertUnit(value, getNiceHashUnit(algoName), getMrrUnit(algoName));
+  return convertPrice(value, getNiceHashUnit(algoName), getMrrUnit(algoName));
 }
 
 export function convertMrrToNiceHash(value, algoName) {
   if (!value || value <= 0) return 0;
-  return convertUnit(value, getMrrUnit(algoName), getNiceHashUnit(algoName));
+  return convertPrice(value, getMrrUnit(algoName), getNiceHashUnit(algoName));
 }
 
 export function calculatePriceComparison(mrrPrice, mrrUnit, nhPrice, nhUnit) {

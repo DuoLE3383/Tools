@@ -64,13 +64,14 @@ export function registerMrrRoutes(app) {
             if (poolsData && poolsData.success) {
               const nhPools = await getCachedNhPools(clientName);
               const poolItems = Array.isArray(poolsData.data) ? poolsData.data : (poolsData.data?.result || []);
-              const poolMap = new Map(await Promise.all(poolItems.map(async (item) => {
+              const poolMap = new Map();
+              for (const item of poolItems) {
                 const id = String(item.rigId || item.rigid || item.id || item.rentalid || '');
+                if (!id) continue;
                 if (Array.isArray(item.pools) && item.pools.length > 0) {
                   const savepointName = `mrr_rig_pool_sync_${id.replace(/[^a-zA-Z0-9]/g, "")}`;
                   let savepointCreated = false;
                   try {
-                    // Use savepoints to allow nesting within other transactions.
                     await db.run(`SAVEPOINT ${savepointName}`);
                     savepointCreated = true;
                     const stmt = await db.prepare(`INSERT OR REPLACE INTO mrr_pools (id, name, algo, host, port, user, mrrClient, last_updated) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`);
@@ -85,7 +86,7 @@ export function registerMrrRoutes(app) {
                     if (savepointCreated) {
                       try {
                         await db.run(`ROLLBACK TO SAVEPOINT ${savepointName}`);
-                      } catch (rollbackErr) { console.warn(`[mrr:rigs] Savepoint rollback failed for rig ${id}: ${rollbackErr.message}`); }
+                      } catch (rollbackErr) { /* savepoint already released */ }
                     }
                   }
                 }
@@ -96,8 +97,8 @@ export function registerMrrRoutes(app) {
                     if (nhMatch) p.nhPoolName = nhMatch.name;
                   });
                 }
-                return [id, item.pools];
-              }).filter(i => i[0])));
+                poolMap.set(id, item.pools);
+              }
               rigs.forEach(rig => {
                 const pools = poolMap.get(String(rig.id));
                 if (pools && pools.length > 0) {

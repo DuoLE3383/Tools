@@ -215,8 +215,10 @@ export async function cleanupStaleRentals(client, activeRealIds) {
 export async function cleanupGhostRentals(client) {
   const db = await getDb();
   const savepointName = `cleanup_ghosts_${client.replace(/[^a-zA-Z0-9]/g, "")}`;
+  let savepointCreated = false;
   try {
     await db.run(`SAVEPOINT ${savepointName}`);
+    savepointCreated = true;
     // Move to ghost_rentals table before deleting
     const ghostRentals = await dbAllAsync(
       `SELECT * FROM rentals WHERE client = ? AND is_real = 0`,
@@ -239,7 +241,9 @@ export async function cleanupGhostRentals(client) {
     return true;
   } catch (err) {
     console.warn(`[rental-tracker] Failed to clean up ghost rentals: ${err.message}`);
-    try { await db.run(`ROLLBACK TO SAVEPOINT ${savepointName}`); } catch (rollbackErr) { console.warn(`[rental-tracker] Ghost cleanup rollback failed: ${rollbackErr.message}`); }
+    if (savepointCreated) {
+      try { await db.run(`ROLLBACK TO SAVEPOINT ${savepointName}`); } catch (_) {}
+    }
     return false;
   }
 }
