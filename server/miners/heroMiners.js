@@ -36,10 +36,10 @@ const COIN_TO_ALGO_MAP = {
   zeph: "randomx",
 };
 
-async function discoverHeroMinersSubdomains() {
+async function discoverHeroMinersSubdomains(force = false) {
   const cacheKey = "hero_subdomains";
   const cached = HERO_CACHE.get(cacheKey);
-  if (cached && Date.now() - cached.timestamp < HERO_CACHE_TTL) return cached.data;
+  if (!force && cached && Date.now() - cached.timestamp < HERO_CACHE_TTL) return cached.data;
 
   const discovered = new Set();
   try {
@@ -128,10 +128,10 @@ async function scrapeHeroMinersAddress(address, coin) {
   }
 }
 
-async function scrapeHeroMinersCoin(coin, btcPrice) {
+async function scrapeHeroMinersCoin(coin, btcPrice, force = false) {
   const cacheKey = `hero_${coin}`;
   const cached = HERO_CACHE.get(cacheKey);
-  if (cached && Date.now() - cached.timestamp < HERO_CACHE_TTL) return cached.data;
+  if (!force && cached && Date.now() - cached.timestamp < HERO_CACHE_TTL) return cached.data;
 
   try {
     const url = `https://${coin}.herominers.com/api/stats`;
@@ -176,16 +176,16 @@ function parseHeroMinersApiData(data, coin, btcPrice) {
   return rows;
 }
 
-export async function scrapeHeroMinersGlobal(btcPrice) {
+export async function scrapeHeroMinersGlobal(btcPrice, force = false) {
   try {
-    const coins = await discoverHeroMinersSubdomains();
+    const coins = await discoverHeroMinersSubdomains(force);
     const results = [];
     const chunks = [];
     for (let i = 0; i < coins.length; i += CONFIG.MAX_CONCURRENT_FETCHES) {
       chunks.push(coins.slice(i, i + CONFIG.MAX_CONCURRENT_FETCHES));
     }
     for (const chunk of chunks) {
-      const chunkResults = await Promise.all(chunk.map((coin) => scrapeHeroMinersCoin(coin, btcPrice)));
+      const chunkResults = await Promise.all(chunk.map((coin) => scrapeHeroMinersCoin(coin, btcPrice, force)));
       results.push(...chunkResults.flat());
     }
     const allCoinStats = results.flat();

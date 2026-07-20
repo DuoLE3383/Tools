@@ -9,6 +9,7 @@ import { logRequestMiddleware } from './utils.js';
 import { runRentalMonitor } from './monitor.js';
 import { startMiningOpportunityScanner } from './miningOpportunityNotifier.js'; 
 import authRoutes, { validateAuthConfig } from './auth.js';
+import { updateCoinMetadata } from './coinGecko/coinGeckoClient.js';
 
 export function createApp({ distPath }) {
   const app = express();
@@ -65,6 +66,7 @@ export async function initializeApp(env) {
 
     await initNonces();
     await syncMrrClock();
+    await updateCoinMetadata();
   } catch (error) {
     console.error('❌ Critical Initialization Failure:', error.message);
     process.exit(1);

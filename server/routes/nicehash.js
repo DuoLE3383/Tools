@@ -150,8 +150,15 @@ export function registerNiceHashRoutes(app) {
     if (!coin) return res.status(400).json({ success: false, error: "Coin symbol is required." });
     try {
         const db = await getDb();
-        const row = await db.get(`SELECT p.* FROM coin_prices p JOIN coin_metadata m ON p.coin_id = m.coin_id WHERE upper(m.symbol) = ? ORDER BY p.captured_at DESC LIMIT 1`, coin.toUpperCase());
-        if (row) res.json({ success: true, data: { [coin.toLowerCase()]: row } });
+        const row = await db.get(`
+          SELECT p.*, m.symbol as coin_symbol 
+          FROM coin_prices p 
+          JOIN coin_metadata m ON p.coin_id = m.coin_id 
+          WHERE upper(m.symbol) = ? OR m.coin_id = ? 
+          ORDER BY p.captured_at DESC 
+          LIMIT 1
+        `, [coin.toUpperCase(), coin.toLowerCase()]);
+        if (row) res.json({ success: true, data: { [row.coin_symbol.toLowerCase()]: row } });
         else res.status(404).json({ success: false, error: `Price not found in DB for ${coin}` });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });

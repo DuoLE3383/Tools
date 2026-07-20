@@ -16,6 +16,62 @@ export * from './coinGeckoService.js';
 
 let lastPriceSave = 0;
 
+export async function updateCoinMetadata(force = false) {
+  const db = await getDb();
+  // Check when it was last updated to avoid spamming CG API
+  const lastUpdateRow = await db.get("SELECT value FROM settings WHERE key = 'coin_metadata_last_update'").catch(() => null);
+  const lastUpdate = lastUpdateRow ? parseInt(lastUpdateRow.value, 10) : 0;
+
+  if (!force && lastUpdate && (Date.now() - lastUpdate < 24 * 60 * 60 * 1000)) { // 24 hours
+    console.log('[CoinGecko] Metadata update skipped, within 24h TTL.');
+    return { success: true, cached: true };
+  }
+
+  console.log('[CoinGecko] Updating coin metadata from CoinGecko...');
+  try {
+    const res = await fetch('https://api.coingecko.com/api/v3/coins/list');
+    if (!res.ok) {
+      throw new Error(`CoinGecko API returned status ${res.status}`);
+    }
+    const coins = await res.json();
+    if (!Array.isArray(coins)) {
+      throw new Error('Invalid response from CoinGecko coins/list');
+    }
+
+    await db.run('BEGIN TRANSACTION');
+    try {
+      const stmt = await db.prepare(`
+        INSERT INTO coin_metadata (coin_id, symbol, coin_name, last_updated) 
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(coin_id) DO UPDATE SET
+            symbol=excluded.symbol,
+            coin_name=excluded.coin_name,
+            last_updated=excluded.last_updated
+      `);
+
+      const now = new Date().toISOString();
+      let updatedCount = 0;
+      for (const coin of coins) {
+        if (coin.id && coin.symbol && coin.name) {
+          await stmt.run(coin.id, coin.symbol.toUpperCase(), coin.name, now);
+          updatedCount++;
+        }
+      }
+      await stmt.finalize();
+      await db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('coin_metadata_last_update', ?)", [Date.now()]);
+      await db.run('COMMIT');
+      console.log(`[CoinGecko] Successfully updated ${updatedCount} coin metadata entries.`);
+      return { success: true, updated: updatedCount };
+    } catch (dbErr) {
+      await db.run('ROLLBACK');
+      throw dbErr;
+    }
+  } catch (error) {
+    console.error('[CoinGecko] Failed to update coin metadata:', error.message);
+    return { success: false, error: error.message };
+  }
+}
+
 export async function fetchAndSaveCoinPrices(force = false) {
   const now = Date.now();
   const ttl = CONFIG.COINGECKO_PRICE_TTL || 300000;
@@ -130,4 +186,5 @@ export default {
   createCoinGeckoClient,
   fetchAndSaveCoinPrices,
   getCoinPricesFromDb,
+  updateCoinMetadata,
 };

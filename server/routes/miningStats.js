@@ -1,5 +1,6 @@
 // server/routes/miningStats.js
 import { asyncHandler } from "../utils.js";
+import { getBtcPrice } from "../utils/priceUtils.js";
 
 let cachedDutchData = null;
 let cachedDutchTime = 0;
@@ -140,10 +141,11 @@ export function registerMiningStatsRoutes(app) {
   }));
 
   app.get("/api/v2/mining-stats/all", asyncHandler(async (req, res) => {
-    const { scrapeHeroMinersGlobal } = await import("../miningOpportunityNotifier.js");
+    const { scrapeHeroMinersGlobal } = await import("../miners/heroMiners.js");
     const force = req.query.force === "true";
+    const btcPrice = await getBtcPrice();
     const [heroResult, dutchResult] = await Promise.allSettled([
-      scrapeHeroMinersGlobal(force),
+      scrapeHeroMinersGlobal(btcPrice, force),
       (async () => {
         const now = Date.now();
         if (!force && cachedDutchData && (now - cachedDutchTime < DUTCH_CACHE_TTL)) {
