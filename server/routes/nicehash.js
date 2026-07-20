@@ -116,35 +116,6 @@ export function registerNiceHashRoutes(app) {
     }
   }));
 
-  app.get("/api/v2/prices/coingecko", asyncHandler(async (req, res) => {
-    const { coinId, vs_currencies = 'usd,btc' } = req.query;
-    if (!coinId) {
-      return res.status(400).json({ success: false, error: "coinId is required." });
-    }
-
-    try {
-      const db = await getDb();
-      const symbol = coinId.toUpperCase();
-      const meta = await db.get('SELECT coin_id FROM coin_metadata WHERE upper(symbol) = ?', symbol);
-      const coingeckoId = meta?.coin_id || coinId.toLowerCase();
-
-      const url = `https://api.coingecko.com/api/v3/simple/price?ids=${coingeckoId}&vs_currencies=${vs_currencies}`;
-      const cgRes = await fetch(url, { signal: AbortSignal.timeout(8000) });
-
-      if (!cgRes.ok) {
-        const errorText = await cgRes.text();
-        return res.status(cgRes.status).json({ success: false, error: `CoinGecko API error: ${errorText}`, url });
-      }
-
-      const cgData = await cgRes.json();
-      const responseData = cgData[coingeckoId] ? { [coinId.toLowerCase()]: cgData[coingeckoId] } : cgData;
-      res.json(responseData);
-    } catch (error) {
-      console.error('[Coingecko Price Error]', error);
-      res.status(500).json({ success: false, error: error.message });
-    }
-  }));
-
   app.get("/api/v2/prices/db/:coin", asyncHandler(async (req, res) => {
     const { coin } = req.params;
     if (!coin) return res.status(400).json({ success: false, error: "Coin symbol is required." });

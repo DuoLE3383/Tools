@@ -61,7 +61,6 @@ const TELEGRAM_BOTS = {
 // ==========================
 
 let isMonitorRunning = false;
-const monitorInitTracker = new Set();
 const lastAlertTimes = new Map([['global_summary', Date.now()]]);
 const lastRigStates = new Map();
 
@@ -85,14 +84,6 @@ function extractArray(payload) {
   if (payload.myOrders && Array.isArray(payload.myOrders)) return payload.myOrders;
   if (payload.miningRigs && Array.isArray(payload.miningRigs)) return payload.miningRigs;
   return [];
-}
-
-async function maybeDelay(key) {
-  if (!monitorInitTracker.has(key)) {
-    console.log(`[Monitor] First-time load delay (1s) for: ${key}`);
-    await new Promise(r => setTimeout(r, 1000));
-    monitorInitTracker.add(key);
-  }
 }
 
 /**
@@ -319,7 +310,6 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
   isMonitorRunning = true;
 
   try {
-    await maybeDelay('runRentalMonitor');
     const db = await getDb(); // Get DB instance
 
     const requestedScope = String(clientScope || 'ALL').trim().toUpperCase();
@@ -485,7 +475,7 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
             if (isRented) {
               rentedRigs.push(rig);
               const detailKey = rentalId || String(rig.id || '').trim();
-              if (detailKey) {
+              if (detailKey && detailKey !== '0' && detailKey !== 'false' && detailKey !== 'null') {
                 harvestedRentalIds.add(detailKey);
                 rigLookupByRentalId.set(detailKey, rig);
                 rigLookupByRentalId.set(String(rig.id), rig);

@@ -2,7 +2,7 @@
 import path from 'path';
 
 export const CONFIG = {
-  SCAN_INTERVAL_MS: 15 * 60 * 1000,
+  SCAN_INTERVAL_MS: 60 * 60 * 1000, // 1 hour
   MIN_NOTIFY_INTERVAL_MS: 15 * 60 * 1000,
   SPREAD_THRESHOLD_PCT: 5,
   TREND_WINDOW_HOURS: 24,

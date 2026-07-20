@@ -251,7 +251,6 @@ export default function HeroMinersLookup({ onCall, coinPrices }) {
       {/* Quick-start hints */}
       {pairs.length === 0 && (
         <div style={{ fontSize: "clamp(9px, 0.7vw, 11px)", color: "#64748b", padding: "8px", textAlign: "center", fontStyle: "italic" }}>
-          Add coin/address pairs to monitor. E.g. <strong>CFX</strong> + your Conflux wallet address.
         </div>
       )}
 

@@ -1,6 +1,15 @@
 // routes/coinGecko.js
 import { asyncHandler } from "../utils.js";
 import { getDb } from "../db.js";
+import { getCoinPricesFromDb, getLastPriceFetchStatus } from "../coinGecko/coinGeckoClient.js";
+import {
+  fetchFromCoinGecko,
+  fetchFromCoinMarketCap,
+  fetchFromCryptoCompare,
+  fetchFromKraken,
+  clearFallbackCache,
+} from './priceProviders.js';
+import { getBtcPrice } from '../utils/priceUtils.js';
 
 /**
  * Fetches coin metadata directly from the database.
@@ -16,56 +25,7 @@ async function getCoinMetadata() {
   }
 }
 
-let coinGeckoCache = {
-  data: null,
-  timestamp: 0,
-};
-
-async function getCachedCoinPrices(ids) {
-  const now = Date.now();
-  const requestedIds = ids.split(",").map(s => s.trim()).filter(Boolean);
-
-  // Return from cache if valid and all requested IDs are present
-  if (coinGeckoCache.data && now - coinGeckoCache.timestamp < 60000) { // 1 minute cache
-    const cachedIds = Object.keys(coinGeckoCache.data);
-    const missing = requestedIds.filter(id => !cachedIds.includes(id));
-    if (missing.length === 0) return coinGeckoCache.data;
-  }
-
-  // If cache is stale or incomplete, fetch from DB
-  const placeholders = requestedIds.map(() => '?').join(',');
-  const sql = `
-    SELECT p.*, m.symbol FROM (
-      SELECT *, ROW_NUMBER() OVER(PARTITION BY coin_id ORDER BY captured_at DESC) as rn
-      FROM coin_prices
-      WHERE coin_id IN (${placeholders})
-    ) p
-    LEFT JOIN coin_metadata m ON p.coin_id = m.coin_id
-    WHERE p.rn = 1
-  `;
-
-  const db = await getDb();
-  const rows = await db.all(sql, requestedIds);
-  const priceData = rows.reduce((acc, row) => {
-    acc[row.coin_id] = {
-      usd: row.price_usd,
-      price_btc: row.price_btc,
-      symbol: row.symbol,
-      source: row.source,
-      last_updated: row.captured_at,
-    };
-    return acc;
-  }, {});
-
-  const combinedData = { ...(coinGeckoCache.data || {}), ...priceData };
-  const allFound = requestedIds.every(id => combinedData[id]);
-
-  if (allFound) {
-    coinGeckoCache.data = combinedData;
-    coinGeckoCache.timestamp = now;
-  }
-  return combinedData;
-}
+export { clearFallbackCache };
 
 export function registerCoinGeckoRoutes(app) {
   app.get(
@@ -81,27 +41,40 @@ export function registerCoinGeckoRoutes(app) {
       // If it's a single ID request from coinId, try to resolve it from symbol to coin_id
       if (req.query.coinId && originalRequestedIds.length === 1) {
         const db = await getDb();
-        const meta = await db.get('SELECT coin_id FROM coin_metadata WHERE symbol = ? OR coin_id = ?', [originalRequestedIds[0].toLowerCase(), originalRequestedIds[0]]);
+        const meta = await db.get('SELECT coin_id FROM coin_metadata WHERE upper(symbol) = ? OR coin_id = ?', [originalRequestedIds[0].toUpperCase(), originalRequestedIds[0].toLowerCase()]);
         if (meta && meta.coin_id) {
           ids = meta.coin_id; // Replace symbol (e.g., 'cfx') with actual coin_id (e.g., 'conflux-token')
         }
       }
 
       try {
-        const data = await getCachedCoinPrices(ids);
+        const dataFromDb = await getCoinPricesFromDb(ids.split(','));
         const resolvedIds = ids.split(',');
 
-        // If a single ID was requested, return just that coin's data for compatibility with the modal
+        // If a single ID was requested, return it keyed by the original request symbol
         if (originalRequestedIds.length === 1) {
-          const coinData = data[resolvedIds[0]]; // Use the (potentially resolved) ID to look up
-          if (coinData && coinData.usd !== undefined && coinData.usd > 0) {
-            return res.json({ success: true, data: coinData, source: "db_cache" });
+          const coinIdToLookup = resolvedIds[0];
+          let coinData = dataFromDb[coinIdToLookup];
+
+          // If not found in DB/cache, it will be handled by the check below
+          if ((!coinData || coinData.usd === undefined || coinData.usd <= 0)) {
+            if (coinIdToLookup === 'bitcoin') {
+              console.log(`[PriceFetcher] DB cache miss for bitcoin. Using priceUtils fallback.`);
+              const btcPrice = await getBtcPrice();
+              if (btcPrice > 0) coinData = { usd: btcPrice, btc: 1, last_updated: new Date().toISOString(), source: 'fallback' };
+            } else {
+              console.log(`[PriceFetcher] DB cache miss for ${coinIdToLookup}. No live fallback configured.`);
+            }
           }
-          // Coin not found in DB — return error so the frontend knows to try fallback
+
+          if (coinData && coinData.usd !== undefined && coinData.usd > 0) {
+            const responsePayload = { [originalRequestedIds[0].toLowerCase()]: coinData };
+            return res.json(responsePayload);
+          }
           return res.status(404).json({ success: false, error: `Price not found for ${originalRequestedIds[0]}` });
         }
-
-        res.json({ success: true, data, source: "db_cache" });
+        // For multiple IDs, just return what we have from the DB
+        res.json(dataFromDb);
       } catch (err) {
         res.status(500).json({ success: false, error: err.message });
       }
@@ -114,6 +87,14 @@ export function registerCoinGeckoRoutes(app) {
       const metadata = await getCoinMetadata();
       const coins = metadata.map(m => ({ id: m.coin_id, symbol: m.symbol, name: m.coin_name }));
       res.json({ success: true, data: coins });
+    })
+  );
+
+  app.get(
+    "/api/v2/prices/db/status",
+    asyncHandler(async (req, res) => {
+      const status = getLastPriceFetchStatus();
+      res.json({ success: true, data: status });
     })
   );
 }

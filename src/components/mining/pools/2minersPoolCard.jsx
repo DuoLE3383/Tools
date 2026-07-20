@@ -207,9 +207,7 @@ export default function TwoMinersPoolCard({ onCall }) {
 
       {pairs.length === 0 && (
         <div style={{ fontSize: "clamp(9px, 0.7vw, 11px)", color: "#64748b", padding: "8px", textAlign: "center", fontStyle: "italic" }}>
-          Add a pool and wallet address to start monitoring.
           <br />
-          Example: <strong>zeph-solo</strong> + your ZEPH wallet address.
         </div>
       )}
 

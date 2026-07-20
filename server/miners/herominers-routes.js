@@ -54,28 +54,12 @@ router.get('/', async (req, res) => {
     }
 
     // Get price data for the coin
-    let prices = await getCoinPricesFromDb([coinUpper].filter(Boolean));
-    let priceData = prices && prices[coinUpper] ? prices[coinUpper] : {};
+    const db = await getDb();
+    const meta = await db.get('SELECT coin_id FROM coin_metadata WHERE symbol = ?', [coinUpper]);
+    const coinId = meta?.coin_id;
 
-    // If price is 0 or missing, try a live fetch from coingecko as a fallback
-    if (!priceData?.usd || priceData.usd === 0) {
-      try {
-        const db = await getDb();
-        const meta = await db.get('SELECT coin_id FROM coin_metadata WHERE symbol = ?', [coinUpper]);
-        const coinId = meta?.coin_id;
-        if (coinId) {
-          const cgRes = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${coinId}&vs_currencies=usd`, {
-            signal: AbortSignal.timeout(5000)
-          });
-          if (cgRes.ok) {
-            const cgData = await cgRes.json();
-            if (cgData[coinId]?.usd > 0) {
-              priceData = { ...priceData, usd: cgData[coinId].usd, symbol: coinUpper };
-            }
-          }
-        }
-      } catch (e) { console.warn(`[herominers-route] Live price fallback failed for ${coinUpper}: ${e.message}`); }
-    }
+    let prices = coinId ? await getCoinPricesFromDb([coinId]) : {};
+    let priceData = prices && prices[coinId] ? prices[coinId] : {};
 
     // Build dashboard data
     const dashboard = buildDashboardData(parsed, priceData);

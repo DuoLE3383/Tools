@@ -25,17 +25,18 @@ export const COIN_TO_COINGECKO_MAP = {
   
   // Others
   'IRON': 'iron-fish', 'IRONFISH': 'iron-fish',
+  'FLUX': 'zelcash', 'ZELHASH': 'zelcash',
   'DYNEX': 'dynex', 'DYNEXSOLVE': 'dynex',
   'ALPH': 'alephium', 'ALEPHIUM': 'alephium',
   'NEXA': 'nexa', 'NEXAPOW': 'nexa',
   'CLORE': 'clore-ai', 'CLOREAI': 'clore-ai',
-  'CFX': 'conflux', 'CONFLUX': 'conflux',
+  'CFX': 'conflux-token', 'CONFLUX': 'conflux-token',
   'QRL': 'qrl',
   'XELIS': 'xelis', 'XELISHASHV3': 'xelis',
   'ZANO': 'zano', 'PROGPOWZ': 'zano',
   'SALVIUM': 'monero', 'AIPG': 'aipg', 'KARLSEN': 'kaspa',
   'NEOXA': 'neoxa', 'FISHHASH': 'iron-fish', 'BLAKE3': 'alephium',
-  'OCTOPUS': 'conflux', 'VERUSHASH': 'verus', 'VERUS': 'verus',
+  'OCTOPUS': 'conflux-token', 'VERUSHASH': 'verus-coin', 'VERUS': 'verus-coin',
   'RANDOMX': 'monero', 'CRYPTONIGHT': 'monero',
   'ETCHASH': 'ethereum-classic', 'X11': 'dash',
   'LYRA2REV2': 'vertcoin', 'NEOSCRYPT': 'feathercoin',
@@ -45,8 +46,8 @@ export const COIN_TO_COINGECKO_MAP = {
 export const TRACKED_COINS = [
   'bitcoin', 'ethereum', 'monero', 'ravencoin', 'ergo', 'kaspa',
   'beam', 'ethereum-classic', 'litecoin', 'dogecoin',
-  'zephyr-protocol', 'iron-fish', 'dynex', 'alephium', 'nexa',
-  'clore-ai', 'conflux', 'qrl', 'xelis', 'zano', 'aipg'
+  'zephyr-protocol', 'iron-fish', 'dynex', 'alephium', 'nexa', 'clore-ai', 'zelcash',
+  'conflux-token', 'qrl', 'xelis', 'zano', 'aipg', 'verus-coin',
 ];
 
 export function mapCoinToCoinGeckoId(coinName) {

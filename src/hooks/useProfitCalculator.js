@@ -50,9 +50,10 @@ export function useProfitCalculator({
         query: { coinId: 'bitcoin' },
         silent: true
       });
-      if (result?.data?.usd > 0) {
-        setBtcPrice(result.data.usd);
-        btcPriceCache.set(cacheKey, { price: result.data.usd, ts: Date.now() });
+      const btcData = result?.bitcoin;
+      if (btcData?.usd > 0) {
+        setBtcPrice(btcData.usd);
+        btcPriceCache.set(cacheKey, { price: btcData.usd, ts: Date.now() });
       }
     } catch (err) {
       console.warn('Failed to fetch BTC price:', err.message);

@@ -16,6 +16,16 @@ export * from './coinGeckoService.js';
 
 let lastPriceSave = 0;
 
+// Module-level state for price fetch status and in-memory cache
+let lastPriceFetchStatus = {
+  success: null,
+  timestamp: null,
+  updated: 0,
+  cached: false,
+  error: null,
+};
+const priceCache = new Map();
+
 export async function updateCoinMetadata(force = false) {
   const db = await getDb();
   // Check when it was last updated to avoid spamming CG API
@@ -76,6 +86,8 @@ export async function fetchAndSaveCoinPrices(force = false) {
   const now = Date.now();
   const ttl = CONFIG.COINGECKO_PRICE_TTL || 300000;
   if (!force && lastPriceSave && (now - lastPriceSave) < ttl) {
+    const msg = '[CoinGecko] DB price save skipped, within TTL.';
+    console.log(msg);
     console.log('[CoinGecko] DB price save skipped, within TTL.');
     return { success: true, cached: true };
   }
@@ -85,6 +97,11 @@ export async function fetchAndSaveCoinPrices(force = false) {
     const prices = await getPricesForCoins(TRACKED_COINS, ['usd', 'btc']);
     const db = await getDb();
     const capturedAt = new Date().toISOString();
+
+    // Fetch metadata to get symbols for the tracked coins
+    const placeholders = TRACKED_COINS.map(() => '?').join(',');
+    const metadataRows = await db.all(`SELECT coin_id, symbol, coin_name FROM coin_metadata WHERE coin_id IN (${placeholders})`, TRACKED_COINS);
+    const metadataMap = new Map(metadataRows.map(row => [row.coin_id, { symbol: row.symbol, name: row.coin_name }]));
 
     await db.run('BEGIN TRANSACTION');
     try {
@@ -97,9 +114,10 @@ export async function fetchAndSaveCoinPrices(force = false) {
       let updatedCount = 0;
       for (const coinId of TRACKED_COINS) {
           const data = prices[coinId];
+          const meta = metadataMap.get(coinId) || {};
           if (data) {
               await stmt.run(
-                  coinId, null, null,
+                  coinId, meta.coin_name || null, meta.symbol || null,
                   data.usd || 0, data.btc || 0,
                   data.usd_market_cap || 0, data.usd_24h_vol || 0,
                   data.usd_24h_change || 0, capturedAt
@@ -111,8 +129,23 @@ export async function fetchAndSaveCoinPrices(force = false) {
       await db.run('COMMIT');
       
       lastPriceSave = now;
+      // Update the in-memory cache after successful DB save
+      for (const coinId of TRACKED_COINS) {
+        if (prices[coinId]) {
+          priceCache.set(coinId, {
+            usd: prices[coinId].usd || 0,
+            btc: prices[coinId].btc || 0,
+            usd_market_cap: prices[coinId].usd_market_cap || 0,
+            usd_24h_vol: prices[coinId].usd_24h_vol || 0,
+            usd_24h_change: prices[coinId].usd_24h_change || 0,
+            last_updated: capturedAt,
+          });
+        }
+      }
+
       console.log(`[CoinGecko] Successfully saved ${updatedCount} coin prices to DB.`);
-      return { success: true, updated: updatedCount, timestamp: capturedAt };
+      lastPriceFetchStatus = { success: true, updated: updatedCount, timestamp: capturedAt, cached: false, error: null };
+      return lastPriceFetchStatus;
     } catch (dbErr) {
       await db.run('ROLLBACK');
       throw dbErr;
@@ -120,7 +153,8 @@ export async function fetchAndSaveCoinPrices(force = false) {
 
   } catch (error) {
     console.error('[CoinGecko] Failed to fetch and save prices:', error.message);
-    return { success: false, error: error.message };
+    lastPriceFetchStatus = { success: false, error: error.message, timestamp: new Date().toISOString(), updated: 0, cached: false };
+    return lastPriceFetchStatus;
   }
 }
 
@@ -129,36 +163,54 @@ export async function getCoinPricesFromDb(coinIds) {
     return {};
   }
 
-  try {
-    const db = await getDb();
-    const placeholders = coinIds.map(() => '?').join(',');
-    
-    const sql = `
-      SELECT * FROM (
-        SELECT *, ROW_NUMBER() OVER(PARTITION BY coin_id ORDER BY captured_at DESC) as rn
-        FROM coin_prices
-        WHERE coin_id IN (${placeholders})
-      ) WHERE rn = 1
-    `;
+  const result = {};
+  const idsToFetchFromDb = [];
 
-    const rows = await db.all(sql, coinIds);
-
-    const result = {};
-    for (const row of rows) {
-      result[row.coin_id] = {
-        usd: row.price_usd,
-        btc: row.price_btc,
-        usd_market_cap: row.market_cap,
-        usd_24h_vol: row.volume_24h,
-        usd_24h_change: row.price_change_24h,
-        last_updated: row.captured_at,
-      };
+  // 1. Check in-memory cache first
+  for (const id of coinIds) {
+    if (priceCache.has(id)) {
+      result[id] = priceCache.get(id);
+    } else {
+      idsToFetchFromDb.push(id);
     }
-    return result;
-  } catch (err) {
-    console.error('[CoinGecko] Failed to get prices from DB:', err.message);
-    return {};
   }
+
+  // 2. Fetch any misses from the database
+  if (idsToFetchFromDb.length > 0) {
+    try {
+      const db = await getDb();
+      const placeholders = idsToFetchFromDb.map(() => '?').join(',');
+      const sql = `
+        SELECT * FROM (
+          SELECT *, ROW_NUMBER() OVER(PARTITION BY coin_id ORDER BY captured_at DESC) as rn
+          FROM coin_prices
+          WHERE coin_id IN (${placeholders})
+        ) WHERE rn = 1
+      `;
+      const rows = await db.all(sql, idsToFetchFromDb);
+
+      for (const row of rows) {
+        const priceData = {
+          usd: row.price_usd,
+          btc: row.price_btc,
+          usd_market_cap: row.market_cap,
+          usd_24h_vol: row.volume_24h,
+          usd_24h_change: row.price_change_24h,
+          last_updated: row.captured_at,
+        };
+        result[row.coin_id] = priceData;
+        priceCache.set(row.coin_id, priceData); // Populate cache with DB result
+      }
+    } catch (err) {
+      console.error('[CoinGecko] Failed to get prices from DB:', err.message);
+    }
+  }
+
+  return result;
+}
+
+export function getLastPriceFetchStatus() {
+  return lastPriceFetchStatus;
 }
 
 /**
@@ -187,4 +239,5 @@ export default {
   fetchAndSaveCoinPrices,
   getCoinPricesFromDb,
   updateCoinMetadata,
+  getLastPriceFetchStatus,
 };

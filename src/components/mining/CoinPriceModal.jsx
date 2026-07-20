@@ -60,96 +60,31 @@ export default function CoinPriceModal({
     setLoading(true);
     setError(null);
     
-    const coinId = coin.coinId || coin.symbol?.toLowerCase() || coin.name?.toLowerCase();
-    
-    let foundPrice = 0;
+    const coinId = coin.coinId || coin.symbol?.toLowerCase() || coin.name?.toLowerCase() || coin.coin;
 
-    // --- Try CoinGecko price endpoint (from in-memory DB cache) ---
+    // --- Fetch price from the database via the backend endpoint ---
     try {
+      // This endpoint now exclusively uses the database cache.
       const result = await onCall("/api/v2/prices/coingecko", { query: { coinId }, silent: true });
-      const data = result?.data || {};
-      // Server returns { success: true, data: { usd: 12345, ... } }
-      if (data.usd !== undefined && data.usd > 0) {
-        foundPrice = parseFloat(data.usd);
-        setPriceData({ price: foundPrice, marketCap: 0, volume24h: 0, change24h: 0, high24h: 0, low24h: 0, supply: 0, lastUpdated: new Date().toISOString() });
-        setLastUpdated(new Date().toISOString());
-        setSource("coingecko");
-        setLoading(false);
-        return;
-      }
-    } catch { /* coin not in DB, continue */ }
+      const data = result?.[coinId.toLowerCase()];
 
-    // --- Try CoinMarketCap / price-provider fallback ---
-    try {
-      const result = await onCall("/api/v2/prices/update", { method: "POST", silent: true });
-      // After update, try CG again if we got data
-      if (result?.success) {
-        const retry = await onCall("/api/v2/prices/coingecko", { query: { coinId }, silent: true });
-        const data = retry?.data || {};
-        if (data.usd !== undefined && data.usd > 0) {
-          foundPrice = parseFloat(data.usd);
-          setPriceData({ price: foundPrice, marketCap: 0, volume24h: 0, change24h: 0, high24h: 0, low24h: 0, supply: 0, lastUpdated: new Date().toISOString() });
-          setLastUpdated(new Date().toISOString());
-          setSource("coingecko");
-          setLoading(false);
-          return;
-        }
-      }
-    } catch { /* price update failed */ }
-
-    // --- Try Coingecko via CoinGeckoService (fetches live) ---
-    const tryCoinIds = [...new Set([coinId, coin.name?.toLowerCase(), coin.symbol?.toLowerCase()].filter(Boolean))];
-    for (const cid of tryCoinIds) {
-      try {
-        // Use the correct endpoint that supports symbol resolution and returns the simple format
-        const result = await onCall("/api/v2/prices/coingecko", { query: { coinId: cid, vs_currencies: "usd" }, silent: true });
-        if (result?.data?.usd > 0) {
-          foundPrice = result.data.usd;
-          setPriceData({ price: foundPrice, marketCap: 0, volume24h: 0, change24h: 0, high24h: 0, low24h: 0, supply: 0, lastUpdated: new Date().toISOString() });
-          setLastUpdated(new Date().toISOString());
-          setSource("coingecko");
-          setLoading(false);
-          return;
-        }
-      } catch { /* try next */ }
-    }
-
-    // --- Try DB fallback ---
-    for (const id of tryCoinIds) {
-      try {
-        const dbResult = await onCall(`/api/v2/prices/db/${id}`, { silent: true });
-        if (dbResult?.success && dbResult.data?.price_usd > 0) {
-          const d = dbResult.data;
-          foundPrice = parseFloat(d.price_usd);
-          setPriceData({ price: foundPrice, marketCap: d.market_cap || 0, volume24h: d.volume_24h || 0, change24h: d.price_change_24h || 0, high24h: d.high_24h || 0, low24h: d.low_24h || 0, supply: d.circulating_supply || 0, lastUpdated: d.captured_at || new Date().toISOString() });
-          setSource("database");
-          setLoading(false);
-          return;
-        }
-      } catch { /* try next */ }
-    }
-
-    // --- Live CoinGecko API fallback (last resort) ---
-    for (const cid of tryCoinIds) {
-      try {
-        const result = await onCall("/api/v2/coingecko/live", {
-          query: { ids: cid, vs_currencies: "usd,btc" },
-          silent: true
+      if (data?.usd > 0) {
+        setPriceData({
+          price: data.usd,
+          marketCap: data.usd_market_cap || 0,
+          volume24h: data.usd_24h_vol || 0,
+          change24h: data.usd_24h_change || 0,
+          lastUpdated: data.last_updated || new Date().toISOString(),
         });
-        const data = result || {};
-        // /api/v2/coingecko/live returns the raw CG response: { "bitcoin": { usd: 12345, ... } }
-        const coinEntry = Object.values(data).find(v => v?.usd > 0);
-        if (coinEntry) {
-          foundPrice = parseFloat(coinEntry.usd);
-          setPriceData({ price: foundPrice, marketCap: 0, volume24h: 0, change24h: coinEntry.usd_24h_change || 0, high24h: 0, low24h: 0, supply: 0, lastUpdated: new Date().toISOString() });
-          setSource("coingecko");
-          setLoading(false);
-          return;
-        }
-      } catch { /* try next */ }
+        setLastUpdated(data.last_updated);
+        setSource("database");
+      } else {
+        setError("Price not available in database. It will be updated on the next hourly sync.");
+      }
+    } catch (err) {
+      setError(err.message || "Failed to fetch price data from the server.");
     }
 
-    setError("Failed to fetch price data from all sources");
     setLoading(false);
   }, [coin, onCall]);
 

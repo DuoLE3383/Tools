@@ -142,33 +142,40 @@ async function sendMineTelegram(message) {
 // =========================
 async function fetchPrices(algos, type) {
   if (!Array.isArray(algos) || algos.length === 0) return {};
-  const baseUrl = `http://localhost:${process.env.PORT || 3000}`;
-  const settled = await Promise.allSettled(
-    algos.map(async (algo) => {
-      try {
-        let url;
-        if (type === "nh") {
-          url = `${baseUrl}/api/v2/hashpower/order/price?algorithm=${encodeURIComponent(algo)}&client=BT`;
-        } else {
-          url = `${baseUrl}/api/v2/mrr/rentals?algo=${encodeURIComponent(algo)}&limit=1`;
-        }
-        const r = await fetch(url, { signal: AbortSignal.timeout(5000) });
-        if (!r.ok) return [algo, 0];
-        const d = await r.json();
-        let price = 0;
-        if (type === "nh") {
-          price = parseFloat(d?.price ?? d?.fixedPrice ?? d?.marketPrice ?? 0);
-        } else {
-          const rental = d?.data?.rentals?.[0] || d?.data?.[0] || {};
-          price = parseFloat(rental.price || rental.min_price || rental.rate || 0);
-        }
-        return [algo, Number.isFinite(price) ? price : 0];
-      } catch { return [algo, 0]; }
-    })
-  );
   const results = {};
-  for (const item of settled) {
-    if (item.status === "fulfilled") results[item.value[0]] = item.value[1];
+  const baseUrl = `http://localhost:${process.env.PORT || 3000}`;
+
+  // Process requests sequentially to avoid overwhelming the server and causing nonce issues.
+  for (const algo of algos) {
+    try {
+      let url;
+      if (type === "nh") {
+        url = `${baseUrl}/api/v2/hashpower/order/price?algorithm=${encodeURIComponent(
+          algo,
+        )}&client=BT`;
+      } else {
+        url = `${baseUrl}/api/v2/mrr/rentals?algo=${encodeURIComponent(
+          algo,
+        )}&limit=1`;
+      }
+      const r = await fetch(url, { signal: AbortSignal.timeout(8000) }); // Increased timeout
+      if (!r.ok) {
+        results[algo] = 0;
+        continue;
+      }
+      const d = await r.json();
+      let price = 0;
+      if (type === "nh") {
+        price = parseFloat(d?.price ?? d?.fixedPrice ?? d?.marketPrice ?? 0);
+      } else {
+        const rental = d?.data?.rentals?.[0] || d?.data?.[0] || {};
+        price = parseFloat(rental.price || rental.min_price || rental.rate || 0);
+      }
+      results[algo] = Number.isFinite(price) ? price : 0;
+    } catch (err) {
+      console.warn(`[fetchPrices] Failed to get price for ${algo} (${type}): ${err.message}`);
+      results[algo] = 0;
+    }
   }
   return results;
 }
@@ -478,7 +485,7 @@ export function startMiningOpportunityScanner() {
     console.log("[mine:scan] Scanner already running");
     return;
   }
-  console.log("[mine:scan] Starting scanner (every 15 min)");
+  console.log(`[mine:scan] Starting scanner (every ${CONFIG.SCAN_INTERVAL_MS / 60000} min)`);
 
   // Initial scan
   scanMiningOpportunities(true).catch((err) => {
@@ -489,7 +496,7 @@ export function startMiningOpportunityScanner() {
     scanMiningOpportunities(false).catch((err) => {
       console.error("[mine:scan] Scheduled scan failed:", err.message);
     });
-  }, 600 * 60 * 1000);
+  }, CONFIG.SCAN_INTERVAL_MS);
 }
 
 export function stopMiningOpportunityScanner() {

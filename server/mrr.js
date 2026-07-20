@@ -16,7 +16,6 @@ import { isAggregate, resolveNhClient, getNiceHashApp } from './nh.js';
 // STATE MANAGEMENT
 // ============================================
 const mrrLastNonceByClient = new Map();
-const mrrInitTracker = new Set();
 let mrrClockOffset = 0n;
 let mrrClockSynced = false;
 let mrrSyncPromise = null;
@@ -425,18 +424,6 @@ export async function mrrApiCall({ endpoint, method = 'GET', query, body, client
   }
 
   const task = (async () => {
-    const trackingBase = endpoint.split('\n')[0].trim();
-    const trackingEndpoint = trackingBase
-      .replace(/\/(rig|rental)\/[^/]+\/pool/, '/$1/:id/pool')
-      .replace(/\/(rig|rental)\/[0-9;]+$/, '/$1/:id')
-      .replace(/\/(rig|rental)\/[0-9;]+\/info$/, '/$1/:id/info');
-
-    if (!mrrInitTracker.has(trackingEndpoint)) {
-      console.log(`[MRR] First-time endpoint delay (3s): ${trackingEndpoint}`);
-      await new Promise(r => setTimeout(r, 3000));
-      mrrInitTracker.add(trackingEndpoint);
-    }
-
     if (!mrrClockSynced) {
       await syncMrrClock();
     }
