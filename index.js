@@ -262,25 +262,6 @@ async function startServer() {
     console.log("[Routes] All routes registered");
 
     // ============================================================
-    // ✅ Register available-coins route (already in routes, but keep for safety)
-    // ============================================================
-    app.get('/api/v2/db/available-coins', authMiddleware, async (req, res) => {
-      try {
-        const db = await getDb();
-        const rows = await db.all(`
-          SELECT DISTINCT symbol, name as coin_name, id as coin_id
-          FROM coin_metadata
-          WHERE symbol IS NOT NULL AND symbol != ''
-          ORDER BY symbol
-        `);
-        res.json({ success: true, data: rows });
-      } catch (error) {
-        console.error('[DB] Error fetching available coins:', error);
-        res.json({ success: true, data: [] });
-      }
-    });
-
-    // ============================================================
     // ✅ API 404 HANDLER - MUST BE AFTER ALL ROUTES
     // ============================================================
     app.use("/api", (req, res) => {

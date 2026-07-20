@@ -56,10 +56,10 @@ export function setupWebSocket(server) {
   wss.on('connection', (ws, req) => {
     const sessionId = req.sessionId;
     const user = req.user;
-    const clientId = user?.username || sessionId || 'unknown';
-    console.log(`[WS] Connection established for client: ${clientId}`);
+    ws.clientId = user?.username || sessionId || 'unknown';
+    console.log(`[WS] Connection established for client: ${ws.clientId}`);
     
-    ws.sessionId = sessionId;
+    ws.sessionId = sessionId; // Keep for compatibility if something uses it
     ws.user = user;
     ws.isAlive = true;
     
@@ -67,14 +67,14 @@ export function setupWebSocket(server) {
     ws.send(JSON.stringify({
       type: 'connected',
       message: 'WebSocket connection established',
-      client: clientId
+      client: ws.clientId
     }));
     
     // Handle messages
     ws.on('message', (message) => {
       try {
         const data = JSON.parse(message);
-        console.log(`[WS] Message from session ${sessionId}:`, data.type);
+        console.log(`[WS] Message from client ${ws.clientId}:`, data.type);
         handleWebSocketMessage(ws, data);
       } catch (error) {
         console.error('[WS] Error processing message:', error);
@@ -92,7 +92,7 @@ export function setupWebSocket(server) {
     
     // Handle close
     ws.on('close', () => {
-      console.log(`[WS] Connection closed for session: ${sessionId}`);
+      console.log(`[WS] Connection closed for client: ${ws.clientId}`);
     });
     
     // Handle errors

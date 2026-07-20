@@ -388,15 +388,15 @@ router.get('/multi', async (req, res) => {
       try {
         const coinTrimmedUpper = coin.trim().toUpperCase();
         const raw = await api.getMinerStats(address, coin.trim());
-        if (!raw) return { coin: coinTrimmedUpper, address, success: false, error: 'No data' };
+        if (!raw) return { id: pair, coin: coinTrimmedUpper, address, success: false, error: 'No data' };
         const parsed = parseHeroMinersResponse(raw, address, coin.trim());
-        if (!parsed) return { coin: coinTrimmedUpper, address, success: false, error: 'Parse failed' };
+        if (!parsed) return { id: pair, coin: coinTrimmedUpper, address, success: false, error: 'Parse failed' };
         const prices = await getCoinPricesFromDb([coinTrimmedUpper]);
         const dashboard = buildDashboardData(parsed, prices[coinTrimmedUpper] || {});
         const algorithm = COIN_TO_ALGO_MAP[coinTrimmedUpper] || null;
-        return { coin: coinTrimmedUpper, address, success: true, ...dashboard, algorithm };
+        return { id: pair, coin: coinTrimmedUpper, address, success: true, ...dashboard, algorithm };
       } catch (e) {
-        return { coin: coin.trim().toUpperCase(), address, success: false, error: e.message };
+        return { id: pair, coin: coin.trim().toUpperCase(), address, success: false, error: e.message };
       }
     });
 

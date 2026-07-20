@@ -32,6 +32,24 @@ function build2MinersApiUrl(pool, address) {
 }
 
 export function registerMiningStatsRoutes(app) {
+  // Available coins from metadata
+  app.get("/api/v2/db/available-coins", asyncHandler(async (req, res) => {
+    // Dynamic import to avoid circular dependencies
+    const { getDb } = await import("../db.js");
+    try {
+      const db = await getDb();
+      const rows = await db.all(`
+        SELECT DISTINCT symbol, name as coin_name, id as coin_id
+        FROM coin_metadata
+        WHERE symbol IS NOT NULL AND symbol != ''
+        ORDER BY symbol
+      `);
+      res.json({ success: true, data: rows });
+    } catch (error) {
+      res.json({ success: true, data: [] });
+    }
+  }));
+
   app.get("/api/v2/mining-stats/miningdutch", asyncHandler(async (req, res) => {
     const force = req.query.force === "true";
     const now = Date.now();
