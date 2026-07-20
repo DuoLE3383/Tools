@@ -267,7 +267,8 @@ export async function sendTelegramInternal(message, botType = 'MAIN_BOT', option
           parse_mode: 'HTML',
           disable_web_page_preview: true,
           ...options
-        })
+        }),
+        signal: AbortSignal.timeout(15000) // 15-second timeout
       });
 
       const data = await res.json();
@@ -280,7 +281,8 @@ export async function sendTelegramInternal(message, botType = 'MAIN_BOT', option
       throw new Error(data?.description || `HTTP ${res.status}`);
     } catch (err) {
       lastError = err;
-      console.warn(`[telegram:${botType}] Attempt ${attempt} failed: ${err.message}`);
+      const errorMessage = err.name === 'AbortError' ? 'Request timed out' : err.message;
+      console.warn(`[telegram:${botType}] Attempt ${attempt} failed: ${errorMessage}`);
       if (attempt < maxAttempts) {
         await new Promise(resolve => setTimeout(resolve, attempt * 500));
       }
