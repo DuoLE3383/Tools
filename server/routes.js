@@ -11,11 +11,10 @@ export function registerRoutes(app) {
   console.log('[Routes] Registering API routes...');
   
   // Register all route groups
-  registerCoinGeckoRoutes(app);
+  // registerCoinGeckoRoutes(app); // NOTE: Price routes are now in nicehash.js, this may cause conflicts.
   registerNiceHashRoutes(app);
   registerMrrRoutes(app);
   registerMiscRoutes(app);
-  registerMiningStatsRoutes(app);
   
   // HeroMiners routes
   try {
@@ -23,6 +22,7 @@ export function registerRoutes(app) {
   } catch (err) {
     console.warn('[Routes] HeroMiners routes not available:', err.message);
   }
+  registerMiningStatsRoutes(app);
 
   // NiceHash batch update rates route
   registerNiceHashUpdateRatesRoute(app).catch(err => {

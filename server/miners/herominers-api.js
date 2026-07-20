@@ -18,7 +18,9 @@ export class HeroMinersAPI {
   async request(coin, endpoint, params = {}) {
     if (!coin) throw new Error('A coin must be provided for the API request.');
 
-    const url = new URL(`https://${coin.toLowerCase()}.herominers.com${endpoint}`);
+    const coinLower = coin.toLowerCase();
+    const subdomain = coinLower === 'zeph' ? 'zephyr' : coinLower;
+    const url = new URL(`https://${subdomain}.herominers.com${endpoint}`);
     Object.entries(params).forEach(([key, value]) => {
       if (value !== undefined && value !== null && value !== '') {
         url.searchParams.append(key, String(value));

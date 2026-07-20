@@ -177,6 +177,7 @@ export default function Pools({
           <option value="PH">NiceHash Client: PH</option>
           <option value="LN">NiceHash Client: LN</option>
           <option value="NHATLINH">NiceHash Client: NHATLINH</option>
+          <option value="HUDA">NiceHash Client: HUDA</option>
           <option value="VN">NiceHash Client: VN (all NH Pools)</option>
         </select>
         {/* Automation Controls */}

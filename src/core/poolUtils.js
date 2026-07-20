@@ -8,7 +8,7 @@ import { getAlgoMapping, normalizeAlgo } from "./mapping.js";
 // CONSTANTS
 // ============================================
 const DEFAULT_VERIFICATION_LOCATION = "ANY";
-const KNOWN_NH_CLIENTS = new Set(["BT", "PH", "LN", "NHATLINH", "VN", "ALL"]);
+const KNOWN_NH_CLIENTS = new Set(["BT", "PH", "LN", "HUDA", "NHATLINH", "VN", "ALL"]);
 
 // ============================================
 // ✅ EXPORT: Algorithm Display Helpers

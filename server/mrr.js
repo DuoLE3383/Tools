@@ -9,51 +9,8 @@ import { getDb } from './db.js';
 import { normalizeCredential, sanitizeMrrEndpoint } from './utils.js';
 import { isAggregate, resolveNhClient, getNiceHashApp } from './nh.js';
 
-// ============================================
-// ALGORITHM MAPPING (Minimal implementation to fix server error)
-// ============================================
-const ALGO_MAPPING = {
-  // From ProfitAlert.jsx and logs
-  KAWPOW: { displayName: 'Kawpow' },
-  OCTOPUS: { displayName: 'Octopus' },
-  RANDOMXMONERO: { displayName: 'RandomX' },
-  KHEAVYHASH: { displayName: 'kHeavyHash' },
-  ETCHASH: { displayName: 'Etchash' },
-  AUTOLYKOS2: { displayName: 'Autolykos2' },
-  BEAMV3: { displayName: 'BeamV3' },
-  ZELHASH: { displayName: 'ZelHash' },
-  BLAKE3: { displayName: 'Blake3' },
-  DYNEXSOLVE: { displayName: 'DynexSolve' },
-  NEXAPOW: { displayName: 'NexaPow' },
-  IRONFISH: { displayName: 'IronFish' },
-  EQUIHASH: { displayName: 'Equihash' },
-  HANDSHAKE: { displayName: 'Handshake' },
-  KECCAK: { displayName: 'Keccak' },
-  LBRY: { displayName: 'LBRY' },
-  LYRA2REV2: { displayName: 'Lyra2REv2' },
-  NEOSCRYPT: { displayName: 'NeoScrypt' },
-  QUBIT: { displayName: 'Qubit' },
-  SCRYPT: { displayName: 'Scrypt' },
-  SHA256: { displayName: 'SHA256' },
-  X11: { displayName: 'X11' },
-  X13: { displayName: 'X13' },
-  FISHHASH: { displayName: 'FishHash' },
-  KARLSENHASH: { displayName: 'KarlsenHash' },
-  PYRINHASH: { displayName: 'PyrinHash' },
-};
-
-function getAlgoMapping(algo) {
-  if (!algo) return { displayName: 'N/A' };
-  const upperAlgo = String(algo).toUpperCase().replace(/[-_\s]/g, '');
-  return ALGO_MAPPING[upperAlgo] || { displayName: algo };
-}
-
-export function getAlgoDisplayName(algo) {
-  if (!algo) return 'N/A';
-  const fallback = (s) => (s.toUpperCase() === s && s.toLowerCase() !== s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : s);
-  const mapping = getAlgoMapping(algo);
-  return mapping.displayName || fallback(algo);
-}
+// NOTE: AlgoMapping removed — use src/core/mapping.js `getAlgoDisplayName` centrally instead.
+// The duplicate ALGO_MAPPING dict in this file was shadowing the canonical one.
 
 // ============================================
 // STATE MANAGEMENT
@@ -660,7 +617,6 @@ export async function mrrApiCall({ endpoint, method = 'GET', query, body, client
 // ============================================
 export async function mrrRequest(endpoint, req, res, method = 'GET', body = undefined) {
   const { client: clientQuery, endpoint: _internalPath, ts: _ts, ...forwardQuery } = req.query || {};
-  const db = await getDb();
   const targetClient = isAggregate(clientQuery) ? defaultMrrClient : clientQuery;
   const { statusCode, data, clientName } = await mrrApiCall({
     endpoint,
@@ -832,25 +788,23 @@ export async function fetchAggregatedRentals(query = {}, clientParam = 'BT') {
         r.poolFound = true;
 
         // Persist pool info to the database with a safe transaction
-        const savepointName = `mrr_rig_pool_sync_${id.replace(/[^a-zA-Z0-9]/g, "")}`;
-        try {
-          await db.run(`SAVEPOINT ${savepointName}`);
-          await db.run('DELETE FROM mrr_rig_pools WHERE rig_id = ?', [id]);
-          const stmt = await db.prepare('INSERT INTO mrr_rig_pools (rig_id, priority, type, host, port, username, password) VALUES (?, ?, ?, ?, ?, ?, ?)');
-          for (const pool of pools) {
-            await stmt.run(id, pool.priority, pool.type, pool.host, pool.port, pool.user, pool.pass);
-          }
-          await stmt.finalize();
-          await db.run(`RELEASE SAVEPOINT ${savepointName}`);
-        } catch (e) {
-          console.error(`[mrr:rigs] DB pool sync failed for rig ${id}: ${e.message}`);
+          const savepointName = `mrr_rig_pool_sync_${id.replace(/[^a-zA-Z0-9]/g, "")}`;
+          let sp = false;
           try {
-            // Attempt rollback, but don't crash if the savepoint doesn't exist
-            await db.run(`ROLLBACK TO SAVEPOINT ${savepointName}`);
-          } catch (rollbackError) {
-            console.error(`[mrr:rigs] Savepoint rollback failed for rig ${id}: ${rollbackError.message}`);
+            await db.run(`SAVEPOINT ${savepointName}`);
+            sp = true;
+            await db.run('DELETE FROM mrr_rig_pools WHERE rig_id = ?', [id]);
+            const stmt = await db.prepare('INSERT INTO mrr_rig_pools (rig_id, priority, type, host, port, username, password) VALUES (?, ?, ?, ?, ?, ?, ?)');
+            for (const pool of pools) {
+              await stmt.run(id, pool.priority, pool.type, pool.host, pool.port, pool.user, pool.pass);
+            }
+            await stmt.finalize();
+            await db.run(`RELEASE SAVEPOINT ${savepointName}`);
+          } catch (e) {
+            if (sp) {
+              try { await db.run(`ROLLBACK TO SAVEPOINT ${savepointName}`); } catch (_) {}
+            }
           }
-        }
       } else {
         r.poolFound = false;
       }

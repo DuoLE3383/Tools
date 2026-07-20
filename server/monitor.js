@@ -30,6 +30,7 @@ import {
 } from './mrr/hashrate-utils.js';
 
 import { TTLMap } from './mrr/cache-utils.js';
+import { getPriceDataLocal as getBtcPriceData } from '../src/core/mrrUtils.js';
 
 // ==========================
 //  CONFIGURATION
@@ -575,7 +576,6 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
           // Skip if not a real rental
           const info = extractRentalInfo(r);
           if (!isRealRental(r, info)) {
-            console.log(`[monitor:${acct}] Skipping ghost rental: ${rentalId}`);
             continue;
           }
 
@@ -775,6 +775,40 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
           successfulAcctList
         ).catch((err) => console.warn(`[monitor:db] Failed to clear stale rentals: ${err.message}`));
       }
+    }
+
+    // ⚠️ FIXED: Build and send overall SUMMARY heartbeat message
+    // This is sent regardless of individual rental NEW ALERTS, so the user
+    // always gets periodic summary updates.
+    {
+      const summaryLineCount = activeRentalLines.length;
+      
+      // Build online algos line
+      const onlineAlgosList = [];
+      for (const [algoName, count] of globalOnlineAlgos.entries()) {
+        onlineAlgosList.push(`• ${getAlgoDisplayName(algoName)}: ${count}`);
+      }
+      
+      // Count real active rentals from activeRentalLines (each line = one real active rental)
+      const totalRealRentals = activeRentalLines.length;
+      
+      const summaryMsg = TelegramTemplates.heartbeatSummary(
+        '📊', 
+        onlineAll, 
+        totalRealRentals,
+        offlineAll, 
+        disabledAll, 
+        totalAll, 
+        activeRentalLines.slice(0, 20), // limit to 20 lines for telegram
+        new Date().toLocaleTimeString(),
+        0, // rented24h - not tracked in this scope
+        onlineAlgosList,
+      );
+      
+      queueTelegramMessage(summaryMsg, {
+        type: 'SUMMARY',
+        label: 'Monitor Summary',
+      });
     }
 
     // ✅ Flush queued telegram messages

@@ -63,7 +63,7 @@ http://localhost:1757
 
 ## Notes
 
-The Vite development server proxies `/api` requests to `http://localhost:3000`, so the frontend can use the same origin for NiceHash queries.
+The Vite development server proxies `/api` requests to `http://localhost:3003`, so the frontend can use the same origin for NiceHash queries.
 
 ## React Compiler
 

@@ -24,6 +24,7 @@ import {
   MiningDutchPoolCard,
   K1PoolCard,
   KryptexCard,
+  TwoMinersPoolCard,
 } from "./pools/index.js";
 
 const HEARTBEAT_INTERVAL_MS = 120000;
@@ -373,6 +374,7 @@ function MiningWorkspaceShell({
             <HeroMinersLookup onCall={onCall} coinPrices={state.coinPrices} />
             <K1PoolCard onCall={onCall} coinPrices={state.coinPrices} />
             <KryptexCard onCall={onCall} coinPrices={state.coinPrices} />
+            <TwoMinersPoolCard onCall={onCall} />
           </div>
         </section>
 

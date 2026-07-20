@@ -57,6 +57,107 @@ export function registerNiceHashRoutes(app) {
   app.get("/api/v2/mining/markets", asyncHandler(async (req, res) => res.json(await req.nhApp.public.getMarkets())));
   app.get("/api/v2/public/stats/24h", asyncHandler(async (req, res) => res.json(await req.nhApp.hashpower.getGlobalStats24h())));
 
+  // ─── Prices / CoinGecko ───────────────────────────────────
+  app.get("/api/v2/coingecko/live", asyncHandler(async (req, res) => {
+    const { ids, vs_currencies = 'usd,btc' } = req.query;
+    if (!ids) {
+      return res.status(400).json({ success: false, error: "Coin IDs are required." });
+    }
+
+    try {
+      const db = await getDb();
+      const symbols = ids.split(',').map(s => s.trim());
+      const upperSymbols = symbols.map(s => s.toUpperCase());
+      const placeholders = upperSymbols.map(() => '?').join(',');
+      
+      const metaRows = await db.all(`SELECT coin_id, symbol FROM coin_metadata WHERE upper(symbol) IN (${placeholders})`, upperSymbols);
+      
+      const symbolToIdMap = new Map();
+      const idToSymbolMap = new Map();
+      metaRows.forEach(row => {
+        symbolToIdMap.set(row.symbol.toLowerCase(), row.coin_id);
+        idToSymbolMap.set(row.coin_id, row.symbol.toLowerCase());
+      });
+
+      const coingeckoIdsToFetch = symbols.map(s => symbolToIdMap.get(s.toLowerCase()) || s.toLowerCase());
+      const uniqueCoingeckoIds = [...new Set(coingeckoIdsToFetch)].join(',');
+
+      if (!uniqueCoingeckoIds) {
+        return res.status(404).json({ success: false, error: `No valid CoinGecko IDs found for symbols: ${ids}` });
+      }
+
+      const url = `https://api.coingecko.com/api/v3/simple/price?ids=${uniqueCoingeckoIds}&vs_currencies=${vs_currencies}`;
+      const cgRes = await fetch(url, { signal: AbortSignal.timeout(8000) });
+
+      if (!cgRes.ok) {
+        const errorText = await cgRes.text();
+        return res.status(cgRes.status).json({ success: false, error: `CoinGecko API error: ${errorText}`, url });
+      }
+
+      const cgData = await cgRes.json();
+
+      const responseData = {};
+      for (const cgId in cgData) {
+        const symbol = idToSymbolMap.get(cgId) || cgId;
+        responseData[symbol] = cgData[cgId];
+      }
+      
+      symbols.forEach(s => {
+        const lowerS = s.toLowerCase();
+        if(cgData[lowerS] && !responseData[lowerS]) {
+            responseData[lowerS] = cgData[lowerS];
+        }
+      });
+
+      res.json(responseData);
+    } catch (error) {
+      console.error('[Coingecko Live Error]', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }));
+
+  app.get("/api/v2/prices/coingecko", asyncHandler(async (req, res) => {
+    const { coinId, vs_currencies = 'usd,btc' } = req.query;
+    if (!coinId) {
+      return res.status(400).json({ success: false, error: "coinId is required." });
+    }
+
+    try {
+      const db = await getDb();
+      const symbol = coinId.toUpperCase();
+      const meta = await db.get('SELECT coin_id FROM coin_metadata WHERE upper(symbol) = ?', symbol);
+      const coingeckoId = meta?.coin_id || coinId.toLowerCase();
+
+      const url = `https://api.coingecko.com/api/v3/simple/price?ids=${coingeckoId}&vs_currencies=${vs_currencies}`;
+      const cgRes = await fetch(url, { signal: AbortSignal.timeout(8000) });
+
+      if (!cgRes.ok) {
+        const errorText = await cgRes.text();
+        return res.status(cgRes.status).json({ success: false, error: `CoinGecko API error: ${errorText}`, url });
+      }
+
+      const cgData = await cgRes.json();
+      const responseData = cgData[coingeckoId] ? { [coinId.toLowerCase()]: cgData[coingeckoId] } : cgData;
+      res.json(responseData);
+    } catch (error) {
+      console.error('[Coingecko Price Error]', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }));
+
+  app.get("/api/v2/prices/db/:coin", asyncHandler(async (req, res) => {
+    const { coin } = req.params;
+    if (!coin) return res.status(400).json({ success: false, error: "Coin symbol is required." });
+    try {
+        const db = await getDb();
+        const row = await db.get(`SELECT p.* FROM coin_prices p JOIN coin_metadata m ON p.coin_id = m.coin_id WHERE upper(m.symbol) = ? ORDER BY p.last_updated_at DESC LIMIT 1`, coin.toUpperCase());
+        if (row) res.json({ success: true, data: { [coin.toLowerCase()]: row } });
+        else res.status(404).json({ success: false, error: `Price not found in DB for ${coin}` });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+  }));
+
   // New route for static NiceHash algo data
   app.get("/api/v2/nicehash-algos", asyncHandler(async (req, res) => {
     try {
@@ -458,30 +559,53 @@ export function registerNiceHashRoutes(app) {
     const app = getNiceHashApp(client);
     res.json(await app.hashpower.getOrderBook({ algorithm: algo, market }));
   }));
+  // ⚠️ FIXED: Order detail — catch 403/Insufficient permissions so it doesn't trigger auth logout
   app.get("/api/v2/hashpower/order/:orderId", asyncHandler(async (req, res) => {
     const clientParam = String(req.query.client || "VN").toUpperCase();
+    // Collect all clients to try — start with requested, then fall back to all configured
+    const clientsToTry = [];
+    // First try specifically requested/aggregate clients
     if (isAggregate(clientParam)) {
       const nhAccounts = Object.keys(nhConfigs).filter(k => nhConfigs[k].apiKey && nhConfigs[k].apiSecret && nhConfigs[k].orgId && !isAggregate(k));
-      const processedClients = new Set();
       for (const acct of nhAccounts) {
         const { client, clientName } = resolveNhClient(acct);
-        if (!client || (acct !== "BT" && clientName === "VN") || processedClients.has(clientName)) continue;
-        processedClients.add(clientName);
-        try {
-          const data = await getNiceHashApp(client).hashpower.getOrderDetail(req.params.orderId);
-          if (data && !data.error) {
-            res.set("X-NH-Client", clientName);
-            data.nhClient = clientName;
-            return res.json(data);
-          }
-        } catch (err) {
-          // This client doesn't own the order, try next
+        if (client && !clientsToTry.some(c => c.name === clientName)) {
+          clientsToTry.push({ name: clientName, client });
         }
       }
+    } else if (clientParam !== "ALL") {
+      const { client, clientName } = resolveNhClient(clientParam);
+      if (client) clientsToTry.push({ name: clientName, client });
     }
-    const data = await req.nhApp.hashpower.getOrderDetail(req.params.orderId);
-    data.nhClient = res.get("X-NH-Client");
-    res.json(data);
+    // If the specific request failed (403), also try ALL other clients as fallback
+    const allNhAccounts = Object.keys(nhConfigs).filter(k => nhConfigs[k].apiKey && nhConfigs[k].apiSecret && nhConfigs[k].orgId && !isAggregate(k));
+    for (const acct of allNhAccounts) {
+      const { client, clientName } = resolveNhClient(acct);
+      if (client && !clientsToTry.some(c => c.name === clientName)) {
+        clientsToTry.push({ name: clientName, client });
+      }
+    }
+    // Try each client until we get a valid response
+    let lastError = null;
+    for (const { name, client } of clientsToTry) {
+      try {
+        const data = await getNiceHashApp(client).hashpower.getOrderDetail(req.params.orderId);
+        if (data && !data.error) {
+          res.set("X-NH-Client", name);
+          data.nhClient = name;
+          return res.json(data);
+        }
+      } catch (err) {
+        lastError = err;
+        // Continue to next client
+      }
+    }
+    // All clients failed - if it's a 403/VIEW_ORDERS, return gracefully (silent, no error log)
+    if (lastError && (lastError.statusCode === 403 || lastError.message?.includes('Insufficient permissions') || lastError.message?.includes('VIEW_ORDERS'))) {
+      return res.status(200).json({ success: true, warning: lastError.message, id: req.params.orderId });
+    }
+    // Otherwise rethrow the last error
+    throw lastError || new Error('Order not found');
   }));
   app.post("/api/v2/hashpower/order", asyncHandler(async (req, res) => res.json(await req.nhApp.hashpower.createOrder(req.body))));
   app.get("/api/v2/hashpower/order-book", asyncHandler(async (req, res) => res.json(await req.nhApp.hashpower.getOrderBook(req.query))));

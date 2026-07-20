@@ -54,11 +54,18 @@ function NiceHashOrderManager({ onCall, nhClient, setNhClient }) {
       if (data && !data.error) {
         const contextMatch = nicehashOrders.find((r) => r.id === id);
         setOrderDetail({ ...data, nhClient: contextMatch?.account || nhClient });
-        setPriceInput(data.price || "");
-        setLimitInput(data.limit || "");
+        // Only overwrite price/limit from API if they actually exist (not a 403-warning response)
+        if (data.price !== undefined && data.price !== "") {
+          setPriceInput(data.price);
+        }
+        if (data.limit !== undefined && data.limit !== "") {
+          setLimitInput(data.limit);
+        }
       }
+      return data; // Return for .then() chain
     } catch (error) {
       console.error("Error fetching order detail:", error);
+      return { error: error.message };
     } finally {
       setLoadingLocal(false);
     }
@@ -67,6 +74,7 @@ function NiceHashOrderManager({ onCall, nhClient, setNhClient }) {
   const handleOrderSelect = (value) => {
     setSelectedOrderId(value);
     setContextSelectedOrderId(value);
+    // Always set local data first from context (has price/limit)
     const existing = nicehashOrders.find((r) => r.id === String(value));
     if (existing?.rawOrder) {
       setOrderDetail({ ...existing.rawOrder, nhClient: existing.account });
@@ -74,7 +82,16 @@ function NiceHashOrderManager({ onCall, nhClient, setNhClient }) {
       setLimitInput(existing.rawOrder.limit || "");
     }
     if (value) {
-      fetchOrderDetail(value);
+      // Fetch fresh detail from server, but preserve price/limit from local data
+      fetchOrderDetail(value).then((data) => {
+        if (data && !data.error && existing?.rawOrder) {
+          // Keep the local price/limit if the API response is a warning/partial response
+          if (data.warning || !data.price) {
+            setPriceInput(existing.rawOrder.price || "");
+            setLimitInput(existing.rawOrder.limit || "");
+          }
+        }
+      });
     } else {
       setOrderDetail(null);
       setPriceInput("");

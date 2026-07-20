@@ -5,14 +5,33 @@ let cachedDutchData = null;
 let cachedDutchTime = 0;
 const DUTCH_CACHE_TTL = 30000;
 
-export function registerMiningStatsRoutes(app) {
-  app.get("/api/v2/mining-stats/herominers", asyncHandler(async (req, res) => {
-    const { scrapeHeroMinersGlobal } = await import("../miningOpportunityNotifier.js");
-    const force = req.query.force === "true";
-    const result = await scrapeHeroMinersGlobal(force);
-    res.json(result);
-  }));
+/**
+ * Formats a raw hashrate number into a human-readable string with units.
+ * @param {number} hashrate - The raw hashrate in H/s.
+ * @returns {string} The formatted hashrate string (e.g., "12.34 KH/s").
+ */
+function formatHashrate(hashrate) {
+  if (hashrate === 0 || !hashrate) return '0 H/s';
+  const num = Number(hashrate);
+  if (isNaN(num) || num === 0) return '0 H/s';
+  const i = Math.floor(Math.log(num) / Math.log(1000));
+  const units = ['H/s', 'KH/s', 'MH/s', 'GH/s', 'TH/s', 'PH/s', 'EH/s'];
+  if (i >= units.length) return `${num.toExponential(2)} H/s`;
+  return `${(num / Math.pow(1000, i)).toFixed(2)} ${units[i]}`;
+}
 
+function build2MinersApiUrl(pool, address) {
+    let poolHost;
+    if (pool.endsWith('-solo')) {
+        const coin = pool.replace('-solo', '');
+        poolHost = `solo-${coin}`;
+    } else {
+        poolHost = pool;
+    }
+    return `https://${poolHost}.2miners.com/api/accounts/${address}`;
+}
+
+export function registerMiningStatsRoutes(app) {
   app.get("/api/v2/mining-stats/miningdutch", asyncHandler(async (req, res) => {
     const force = req.query.force === "true";
     const now = Date.now();
@@ -268,6 +287,46 @@ export function registerMiningStatsRoutes(app) {
       return res.json({ success: true, data: summary });
     } catch (err) {
       return res.status(500).json({ success: false, error: err.message });
+    }
+  }));
+
+  // ─── 2Miners ────────────────────────────────────────────────
+  app.get("/api/v2/mining-stats/2miners", asyncHandler(async (req, res) => {
+    const { pool, address } = req.query;
+
+    if (!pool || !address) {
+        return res.status(400).json({ success: false, error: 'Pool and address are required.' });
+    }
+
+    const apiUrl = build2MinersApiUrl(pool.toLowerCase(), address);
+
+    try {
+        const apiRes = await fetch(apiUrl, { signal: AbortSignal.timeout(15000) });
+
+        if (!apiRes.ok) {
+            const errorText = await apiRes.text();
+            if (apiRes.status === 404) {
+              return res.status(404).json({ success: false, error: `Wallet not found on 2Miners pool '${pool}'.` });
+            }
+            return res.status(apiRes.status).json({ success: false, error: `2Miners API error: ${errorText.slice(0, 200)}` });
+        }
+
+        const data = await apiRes.json();
+
+        const responseData = {
+            currentHashrateStr: formatHashrate(data.currentHashrate),
+            hashrateStr: formatHashrate(data.hashrate),
+            workers: {
+                online: data.workersOnline || 0,
+                total: data.workersTotal || 0,
+            },
+            soloLuck: data.soloStats?.luck?.replace('%', '') || null,
+        };
+
+        res.json({ success: true, data: responseData });
+
+    } catch (error) {
+        return res.status(500).json({ success: false, error: error.message });
     }
   }));
 }

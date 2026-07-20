@@ -10,6 +10,8 @@ import HashCompletionCalculator from './src/components/ProfitCompletion';
 import MrrPoolsManager from './src/components/mrr/MrrManager';
 import Login from './src/components/Login';
 import HeroMinersCard from './src/components/HeroMinersCard';
+import KryptexCard from './src/components/mining/pools/KryptexCard.jsx';
+import TwoMinersPoolCard from './src/components/mining/pools/2minersPoolCard.jsx';
 import MiningCoin from './src/components/MiningCoin.jsx';
 import { HASHRATE_SUFFIXES, normalizeAlgoForNiceHash, ALGO_MAPPING } from './src/core/mapping';
 import { RentedRigProvider } from './src/components/NiceHashContext';
@@ -367,8 +369,7 @@ export default function App() {
           background: 'rgba(255, 255, 255, 0.02)',
           border: '1px solid rgba(255, 255, 255, 0.05)',
           borderRadius: '16px',
-          padding: '24px',
-          height: '12800px',
+          padding: '24px',          
           minHeight: '700px'
         }}
       >
@@ -380,6 +381,20 @@ export default function App() {
           nhClient={nhClient} 
           setNhClient={setNhClient} 
         />
+        <div className="column-stack" style={{ display: 'flex', flexDirection: 'column', gap: '24px', marginTop: '24px' }}>
+            <article className="panel">
+                <HeroMinersCard mrrClient={mrrClient} onCall={callApi} />
+            </article>
+            <article className="panel">
+                <KryptexCard onCall={callApi} />
+            </article>
+            <article className="panel">
+                <TwoMinersPoolCard onCall={callApi} />
+            </article>
+            <article className="panel">
+                <MiningCoin onCall={callApi} nhClient={nhClient} />
+            </article>
+        </div>
       </section>
       <main className="dashboard">
         <section className="quick-actions">
@@ -430,12 +445,6 @@ export default function App() {
               externalRentalId={mrrPoolRentalId}
               onClose={() => setMrrPoolData(null)}
             />
-          </article>
-          <article className="panel">
-            <HeroMinersCard mrrClient={mrrClient} onCall={callApi} />
-          </article>
-          <article className="panel">
-            <MiningCoin onCall={callApi} nhClient={nhClient} />
           </article>
         </section>
       </main>

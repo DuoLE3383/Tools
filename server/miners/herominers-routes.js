@@ -15,7 +15,7 @@ const SUPPORTED_COINS = [...new Set(Object.keys(COIN_TO_ALGO_MAP).map(c => c.toU
  * GET /api/v2/mining-stats/herominers
  * Get miner stats from HeroMiners
  */
-router.get('/herominers', async (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const { address, coin = 'ZEPH' } = req.query;
 
@@ -79,11 +79,14 @@ router.get('/herominers', async (req, res) => {
 
     // Build dashboard data
     const dashboard = buildDashboardData(parsed, priceData);
+    
+    const algorithm = COIN_TO_ALGO_MAP[coinUpper] || null;
 
     // Return full response
     return res.json({
       success: true,
-      data: { ...dashboard, coinPrice: priceData?.usd || 0 },
+      // Add the algorithm to the response data
+      data: { ...dashboard, coinPrice: priceData?.usd || 0, algorithm },
       raw: parsed,
       address,
       coin: coinUpper,
@@ -119,7 +122,7 @@ router.get('/herominers', async (req, res) => {
  * GET /api/v2/mining-stats/herominers/hashrate
  * Get hashrate history
  */
-router.get('/herominers/hashrate', async (req, res) => {
+router.get('/hashrate', async (req, res) => {
   try {
     const { address, coin = 'ZEPH', period = '24h' } = req.query;
 
@@ -152,7 +155,7 @@ router.get('/herominers/hashrate', async (req, res) => {
  * GET /api/v2/mining-stats/herominers/payments
  * Get payment history
  */
-router.get('/herominers/payments', async (req, res) => {
+router.get('/payments', async (req, res) => {
   try {
     const { address, coin = 'ZEPH', limit = 50 } = req.query;
 
@@ -185,7 +188,7 @@ router.get('/herominers/payments', async (req, res) => {
  * GET /api/v2/mining-stats/herominers/pool
  * Get pool stats
  */
-router.get('/herominers/pool', async (req, res) => {
+router.get('/pool', async (req, res) => {
   try {
     const { coin = 'ZEPH' } = req.query;
 
@@ -211,7 +214,7 @@ router.get('/herominers/pool', async (req, res) => {
  * GET /api/v2/mining-stats/herominers/network
  * Get network stats
  */
-router.get('/herominers/network', async (req, res) => {
+router.get('/network', async (req, res) => {
   try {
     const { coin = 'ZEPH' } = req.query;
 
@@ -237,7 +240,7 @@ router.get('/herominers/network', async (req, res) => {
  * POST /api/v2/mining-stats/herominers/batch
  * Batch check multiple addresses
  */
-router.post('/herominers/batch', async (req, res) => {
+router.post('/batch', async (req, res) => {
   try {
     const { addresses, coin: coinName = 'ZEPH' } = req.body;
     const coin = coinName.toUpperCase();
@@ -288,7 +291,7 @@ router.post('/herominers/batch', async (req, res) => {
  * GET /api/v2/mining-stats/herominers/global
  * Get global pool stats from all discovered HeroMiners pools.
  */
-router.get('/herominers/global', async (req, res) => {
+router.get('/global', async (req, res) => {
   try {
     const force = req.query.force === 'true';
     // btcPrice is fetched inside scrapeHeroMinersGlobal
@@ -309,7 +312,7 @@ router.get('/herominers/global', async (req, res) => {
  * GET /api/v2/mining-stats/herominers/address
  * Get global stats for a specific address across all coins on HeroMiners.
  */
-router.get('/herominers/address', async (req, res) => {
+router.get('/address', async (req, res) => {
   try {
     const { address, coin } = req.query;
     if (!address) {
@@ -357,7 +360,7 @@ router.get('/herominers/address', async (req, res) => {
  * Batch-monitor multiple coin/address pairs at once.
  * Query format: ?pairs=CFX:0xADDR&pairs=KASPA:kaspa:ADDR&pairs=QRL:Q...
  */
-router.get('/herominers/multi', async (req, res) => {
+router.get('/multi', async (req, res) => {
   try {
     let pairs;
     if (req.query.pairs) {
@@ -383,13 +386,15 @@ router.get('/herominers/multi', async (req, res) => {
       const address = addrParts.join(':');
       if (!coin || !address) return null;
       try {
+        const coinTrimmedUpper = coin.trim().toUpperCase();
         const raw = await api.getMinerStats(address, coin.trim());
-        if (!raw) return { coin: coin.trim().toUpperCase(), address, success: false, error: 'No data' };
+        if (!raw) return { coin: coinTrimmedUpper, address, success: false, error: 'No data' };
         const parsed = parseHeroMinersResponse(raw, address, coin.trim());
-        if (!parsed) return { coin: coin.trim().toUpperCase(), address, success: false, error: 'Parse failed' };
-        const prices = await getCoinPricesFromDb([coin.trim().toUpperCase()]);
-        const dashboard = buildDashboardData(parsed, prices[coin.trim().toUpperCase()] || {});
-        return { coin: coin.trim().toUpperCase(), address, success: true, ...dashboard };
+        if (!parsed) return { coin: coinTrimmedUpper, address, success: false, error: 'Parse failed' };
+        const prices = await getCoinPricesFromDb([coinTrimmedUpper]);
+        const dashboard = buildDashboardData(parsed, prices[coinTrimmedUpper] || {});
+        const algorithm = COIN_TO_ALGO_MAP[coinTrimmedUpper] || null;
+        return { coin: coinTrimmedUpper, address, success: true, ...dashboard, algorithm };
       } catch (e) {
         return { coin: coin.trim().toUpperCase(), address, success: false, error: e.message };
       }
@@ -409,5 +414,5 @@ router.get('/herominers/multi', async (req, res) => {
 });
 
 export function registerHeroMinersRoutes(app) {
-  app.use('/api/v2/mining-stats', router);
+  app.use('/api/v2/mining-stats/herominers', router);
 }

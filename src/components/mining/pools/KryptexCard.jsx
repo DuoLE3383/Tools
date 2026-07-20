@@ -223,7 +223,6 @@ export default function KryptexCard({ onCall }) {
 
       {pairs.length === 0 && (
         <div style={{ fontSize: "clamp(9px, 0.7vw, 11px)", color: "#64748b", padding: "8px", textAlign: "center", fontStyle: "italic" }}>
-          Add coin + address pairs to monitor. E.g. <strong>etc</strong> + your wallet.
           {/* <div style={{ marginTop: "4px", color: "#34d399", fontSize: "8px" }}>
             Supported coins: {SUPPORTED_COINS_DISPLAY}
           </div> */}
@@ -283,7 +282,7 @@ export default function KryptexCard({ onCall }) {
                       <StatItemUSD label="30d Reward" value={reward30d} color="#a78bfa" />
                     </div>
                     <KryptexProfitAlert
-                      pair={{ coin: pair.coin.toUpperCase(), address: pair.address }}
+                      pair={{ id: pair.id, coin: pair.coin.toUpperCase(), address: pair.address }}
                       onCall={onCall}
                       nhClient="VN"
                     />

@@ -1,11 +1,10 @@
-// K1PoolCard.jsx - Multi-wallet monitor (HeroMinersLookup pattern)
-import { useState, useCallback, useMemo, useEffect, useRef } from "react";
+// 2minersPoolCard.jsx - Multi-wallet monitor for 2Miners pools
+import { useState, useCallback, useEffect, useRef } from "react";
 import ProfitAlert from "../ProfitAlert.jsx";
-import { loadStringFromStorage, saveStringToStorage } from "../../../core/storage.js";
 
-const STORAGE_KEY = "k1pool_monitor_pairs";
-const AUTO_REFRESH_KEY = "k1pool_auto_refresh";
-const DEFAULT_POOL = "quaikawpowsolo";
+const STORAGE_KEY = "2miners_monitor_pairs";
+const AUTO_REFRESH_KEY = "2miners_auto_refresh";
+const DEFAULT_POOL = "zeph-solo";
 
 function loadSavedPairs() {
   try {
@@ -29,23 +28,22 @@ function saveAutoRefresh(val) {
   try { localStorage.setItem(AUTO_REFRESH_KEY, String(val)); } catch {}
 }
 
-const ACCENT_COLORS = ["#a78bfa", "#34d399", "#f59e0b", "#f472b6", "#38bdf8", "#60a5fa"];
+const ACCENT_COLORS = ["#60a5fa", "#34d399", "#f59e0b", "#f472b6", "#38bdf8", "#a78bfa"];
 
 function deriveCoin(pool) {
-  if (!pool) return "RVN";
+  if (!pool) return "ZEPH";
   const p = pool.toLowerCase();
-  if (p.includes('quai')) return 'QUAI';
-  if (p.includes('kawpow')) return 'RVN';
-  if (p.includes('nexa')) return 'NEXA';
-  if (p.includes('kas')) return 'KAS';
-  if (p.includes('beam')) return 'BEAM';
-  if (p.includes('xmr') || p.includes('monero')) return 'XMR';
   if (p.includes('zeph')) return 'ZEPH';
-  if (p.includes('eth') || p.includes('etchash')) return 'ETC';
-  if (p.includes('octopus')) return 'CFX';
+  if (p.includes('rvn')) return 'RVN';
+  if (p.includes('etc')) return 'ETC';
+  if (p.includes('erg')) return 'ERGO';
+  if (p.includes('kas')) return 'KAS';
+  if (p.includes('nexa')) return 'NEXA';
+  if (p.includes('xmr')) return 'XMR';
+  if (p.includes('cfx')) return 'CFX';
   const match = p.match(/^([a-z]+)/);
   if (match) return match[1].toUpperCase();
-  return 'RVN';
+  return 'ZEPH';
 }
 
 function MiniStat({ label, value, color }) {
@@ -57,7 +55,7 @@ function MiniStat({ label, value, color }) {
   );
 }
 
-export default function K1PoolCard({ onCall }) {
+export default function TwoMinersPoolCard({ onCall }) {
   const [pairs, setPairs] = useState(() => loadSavedPairs());
   const [poolInput, setPoolInput] = useState(DEFAULT_POOL);
   const [addressInput, setAddressInput] = useState("");
@@ -75,7 +73,7 @@ export default function K1PoolCard({ onCall }) {
     const newErrors = {};
     await Promise.all(pairs.map(async (pair) => {
       try {
-        const result = await onCall("/api/v2/mining-stats/k1pool", {
+        const result = await onCall("/api/v2/mining-stats/2miners", {
           query: { pool: pair.pool, address: pair.address },
           silent: true,
         });
@@ -114,7 +112,7 @@ export default function K1PoolCard({ onCall }) {
     setPoolInput(DEFAULT_POOL);
     setAddressInput("");
     setLoading(prev => new Set([...prev, id]));
-    onCall("/api/v2/mining-stats/k1pool", {
+    onCall("/api/v2/mining-stats/2miners", {
       query: { pool, address },
       silent: true,
     }).then(result => {
@@ -163,8 +161,8 @@ export default function K1PoolCard({ onCall }) {
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div>
-          <h4 style={{ margin: 0, color: "#a78bfa", fontSize: "clamp(12px, 1vw, 14px)" }}>
-            🏛 K1Pool Monitor
+          <h4 style={{ margin: 0, color: "#60a5fa", fontSize: "clamp(12px, 1vw, 14px)" }}>
+            ⛏️ 2Miners Pool Monitor
           </h4>
           <div style={{ fontSize: "clamp(9px, 0.7vw, 11px)", color: "#94a3b8", marginTop: "2px" }}>
             {pairs.length} wallet{pairs.length !== 1 ? "s" : ""}
@@ -191,7 +189,7 @@ export default function K1PoolCard({ onCall }) {
       {/* Add new pair */}
       <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
         <input value={poolInput} onChange={(e) => setPoolInput(e.target.value.toLowerCase())}
-          placeholder="Pool (e.g. quaikawpowsolo)"
+          placeholder="Pool (e.g. zeph-solo)"
           style={{ flex: "0 0 100px", padding: "6px 10px", background: "rgba(0,0,0,0.25)",
             border: "1px solid rgba(148,163,184,0.15)", borderRadius: "6px", color: "#e2e8f0",
             fontSize: "clamp(10px, 0.8vw, 12px)" }} />
@@ -209,6 +207,9 @@ export default function K1PoolCard({ onCall }) {
 
       {pairs.length === 0 && (
         <div style={{ fontSize: "clamp(9px, 0.7vw, 11px)", color: "#64748b", padding: "8px", textAlign: "center", fontStyle: "italic" }}>
+          Add a pool and wallet address to start monitoring.
+          <br />
+          Example: <strong>zeph-solo</strong> + your ZEPH wallet address.
         </div>
       )}
 
@@ -220,12 +221,11 @@ export default function K1PoolCard({ onCall }) {
             const error = errors[pair.id];
             const isLoading = loading.has(pair.id);
             const accent = ACCENT_COLORS[idx % ACCENT_COLORS.length];
-            const miner = data?.miner || {};
-            const workerStats = {
-              total: miner.workersTotal || 0,
-              online: miner.workersOnline || 0,
-              offline: miner.workersOffline || 0,
-            };
+            const hashrate = data?.currentHashrateStr || "0 H/s";
+            const avgHashrate = data?.hashrateStr || "0 H/s";
+            const workersOnline = data?.workers?.online || 0;
+            const workersTotal = data?.workers?.total || 0;
+            const soloLuck = data?.soloLuck;
             const coin = deriveCoin(pair.pool);
 
             return (
@@ -260,15 +260,15 @@ export default function K1PoolCard({ onCall }) {
                 {data && !isLoading && (
                   <>
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "4px" }}>
-                      <MiniStat label="Hashrate" value={miner.curHashrateStr || "0 H/s"} color={accent} />
-                      <MiniStat label="Avg (3h)" value={miner.avgHashrateStr || "0 H/s"} color="#34d399" />
-                      <MiniStat label="Workers" value={`${workerStats.online} / ${workerStats.total}`} color="#e2e8f0" />
-                      <MiniStat label="Luck" value={miner.soloLuck ? `${miner.soloLuck}%` : "N/A"} color="#f472b6" />
+                      <MiniStat label="Hashrate" value={hashrate} color={accent} />
+                      <MiniStat label="Avg (24h)" value={avgHashrate} color="#34d399" />
+                      <MiniStat label="Workers" value={`${workersOnline} / ${workersTotal}`} color="#e2e8f0" />
+                      <MiniStat label="Luck" value={soloLuck ? `${soloLuck}%` : "N/A"} color="#f472b6" />
                     </div>
                     <ProfitAlert
-                      pair={{ coin, address: pair.address }}
+                      pair={{ id: pair.id, coin, address: pair.address }}
                       onCall={onCall}
-                      poolName={`K1Pool-${pair.pool}`}
+                      poolName={`2Miners-${pair.pool}`}
                       nhClient="VN"
                     />
                   </>

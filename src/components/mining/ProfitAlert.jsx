@@ -96,7 +96,7 @@ export default function ProfitAlert({
     };
     return algoMap[coinUpper] || coinUpper;
   };
-  const algorithm = getCoinAlgorithm(coin);
+  const algorithm = pair?.algorithm || getCoinAlgorithm(coin);
 
   const handleSelectOrder = (order) => {
     setManualOrderId(order.id);

@@ -235,8 +235,10 @@ export function NiceHashOrderProvider({ children, nhClient, callApi }) {
     } catch (err) {
       console.error("[NiceHashOrderContext] Error fetching orders:", err);
       setError(err.message || "Failed to fetch NiceHash orders");
-      setNicehashOrders([]);
-      setSummary({ totalPaid: "0.00000000", count: 0 });
+      // ⚠️ FIXED: Preserve existing order data on error so the UI doesn't lose all data
+      if (nicehashOrders.length === 0) {
+        setSummary({ totalPaid: "0.00000000", count: 0 });
+      }
     } finally {
       isLoadingRef.current = false;
       setLoading(false);

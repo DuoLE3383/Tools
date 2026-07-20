@@ -5,3 +5,4 @@ export { default as HashrateNoCard } from "./HashrateNoCard";
 export { default as MiningDutchPoolCard } from "./MiningDutchPoolCard";
 export { default as K1PoolCard } from "./K1PoolCard";
 export { default as KryptexCard } from "./KryptexCard";
+export { default as TwoMinersPoolCard } from "./2minersPoolCard";

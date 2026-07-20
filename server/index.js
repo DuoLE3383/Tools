@@ -7,6 +7,7 @@ import { registerRoutes } from './routes.js';
 import { setupWebSocket } from './ws.js';
 import { startMiningOpportunityScanner } from './miningOpportunityNotifier.js';
 import { startKryptexMonitor } from './miners/kryptex-monitor.js';
+import { startQrlProfitMonitor } from './miners/qrl-profit-monitor.js';
 
 dotenv.config();
 
@@ -66,6 +67,9 @@ startMiningOpportunityScanner();
 
 // Start Kryptex monitor (periodic snapshots of configured addresses)
 startKryptexMonitor();
+
+// Start QRL profit monitor (compares QRL mining vs NiceHash, alerts when > 6%)
+startQrlProfitMonitor();
 
 // Start server
 const PORT = process.env.PORT;

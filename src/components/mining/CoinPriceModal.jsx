@@ -129,6 +129,26 @@ export default function CoinPriceModal({
       } catch { /* try next */ }
     }
 
+    // --- Live CoinGecko API fallback (last resort) ---
+    for (const cid of tryCoinIds) {
+      try {
+        const result = await onCall("/api/v2/coingecko/live", {
+          query: { ids: cid, vs_currencies: "usd,btc" },
+          silent: true
+        });
+        const data = result || {};
+        // /api/v2/coingecko/live returns the raw CG response: { "bitcoin": { usd: 12345, ... } }
+        const coinEntry = Object.values(data).find(v => v?.usd > 0);
+        if (coinEntry) {
+          foundPrice = parseFloat(coinEntry.usd);
+          setPriceData({ price: foundPrice, marketCap: 0, volume24h: 0, change24h: coinEntry.usd_24h_change || 0, high24h: 0, low24h: 0, supply: 0, lastUpdated: new Date().toISOString() });
+          setSource("coingecko");
+          setLoading(false);
+          return;
+        }
+      } catch { /* try next */ }
+    }
+
     setError("Failed to fetch price data from all sources");
     setLoading(false);
   }, [coin, onCall]);
