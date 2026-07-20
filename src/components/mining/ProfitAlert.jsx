@@ -6,6 +6,7 @@ import { formatDisplayNumber } from '../../core/priceUtils.js';
 import { useProfitAlert } from '../../hooks/useProfitAlert.js';
 
 const ORDER_STORAGE_PREFIX = 'profit_alert_order_';
+const CLIENT_STORAGE_PREFIX = 'profit_alert_client_';
 
 function loadSavedOrderId(pairId) {
   try {
@@ -20,15 +21,25 @@ function saveOrderId(pairId, orderId) {
   } catch {}
 }
 
+function loadSavedClient(pairId, fallback) {
+  try { return localStorage.getItem(`${CLIENT_STORAGE_PREFIX}${pairId}`) || fallback; } catch { return fallback; }
+}
+
+function saveClient(pairId, client) {
+  try { localStorage.setItem(`${CLIENT_STORAGE_PREFIX}${pairId}`, client); } catch {}
+}
+
 export default function ProfitAlert({ 
   pair,           // Auto-detected from pool monitor
   onCall,
   nhClient = 'VN',
+  niceHashClients = [{ id: 'VN', label: 'All NiceHash accounts' }],
   poolName,
   onProfitUpdate,
 }) {
   const [manualOrderId, setManualOrderId] = useState(() => pair?.id ? loadSavedOrderId(pair.id) : null);
   const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
+  const [selectedNhClient, setSelectedNhClient] = useState(() => pair?.id ? loadSavedClient(pair.id, nhClient) : nhClient);
 
   const {
     stats,
@@ -45,7 +56,7 @@ export default function ProfitAlert({
   } = useProfitCalculator({
     pair,
     onCall,
-    nhClient,
+    nhClient: selectedNhClient,
     manualNiceHashOrderId: manualOrderId,
   });
 
@@ -104,6 +115,14 @@ export default function ProfitAlert({
     setIsOrderModalOpen(false);
   };
 
+  const handleClientChange = (event) => {
+    const nextClient = event.target.value;
+    setSelectedNhClient(nextClient);
+    saveClient(pair.id, nextClient);
+    setManualOrderId(null);
+    saveOrderId(pair.id, null);
+  };
+
   // Manual refresh
   const handleRefresh = useCallback(async () => {
     await checkProfit();
@@ -139,6 +158,14 @@ export default function ProfitAlert({
             {/* {poolName ? `${poolName} - ` : ''} */}
             {coin} Monitor
           </span>
+          <select
+            value={selectedNhClient}
+            onChange={handleClientChange}
+            aria-label="NiceHash account"
+            style={{ maxWidth: '145px', fontSize: '10px', background: 'rgba(15,23,42,0.95)', border: '1px solid rgba(96,165,250,0.35)', borderRadius: '4px', color: '#bfdbfe', padding: '2px 4px', cursor: 'pointer' }}
+          >
+            {niceHashClients.map((client) => <option key={client.id} value={client.id}>{client.label || client.id}</option>)}
+          </select>
           {niceHashOrderId && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
               <span style={{ fontSize: '9px', color: '#64748b' }}>
@@ -249,7 +276,7 @@ export default function ProfitAlert({
         onSelect={handleSelectOrder}
         onCall={onCall}
         algorithm={algorithm}
-        nhClient={nhClient}
+        nhClient={selectedNhClient}
       />
     </div>
   );

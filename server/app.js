@@ -9,7 +9,7 @@ import { logRequestMiddleware } from './utils.js';
 import { runRentalMonitor } from './monitor.js';
 import { startMiningOpportunityScanner } from './miningOpportunityNotifier.js'; 
 import authRoutes, { validateAuthConfig } from './auth.js';
-import { updateCoinMetadata } from './coinGecko/coinGeckoClient.js';
+import { fetchAndSaveCoinPrices, updateCoinMetadata } from './coinGecko/coinGeckoClient.js';
 
 export function createApp({ distPath }) {
   const app = express();
@@ -67,6 +67,12 @@ export async function initializeApp(env) {
     await initNonces();
     await syncMrrClock();
     await updateCoinMetadata();
+    // Populate the DB before the UI starts requesting prices.  A failed price
+    // refresh is non-fatal: the price route can retry it on the next request.
+    const priceResult = await fetchAndSaveCoinPrices();
+    if (!priceResult.success) {
+      console.warn('[CoinGecko] Initial price refresh failed:', priceResult.error);
+    }
   } catch (error) {
     console.error('❌ Critical Initialization Failure:', error.message);
     process.exit(1);

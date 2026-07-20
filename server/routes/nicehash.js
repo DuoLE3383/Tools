@@ -50,6 +50,16 @@ export function registerNiceHashRoutes(app) {
     }
   });
 
+  // Expose only account labels, never credentials, so pool-monitor cards can
+  // target the account that owns the order.
+  app.get("/api/v2/nicehash/clients", (req, res) => {
+    const clients = Object.keys(nhConfigs)
+      .filter((id) => nhConfigs[id]?.apiKey && nhConfigs[id]?.apiSecret && nhConfigs[id]?.orgId)
+      .sort()
+      .map((id) => ({ id, label: `NiceHash: ${id}` }));
+    res.json({ clients: [{ id: 'VN', label: 'All NiceHash accounts' }, ...clients] });
+  });
+
   // ─── Public / Info ──────────────────────────────────────────
   app.get("/api/v2/time", asyncHandler(async (req, res) => res.json(await req.nhApp.public.getTime())));
   app.get("/api/v2/algorithms", asyncHandler(async (req, res) => res.json(await req.nhApp.public.getAlgorithms())));

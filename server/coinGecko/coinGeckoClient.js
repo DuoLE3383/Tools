@@ -135,6 +135,7 @@ export async function fetchAndSaveCoinPrices(force = false) {
           priceCache.set(coinId, {
             usd: prices[coinId].usd || 0,
             btc: prices[coinId].btc || 0,
+            symbol: metadataMap.get(coinId)?.symbol || null,
             usd_market_cap: prices[coinId].usd_market_cap || 0,
             usd_24h_vol: prices[coinId].usd_24h_vol || 0,
             usd_24h_change: prices[coinId].usd_24h_change || 0,
@@ -193,6 +194,7 @@ export async function getCoinPricesFromDb(coinIds) {
         const priceData = {
           usd: row.price_usd,
           btc: row.price_btc,
+          symbol: row.symbol,
           usd_market_cap: row.market_cap,
           usd_24h_vol: row.volume_24h,
           usd_24h_change: row.price_change_24h,

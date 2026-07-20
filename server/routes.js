@@ -10,8 +10,10 @@ import { getHeroMinersProfitEstimates } from "./miners/herominers-profit-estimat
 export function registerRoutes(app) {
   console.log('[Routes] Registering API routes...');
   
-  // Register all route groups
-  // registerCoinGeckoRoutes(app); // NOTE: Price routes are now in nicehash.js, this may cause conflicts.
+  // Register price routes before the NiceHash middleware.  The frontend uses
+  // /prices/coingecko; it is a local DB-backed endpoint and must not be sent
+  // through the NiceHash client resolver.
+  registerCoinGeckoRoutes(app);
   registerNiceHashRoutes(app);
   registerMrrRoutes(app);
   registerMiscRoutes(app);

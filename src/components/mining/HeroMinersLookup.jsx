@@ -72,7 +72,21 @@ export default function HeroMinersLookup({ onCall, coinPrices }) {
   const [autoRefresh, setAutoRefresh] = useState(() => loadAutoRefresh());
   const [profits, setProfits] = useState({});
   const [lastFetched, setLastFetched] = useState(null);
+  const [niceHashClients, setNiceHashClients] = useState([{ id: 'VN', label: 'All NiceHash accounts' }]);
   const pollTimerRef = useRef(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    onCall('/api/v2/nicehash/clients', { silent: true })
+      .then((result) => {
+        const clients = result?.clients;
+        if (!cancelled && Array.isArray(clients) && clients.length > 0) {
+          setNiceHashClients(clients);
+        }
+      })
+      .catch((error) => console.warn('[HeroMiners] Failed to load NiceHash accounts:', error.message));
+    return () => { cancelled = true; };
+  }, [onCall]);
 
   const getPrice = useCallback((coinSymbol) => {
     if (!coinPrices || !coinSymbol) return 0;
@@ -381,6 +395,7 @@ export default function HeroMinersLookup({ onCall, coinPrices }) {
                       onCall={onCall}
                       poolName="HeroMiners"
                       nhClient="VN"
+                      niceHashClients={niceHashClients}
                       onProfitUpdate={handleProfitUpdate}
                     />
                   </>

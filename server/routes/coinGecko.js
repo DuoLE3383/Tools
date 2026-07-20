@@ -1,7 +1,7 @@
 // routes/coinGecko.js
 import { asyncHandler } from "../utils.js";
 import { getDb } from "../db.js";
-import { getCoinPricesFromDb, getLastPriceFetchStatus } from "../coinGecko/coinGeckoClient.js";
+import { fetchAndSaveCoinPrices, getCoinPricesFromDb, getLastPriceFetchStatus } from "../coinGecko/coinGeckoClient.js";
 import {
   fetchFromCoinGecko,
   fetchFromCoinMarketCap,
@@ -48,8 +48,26 @@ export function registerCoinGeckoRoutes(app) {
       }
 
       try {
+        // Keep the DB-backed response current. This is TTL-protected in the
+        // client, so the UI's 60-second polling does not trigger a fetch for
+        // every request.
+        await fetchAndSaveCoinPrices();
         const dataFromDb = await getCoinPricesFromDb(ids.split(','));
         const resolvedIds = ids.split(',');
+
+        // A few UI coins are not part of the periodic tracked set. Fill only
+        // those DB misses from CoinGecko, while retaining cached DB data if
+        // the upstream service is unavailable.
+        const missingIds = resolvedIds.filter((id) => !dataFromDb[id] || Number(dataFromDb[id].usd) <= 0);
+        if (missingIds.length > 0) {
+          const livePrices = await Promise.all(missingIds.map(async (coinId) => {
+            const livePrice = await fetchFromCoinGecko(coinId);
+            return livePrice ? [coinId, livePrice] : null;
+          }));
+          for (const entry of livePrices) {
+            if (entry) dataFromDb[entry[0]] = entry[1];
+          }
+        }
 
         // If a single ID was requested, return it keyed by the original request symbol
         if (originalRequestedIds.length === 1) {
