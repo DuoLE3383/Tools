@@ -337,7 +337,7 @@ export default function App() {
 
   return (
     <RentedRigProvider nhClient={nhClient} callApi={callApi}>
-    <div className="app-shell" style={{ padding: '0 20px 40px', maxWidth: '1600px', margin: '0 auto' }}>
+    <div className="app-shell" style={{ padding: '0 20px 40px', margin: '0 auto' }}>
       <header className="app-header" style={{
         padding: '40px 0',
         borderBottom: '1px solid rgba(255,255,255,0.05)',

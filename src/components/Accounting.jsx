@@ -73,6 +73,7 @@ const ENDPOINTS = [
 export default function Accounting({ onCall }) {
   const [endpointKey, setEndpointKey] = useState("balances");
   const [currency, setCurrency] = useState("BTC");
+  const [nhClient, setNhClient] = useState("NH");
   const [transactionId, setTransactionId] = useState("");
   const [body, setBody] = useState("");
   const [output, setOutput] = useState(null);
@@ -169,6 +170,18 @@ export default function Accounting({ onCall }) {
         </div>
       </div>
 
+      <div className="field-row">
+        <div className="field">
+          <label className="label">NH Client</label>
+          <select
+            className="select-pro"
+            value={nhClient}
+            onChange={(event) => setNhClient(event.target.value)}
+          >
+            <option value="NH">NiceHash</option>
+          </select>
+        </div>
+      </div>
       {endpoint.method === "POST" && (
         <div className="field">
           {/* <label className="label">Request Body</label> */}

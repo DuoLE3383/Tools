@@ -1,4 +1,9 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
+import {
+  loadCryptoPriceCache,
+  saveCryptoPriceCache,
+  mergeCryptoPriceCatalog,
+} from "../core/coinGrecko.js";
 
 /**
  * A multi-currency calculator modal for BTC, ETH, LTC, DOGE, and BCH.
@@ -14,7 +19,7 @@ const COINS = [
 ];
 
 export function CryptoCalculatorModal({ isOpen, onClose, onCall }) {
-  const [prices, setPrices] = useState(null);
+  const [prices, setPrices] = useState(() => loadCryptoPriceCache());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [wsStatus, setWsStatus] = useState("disconnected");
@@ -48,6 +53,7 @@ export function CryptoCalculatorModal({ isOpen, onClose, onCall }) {
 
       if (data && hasValidPriceData) {
         setPrices(data);
+        saveCryptoPriceCache(data, { source: "CryptoCalculatorModal.fetchPrices" });
       } else {
         const isSystemConfig = data && data.environments && data.default_client;
 
@@ -60,10 +66,21 @@ export function CryptoCalculatorModal({ isOpen, onClose, onCall }) {
             : res?.error || res?.message || "Invalid Data Shape";
 
         if (isSystemConfig) setWsEnabled(false);
+        const cachedPrices = loadCryptoPriceCache();
+        if (cachedPrices) {
+          setPrices(cachedPrices);
+          setError(`Live market data unavailable. Showing cached prices. ${detail}`);
+          return;
+        }
         setError(detail);
       }
     } catch (err) {
       console.error(`[CryptoCalculator] REST fetch failed: ${err.message}`);
+      const cachedPrices = loadCryptoPriceCache();
+      if (cachedPrices) {
+        setPrices(cachedPrices);
+        setError("Live market data unavailable. Showing cached prices.");
+      }
       // Don't block the modal; the WebSocket will fill in prices if it connects.
     } finally {
       setLoading(false);
@@ -94,7 +111,11 @@ export function CryptoCalculatorModal({ isOpen, onClose, onCall }) {
         try {
           const message = JSON.parse(event.data);
           if (message.type === "price_update" && message.data) {
-            setPrices((prev) => ({ ...prev, ...message.data }));
+            setPrices((prev) => {
+              const merged = mergeCryptoPriceCatalog(prev, message.data);
+              saveCryptoPriceCache(merged, { source: "CryptoCalculatorModal.ws" });
+              return merged;
+            });
           }
         } catch (err) {}
       };
