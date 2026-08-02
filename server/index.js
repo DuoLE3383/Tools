@@ -2,15 +2,19 @@
 import express from 'express';
 import http from 'http';
 import dotenv from 'dotenv';
-import { registerRoutes } from './server/routes.js';
-import { setupWebSocket } from './server/ws.js';
-import { startMiningOpportunityScanner } from './server/miningOpportunityNotifier.js';
+import cors from 'cors';
+import { registerRoutes } from './routes.js';
+import { setupWebSocket } from './ws.js';
+import { startMiningOpportunityScanner } from './miningOpportunityNotifier.js';
 
 // Load environment variables
 dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
+
+// Enable cross-origin requests for all routes
+app.use(cors());
 
 // Middleware
 app.use(express.json());

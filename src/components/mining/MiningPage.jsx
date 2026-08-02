@@ -9,6 +9,7 @@ import {
 import { btcValue, compactNumber, percentValue } from "./miningWorkspaceData";
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { CoinPriceProvider, useCoinPrice } from "./CoinPriceContext.jsx";
+import { resolveCoinPriceTarget } from "../../core/coinGrecko.js";
 
 // ===== Stat Cards =====
 function StatCard({ label, value, accent }) {
@@ -99,6 +100,7 @@ function MiningRouteHero({ onCall }) {
     priceFetchStatus,
   } = useMiningWorkspace();
   const [updatingCoins, setUpdatingCoins] = useState(false);
+  const [showRouteCoins, setShowRouteCoins] = useState(false);
   const { openCoinModal } = useCoinPrice();
 
   const bestRoute = routes[0] || null;
@@ -107,6 +109,75 @@ function MiningRouteHero({ onCall }) {
   ).length;
   const profitableCount = routes.filter((route) => route.spread > 0).length;
   const bestOpportunity = opportunities[0] || null;
+
+  const [routeCoinPrices, setRouteCoinPrices] = useState({});
+  const [routeCoinLoading, setRouteCoinLoading] = useState(false);
+  const [routeCoinError, setRouteCoinError] = useState("");
+
+  const fetchRouteCoinPrices = useCallback(
+    async (coins = []) => {
+      if (!coins || coins.length === 0) {
+        setRouteCoinPrices({});
+        setRouteCoinError("");
+        return;
+      }
+
+      setRouteCoinLoading(true);
+      setRouteCoinError("");
+
+      try {
+        const ids = coins
+          .map((coin) => resolveCoinPriceTarget(coin)?.coinId || coin)
+          .filter(Boolean)
+          .map((id) => id.toLowerCase())
+          .filter((value, index, self) => self.indexOf(value) === index)
+          .join(",");
+
+        if (!ids) {
+          setRouteCoinPrices({});
+          return;
+        }
+
+        const response = await onCall("/api/v2/prices/coingecko", {
+          query: { ids, vs_currencies: "usd,btc" },
+          silent: true,
+        });
+
+        const data = response?.data || response || {};
+        const nextPrices = {};
+
+        coins.forEach((coin) => {
+          const target = resolveCoinPriceTarget(coin);
+          const entry = data[target.coinId] || data[coin.toLowerCase()] || data[target.symbol?.toLowerCase()];
+          nextPrices[coin] = entry ? entry.usd || entry.price || 0 : 0;
+        });
+
+        setRouteCoinPrices(nextPrices);
+      } catch (err) {
+        console.warn("Route coin price fetch failed:", err);
+        setRouteCoinError("Failed to load coin prices for route intel.");
+      } finally {
+        setRouteCoinLoading(false);
+      }
+    },
+    [onCall],
+  );
+
+  useEffect(() => {
+    if (!showRouteCoins) {
+      setRouteCoinPrices({});
+      setRouteCoinError("");
+      return;
+    }
+
+    if (!bestRoute?.heroCoins || bestRoute.heroCoins.length === 0) {
+      setRouteCoinPrices({});
+      setRouteCoinError("");
+      return;
+    }
+
+    void fetchRouteCoinPrices(bestRoute.heroCoins.slice(0, 4));
+  }, [bestRoute, fetchRouteCoinPrices, showRouteCoins]);
 
   const handleUpdateCoins = async () => {
     if (updatingCoins) return;
@@ -209,6 +280,12 @@ function MiningRouteHero({ onCall }) {
             </button>
             <button
               className="btn-pro secondary"
+              onClick={() => setShowRouteCoins((prev) => !prev)}
+            >
+              {showRouteCoins ? "Disable coin pricing" : "Enable coin pricing"}
+            </button>
+            <button
+              className="btn-pro secondary"
               onClick={() => void handleUpdateCoins()}
               disabled={loading || updatingCoins}
             >
@@ -229,16 +306,17 @@ function MiningRouteHero({ onCall }) {
           )}
 
           {bestRoute ? (
-            <div
-              style={{
-                display: "grid",
-                gap: "4px",
-                padding: "10px",
-                borderRadius: "10px",
-                background: "rgba(2,6,23,0.45)",
-                border: "1px solid rgba(148,163,184,0.10)",
-              }}
-            >
+            <>
+              <div
+                style={{
+                  display: "grid",
+                  gap: "4px",
+                  padding: "10px",
+                  borderRadius: "10px",
+                  background: "rgba(2,6,23,0.45)",
+                  border: "1px solid rgba(148,163,184,0.10)",
+                }}
+              >
               <div
                 style={{
                   display: "flex",
@@ -298,6 +376,85 @@ function MiningRouteHero({ onCall }) {
                 </span>
               </div>
             </div>
+
+                {showRouteCoins && (
+                  <div
+                    style={{
+                      marginTop: "12px",
+                      padding: "12px",
+                      borderRadius: "12px",
+                      background: "rgba(255,255,255,0.03)",
+                      border: "1px solid rgba(56,189,248,0.12)",
+                    }}
+                  >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: "10px",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <div style={{ color: "#94a3b8", fontSize: "12px" }}>
+                    Top coin prices for this route
+                  </div>
+                  {routeCoinLoading && (
+                    <div style={{ color: "#60a5fa", fontSize: "12px" }}>
+                      Loading coin prices...
+                    </div>
+                  )}
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: "8px",
+                    flexWrap: "wrap",
+                    marginTop: "10px",
+                  }}
+                >
+                  {bestRoute.heroCoins.map((coin) => {
+                    const displayPrice =
+                      routeCoinPrices[coin] || routeCoinPrices[coin.toLowerCase()];
+                    return (
+                      <button
+                        key={coin}
+                        onClick={() => openCoinModal(coin)}
+                        style={{
+                          border: "1px solid rgba(56,189,248,0.25)",
+                          background: "rgba(56,189,248,0.08)",
+                          color: "#e2e8f0",
+                          padding: "8px 12px",
+                          borderRadius: "999px",
+                          cursor: "pointer",
+                          minWidth: "110px",
+                          textAlign: "left",
+                          fontSize: "11px",
+                        }}
+                      >
+                        <div style={{ fontWeight: 700 }}>{coin}</div>
+                        <div
+                          style={{
+                            color: "#94a3b8",
+                            fontSize: "10px",
+                            marginTop: "3px",
+                          }}
+                        >
+                          {routeCoinLoading
+                            ? "Fetching..."
+                            : routeCoinError
+                              ? "Price unavailable"
+                              : displayPrice !== undefined && displayPrice !== null
+                                ? `$${displayPrice.toFixed(4)}`
+                                : "No price found"}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            </>
           ) : (
             <div
               style={{ color: "#94a3b8", fontSize: "12px", padding: "8px 0" }}
