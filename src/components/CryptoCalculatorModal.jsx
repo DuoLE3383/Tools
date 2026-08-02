@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import {
   loadCryptoPriceCache,
   saveCryptoPriceCache,
@@ -26,6 +26,7 @@ export function CryptoCalculatorModal({ isOpen, onClose, onCall }) {
   const [wsEnabled, setWsEnabled] = useState(true);
   const [amounts, setAmounts] = useState({ bitcoin: "0.001" });
   const [baseCoin, setBaseCoin] = useState("bitcoin");
+  const socketRef = useRef(null);
 
   const fetchPrices = useCallback(async () => {
     setLoading(true);
@@ -90,10 +91,8 @@ export function CryptoCalculatorModal({ isOpen, onClose, onCall }) {
   useEffect(() => {
     if (!isOpen) return;
 
-    fetchPrices();
-
-    let socket = null;
     let reconnectTimeout = null;
+    let isMounted = true;
     let retryCount = 0;
 
     const connectWs = () => {
@@ -103,11 +102,22 @@ export function CryptoCalculatorModal({ isOpen, onClose, onCall }) {
       const token = localStorage.getItem("token");
       const wsUrl = `${protocol}//${window.location.host}/api/v2/prices/ws${token ? `?token=${token}` : ""}`;
 
-      socket = new WebSocket(wsUrl);
+      if (socketRef.current) {
+        socketRef.current.onclose = null;
+        socketRef.current.close();
+      }
+
+      socketRef.current = new WebSocket(wsUrl);
       setWsStatus("connecting");
 
-      socket.onopen = () => setWsStatus("connected");
-      socket.onmessage = (event) => {
+      socketRef.current.onopen = () => {
+        if (!isMounted) return;
+        setWsStatus("connected");
+        retryCount = 0;
+      };
+
+      socketRef.current.onmessage = (event) => {
+        if (!isMounted) return;
         try {
           const message = JSON.parse(event.data);
           if (message.type === "price_update" && message.data) {
@@ -120,24 +130,39 @@ export function CryptoCalculatorModal({ isOpen, onClose, onCall }) {
         } catch (err) {}
       };
 
-      socket.onclose = () => {
-        if (retryCount >= 3) return;
+      socketRef.current.onclose = (event) => {
+        if (!isMounted) return;
         setWsStatus("disconnected");
-        if (retryCount < 3) {
-          reconnectTimeout = setTimeout(connectWs, 15000);
+
+        if (event.code === 1006) {
+          setError("Connection failed. Check auth.");
+          setWsEnabled(false);
+          return;
+        }
+
+        if (retryCount < 3 && wsEnabled) {
+          const delay = Math.min(30000, 5000 * Math.pow(2, retryCount));
+          reconnectTimeout = setTimeout(connectWs, delay);
           retryCount++;
         }
       };
-      socket.onerror = () => setWsStatus("error");
+      socketRef.current.onerror = () => {
+        if (isMounted) setWsStatus("error");
+      };
     };
 
+    fetchPrices();
     connectWs();
 
     return () => {
-      if (socket) socket.close();
+      isMounted = false;
+      if (socketRef.current) {
+        socketRef.current.onclose = null;
+        socketRef.current.close();
+      }
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
     };
-  }, [isOpen, fetchPrices]);
+  }, [isOpen, fetchPrices, wsEnabled]);
 
   // Polling fallback for Modal
   useEffect(() => {

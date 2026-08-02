@@ -198,7 +198,7 @@ export async function scrapeMiningDutchGlobal(force = false) {
 // =========================
 async function fetchPrices(algos, type) {
   if (!Array.isArray(algos) || algos.length === 0) return {};
-  const baseUrl = `http://localhost:${process.env.PORT || 3000}`;
+  const baseUrl = `http://localhost:${process.env.PORT || 3939}`;
   const settled = await Promise.allSettled(
     algos.map(async (algo) => {
       try {

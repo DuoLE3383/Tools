@@ -1,7 +1,8 @@
-// start.js - with frozen terminal detection
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import path from 'path';
+import { createServer } from 'net';
+import fs from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -9,244 +10,416 @@ const __dirname = path.dirname(__filename);
 console.log('🚀 Starting Tool...');
 console.log('📁 Working directory:', __dirname);
 
-// ============================================
-// FROZEN TERMINAL DETECTION
-// ============================================
-let lastOutputTime = Date.now();
-let startupTimeout = null;
-let backendStartTime = Date.now();
-const MAX_STARTUP_TIME = 30000; // 30 seconds max startup time
-const FROZEN_THRESHOLD = 10000; // 10 seconds without output = frozen
+// Configuration
+const CONFIG = {
+  port: 3939,
+  frontendPort: 7979,
+  maxPortAttempts: 10,
+  cleanupTimeout: 5000,
+};
 
-// Check if process is frozen (no output for too long)
-function checkFrozen() {
-  const now = Date.now();
-  const timeSinceLastOutput = now - lastOutputTime;
-  const elapsedTime = now - backendStartTime;
-  
-  // Only check after initial startup period (5 seconds)
-  if (elapsedTime > 5000 && timeSinceLastOutput > FROZEN_THRESHOLD) {
-    console.warn(`⚠️ No output for ${Math.round(timeSinceLastOutput/1000)}s - checking if frozen...`);
-    
-    // If process is stuck but still running, we'll show a prompt
-    if (backend && backend.pid) {
-      console.log(`📊 Backend process is still running (PID: ${backend.pid})`);
-      console.log(`⏱️  Elapsed time: ${Math.round(elapsedTime/1000)}s`);
-      
-      // Check if process is actually stuck by sending a signal
-      try {
-        // This won't kill the process, just checks if it's responsive
-        const killed = backend.kill(0); // Signal 0 just checks if process exists
-        if (killed) {
-          console.log('✅ Backend process is responsive');
-          lastOutputTime = now; // Reset timer
-        } else {
-          console.warn('⚠️ Backend process is not responding!');
-          console.log('🔧 Press Ctrl+C to restart or wait longer...');
-        }
-      } catch (e) {
-        console.warn('⚠️ Cannot check process status:', e.message);
-      }
-    }
-  }
+let processes = [];
+let backendProcess = null;
+let frontendProcess = null;
+let isShuttingDown = false;
+
+// ---- Utility Functions ----
+
+function isPortInUse(port) {
+  return new Promise((resolve) => {
+    const server = createServer()
+      .once('error', (err) => {
+        if (err.code === 'EADDRINUSE') resolve(true);
+        else resolve(false);
+      })
+      .once('listening', () => {
+        server.close();
+        resolve(false);
+      })
+      .listen(port);
+  });
 }
 
-// Check for frozen state every 5 seconds
-setInterval(checkFrozen, 5000);
-
-// ============================================
-// CLEANUP FUNCTION
-// ============================================
-let processes = [];
-
-function cleanup() {
-  console.log('\n🛑 Shutting down...');
-  processes.forEach(p => {
-    try {
-      if (p.pid) {
-        console.log(`🔴 Killing process ${p.pid}...`);
-        process.kill(-p.pid); // Kill entire process group
-      }
-    } catch (e) {
-      // ignore
+function killProcessOnPort(port) {
+  return new Promise((resolve) => {
+    console.log(`🔍 Looking for processes on port ${port}...`);
+    
+    if (process.platform === 'win32') {
+      // Windows: Use netstat and taskkill
+      const findCmd = spawn('netstat', ['-ano', '-p', 'TCP'], { shell: true });
+      let output = '';
+      findCmd.stdout.on('data', (d) => (output += d.toString()));
+      findCmd.on('close', () => {
+        const lines = output.split('\n');
+        const pids = new Set();
+        for (const line of lines) {
+          if (line.includes(`:${port}`) && line.includes('LISTENING')) {
+            const parts = line.trim().split(/\s+/);
+            const pid = parts[parts.length - 1];
+            if (pid && !isNaN(parseInt(pid))) pids.add(pid);
+          }
+        }
+        
+        if (pids.size === 0) {
+          console.log(`✅ No processes found on port ${port}`);
+          resolve();
+          return;
+        }
+        
+        for (const pid of pids) {
+          // Don't kill our own process
+          if (parseInt(pid) === process.pid) {
+            console.log(`⚠️ Skipping self (PID: ${pid})`);
+            continue;
+          }
+          console.log(`🔪 Killing process ${pid} using port ${port}`);
+          spawn('taskkill', ['/F', '/PID', pid], { shell: true, stdio: 'pipe' });
+        }
+        setTimeout(resolve, 2000);
+      });
+    } else {
+      // Unix: Use lsof and kill
+      const findCmd = spawn('lsof', ['-i', `:${port}`, '-t'], { shell: true });
+      let output = '';
+      findCmd.stdout.on('data', (d) => (output += d.toString()));
+      findCmd.on('close', () => {
+        const pids = output.split('\n').filter(pid => pid.trim() && !isNaN(parseInt(pid.trim())));
+        
+        if (pids.length === 0) {
+          console.log(`✅ No processes found on port ${port}`);
+          resolve();
+          return;
+        }
+        
+        for (const pid of pids) {
+          const pidNum = parseInt(pid.trim());
+          // Don't kill our own process
+          if (pidNum === process.pid) {
+            console.log(`⚠️ Skipping self (PID: ${pidNum})`);
+            continue;
+          }
+          console.log(`🔪 Killing process ${pidNum} using port ${port}`);
+          spawn('kill', ['-9', pid.trim()], { shell: true });
+        }
+        setTimeout(resolve, 2000);
+      });
     }
   });
-  process.exit(0);
+}
+
+function killProcessByName(processName) {
+  return new Promise((resolve) => {
+    console.log(`🔍 Looking for processes named "${processName}"...`);
+    
+    if (process.platform === 'win32') {
+      // Windows: Use taskkill - but be careful not to kill self
+      spawn('taskkill', ['/F', '/IM', processName, '/FI', 'WINDOWTITLE eq node*'], { 
+        shell: true, 
+        stdio: 'pipe' 
+      });
+      setTimeout(resolve, 1000);
+    } else {
+      // Unix: Use pgrep with more specific patterns
+      const findCmd = spawn('pgrep', ['-f', processName], { shell: true });
+      let output = '';
+      findCmd.stdout.on('data', (d) => (output += d.toString()));
+      findCmd.on('close', () => {
+        const pids = output.split('\n').filter(pid => pid.trim());
+        if (pids.length > 0) {
+          for (const pid of pids) {
+            const pidNum = parseInt(pid.trim());
+            // Don't kill our own process
+            if (pidNum === process.pid) {
+              console.log(`⚠️ Skipping self (PID: ${pidNum}) for pattern "${processName}"`);
+              continue;
+            }
+            console.log(`🔪 Killing process ${pidNum} (${processName})`);
+            spawn('kill', ['-9', pid.trim()], { shell: true });
+          }
+        } else {
+          console.log(`✅ No processes found for "${processName}"`);
+        }
+        setTimeout(resolve, 1000);
+      });
+    }
+  });
+}
+
+async function cleanAllPortsAndProcesses() {
+  console.log('\n🧹 Starting comprehensive cleanup...');
+  console.log(`📌 Current process PID: ${process.pid} (will be preserved)`);
+  
+  // Kill specific processes first
+  await killProcessByName('node.*index.js');
+  await killProcessByName('vite');
+  await killProcessByName('npm.*dev');
+  await killProcessByName('node.*vite');
+  
+  // Kill processes on specific ports
+  await killProcessOnPort(CONFIG.port);
+  await killProcessOnPort(CONFIG.frontendPort);
+  
+  // Kill any existing child processes
+  for (const p of processes) {
+    try {
+      if (p && !p.killed) {
+        const pid = p.pid;
+        // Don't kill our own process
+        if (pid === process.pid) {
+          console.log(`⚠️ Skipping self (PID: ${pid}) in child processes`);
+          continue;
+        }
+        console.log(`🔪 Killing child process ${pid}`);
+        p.kill('SIGKILL');
+      }
+    } catch (e) { /* ignore */ }
+  }
+  processes = [];
+  
+  console.log('✅ Cleanup completed\n');
+}
+
+async function findAvailablePort(startPort) {
+  let port = startPort;
+  while (port < startPort + CONFIG.maxPortAttempts) {
+    const inUse = await isPortInUse(port);
+    if (!inUse) return port;
+    port++;
+  }
+  return null;
+}
+
+// ---- Enhanced Cleanup with Process Termination ----
+
+function cleanup() {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  console.log('\n🛑 Shutting down...');
+
+  // Kill all tracked processes (excluding self)
+  [...processes].reverse().forEach(p => {
+    try {
+      if (p && !p.killed) {
+        const pid = p.pid;
+        if (pid === process.pid) {
+          console.log(`⚠️ Skipping self (PID: ${pid}) in cleanup`);
+          return;
+        }
+        console.log(`🔪 Killing process ${pid}`);
+        p.kill('SIGKILL');
+      }
+    } catch (e) { /* ignore */ }
+  });
+
+  // Kill any remaining processes on ports (excluding self)
+  Promise.all([
+    killProcessOnPort(CONFIG.port),
+    killProcessOnPort(CONFIG.frontendPort)
+  ]).then(() => {
+    console.log('✅ Cleanup complete. Exiting...');
+    setTimeout(() => process.exit(0), 1000);
+  });
+
+  // Fallback exit
+  setTimeout(() => {
+    console.log('⚠️ Force exiting...');
+    process.exit(0);
+  }, CONFIG.cleanupTimeout);
 }
 
 process.on('SIGINT', cleanup);
 process.on('SIGTERM', cleanup);
-
-// ============================================
-// START BACKEND WITH FROZEN DETECTION
-// ============================================
-console.log('📡 Starting backend server...');
-
-const backend = spawn('node', ['index.js'], {
-  stdio: 'pipe',
-  shell: true,
-  env: { ...process.env },
-  // Windows compatibility
-  windowsHide: false,
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err.message);
+  cleanup();
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled Rejection:', reason);
+  cleanup();
 });
 
-processes.push(backend);
-let backendReady = false;
-let lastLogLine = '';
+// ---- Check and Clean Ports Before Starting ----
 
-// Track output for frozen detection
-backend.stdout.on('data', (data) => {
-  const output = data.toString().trim();
-  if (output) {
-    console.log('[📡]', output);
-    lastOutputTime = Date.now(); // Update last output time
-    lastLogLine = output;
+async function ensureCleanStart() {
+  console.log('🔍 Checking for existing processes...');
+  
+  // Kill everything before starting (but NOT self)
+  await cleanAllPortsAndProcesses();
+  
+  // Double-check ports are free
+  const portInUse = await isPortInUse(CONFIG.port);
+  const frontendPortInUse = await isPortInUse(CONFIG.frontendPort);
+  
+  if (portInUse || frontendPortInUse) {
+    console.log('⚠️ Some ports are still in use. Force cleaning...');
+    await killProcessOnPort(CONFIG.port);
+    await killProcessOnPort(CONFIG.frontendPort);
+    
+    // One final check
+    const stillInUse = await isPortInUse(CONFIG.port);
+    const frontendStillInUse = await isPortInUse(CONFIG.frontendPort);
+    
+    if (stillInUse || frontendStillInUse) {
+      console.error('❌ Cannot free up ports. Please manually close applications using ports:');
+      console.error(`   - Port ${CONFIG.port} (Backend)`);
+      console.error(`   - Port ${CONFIG.frontendPort} (Frontend)`);
+      process.exit(1);
+    }
   }
   
-  // Check if backend is ready
-  if (
-    output.includes('Listening on: http://localhost:3000') ||
-    output.includes('Listening on: http://127.0.0.1:3000') ||
-    output.includes('Server running on port 3000')
-  ) {
-    backendReady = true;
-    console.log('✅ Backend ready!');
+  console.log('✅ All ports are available');
+}
+
+// ---- Backend Start ----
+
+async function startBackend() {
+  let currentPort = CONFIG.port;
+
+  // Check port availability (already cleaned, but double-check)
+  let portInUse = await isPortInUse(currentPort);
+  if (portInUse) {
+    console.log(`⚠️ Port ${currentPort} is in use. Attempting to free it...`);
+    await killProcessOnPort(currentPort);
     
-    // Clear the timeout since backend started successfully
-    if (startupTimeout) {
-      clearTimeout(startupTimeout);
-      startupTimeout = null;
+    const stillInUse = await isPortInUse(currentPort);
+    if (stillInUse) {
+      console.log(`❌ Port ${currentPort} still in use. Looking for alternative...`);
+      const newPort = await findAvailablePort(currentPort + 1);
+      if (newPort) {
+        console.log(`✅ Using alternative port: ${newPort}`);
+        currentPort = newPort;
+        process.env.PORT = currentPort.toString();
+      } else {
+        console.error(`❌ No available ports found. Exiting.`);
+        process.exit(1);
+      }
+    } else {
+      console.log(`✅ Port ${currentPort} is now available.`);
     }
   }
-});
 
-backend.stderr.on('data', (data) => {
-  const error = data.toString().trim();
-  lastOutputTime = Date.now(); // Update on error too
-  
-  // Filter out common harmless errors
-  const harmlessErrors = [
-    'ECONNREFUSED',
-    'DeprecationWarning',
-    'ExperimentalWarning',
-    'MODULE_NOT_FOUND',
-    'Cannot find module'
-  ];
-  
-  if (error && !harmlessErrors.some(e => error.includes(e))) {
-    console.error('[❌ Backend Error]', error);
-  }
-});
-
-backend.on('error', (err) => {
-  console.error('❌ Backend error:', err.message);
-  if (!backendReady) {
-    console.log('❌ Backend failed to start. Please check the errors above.');
-    cleanup();
-  }
-});
-
-backend.on('close', (code) => {
-  if (code !== 0 && code !== null) {
-    console.error(`❌ Backend exited with code ${code}`);
-  }
-  
-  if (!backendReady) {
-    console.log('❌ Backend failed to start. Please check the errors above.');
-    console.log(`💡 Last output: "${lastLogLine || 'No output'}"`);
-    
-    // Show suggestions based on common issues
-    if (lastLogLine.includes('Error')) {
-      console.log('🔍 Check for error messages above');
-    }
-    if (lastLogLine.includes('port')) {
-      console.log('🔍 Check if port 3000 is already in use');
-    }
-    if (lastLogLine.includes('sqlite3')) {
-      console.log('🔍 Database issue detected - try running: npm rebuild sqlite3');
-    }
-    
-    // Don't exit immediately, give user time to see errors
-    setTimeout(() => {
-      console.log('🔄 Auto-retry in 3 seconds... (Press Ctrl+C to stop)');
-      setTimeout(() => {
-        if (!backendReady) {
-          console.log('🔄 Restarting backend...');
-          // Re-spawn the backend
-          const newBackend = spawn('node', ['index.js'], {
-            stdio: 'pipe',
-            shell: true,
-            env: { ...process.env }
-          });
-          processes = [newBackend];
-          backendReady = false;
-          backendStartTime = Date.now();
-          lastOutputTime = Date.now();
-        }
-      }, 3000);
-    }, 2000);
-  }
-});
-
-// Startup timeout - if backend takes too long to start
-startupTimeout = setTimeout(() => {
-  if (!backendReady) {
-    console.warn('⚠️ Backend taking longer than expected to start...');
-    console.log(`⏱️  ${Math.round((Date.now() - backendStartTime)/1000)}s elapsed`);
-    console.log('💡 The backend may be downloading dependencies or compiling native modules.');
-    console.log('💡 If this continues, try running npm install manually.');
-    
-    // Check for common issues
-    if (lastLogLine.includes('sqlite3')) {
-      console.log('🔍 SQLite3 issue detected - try rebuilding: npm rebuild sqlite3');
-    }
-    if (lastLogLine.includes('sharp')) {
-      console.log('🔍 Sharp issue detected - try reinstalling: npm install sharp');
-    }
-    
-    // Show process info
-    if (backend.pid) {
-      console.log(`📊 Backend process PID: ${backend.pid}`);
-    }
-  }
-}, 15000); // Warn after 15 seconds
-
-// ============================================
-// SIMPLE HEALTH CHECK
-// ============================================
-// Try to ping the backend every 5 seconds once it's running
-setInterval(() => {
-  if (backendReady) {
-    // Just a simple check to see if we need to restart
-    if (!backend || !backend.pid) {
-      console.error('❌ Backend process disappeared!');
-      backendReady = false;
-    }
-  }
-}, 10000);
-
-// ============================================
-// KEYBOARD SHORTCUT HELP
-// ============================================
-console.log('📡 Backend starting...');
-console.log('⏱️  Waiting for ready signal...');
-console.log('💡 Press Ctrl+C to stop all services.');
-console.log('💡 Press Ctrl+R to restart if frozen (may not work in all terminals)');
-console.log('');
-
-// ============================================
-// EXPOSE HELPER FUNCTIONS (optional)
-// ============================================
-export function getBackendStatus() {
-  return {
-    ready: backendReady,
-    pid: backend?.pid || null,
-    uptime: backendReady ? Math.round((Date.now() - backendStartTime) / 1000) : 0,
-    lastOutput: lastLogLine,
+  const env = {
+    ...process.env,
+    PORT: currentPort.toString(),
+    NODE_ENV: process.env.NODE_ENV || 'development'
   };
+
+  console.log(`📡 Starting backend on port ${currentPort}...`);
+
+  backendProcess = spawn('node', ['--unhandled-rejections=warn', 'index.js'], {
+    stdio: ['pipe', 'pipe', 'pipe'],
+    shell: true,
+    env,
+    windowsHide: true,
+    detached: false
+  });
+  processes.push(backendProcess);
+
+  backendProcess.stdout.on('data', (data) => {
+    const lines = data.toString().split('\n').filter(line => line.trim());
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed) console.log('[📡]', trimmed);
+
+      // Check if backend is ready
+      if (trimmed.includes(`Listening on: http://localhost:${currentPort}`) ||
+          trimmed.includes(`Listening on: http://127.0.0.1:${currentPort}`)) {
+        console.log(`✅ Backend ready on port ${currentPort}!`);
+        
+        // Start frontend after backend is ready
+        if (!frontendProcess && !isShuttingDown) {
+          console.log('🎨 Starting frontend...');
+          startFrontend(currentPort);
+        }
+      }
+    }
+  });
+
+  backendProcess.stderr.on('data', (data) => {
+    const error = data.toString().trim();
+    if (error && !error.includes('ECONNREFUSED') && !error.includes('DeprecationWarning') &&
+        !error.includes('node:events') && !error.includes('Assertion failed') &&
+        !error.includes('UV_HANDLE_CLOSING') && !error.includes('WebSocket server initialized')) {
+      console.error('[Backend Error]', error);
+    }
+  });
+
+  backendProcess.on('error', (err) => {
+    console.error('❌ Backend process error:', err.message);
+  });
+
+  backendProcess.on('close', (code) => {
+    if (isShuttingDown) return;
+    console.log(`❌ Backend exited with code ${code}`);
+    backendProcess = null;
+    if (!isShuttingDown) {
+      console.log('🛑 Backend stopped. Exiting...');
+      cleanup();
+    }
+  });
+
+  backendProcess.on('spawn', () => {
+    console.log(`✅ Backend process spawned with PID: ${backendProcess.pid}`);
+  });
+
+  return currentPort;
 }
 
-// For debugging - type 'status()' in the terminal if using Node REPL
-if (process.env.NODE_ENV === 'development') {
-  global.status = getBackendStatus;
+// ---- Frontend Start ----
+
+function startFrontend(backendPort) {
+  const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+  const env = {
+    ...process.env,
+    VITE_API_PORT: backendPort.toString(),
+    VITE_API_URL: `http://localhost:${backendPort}`
+  };
+
+  if (frontendProcess) {
+    try { frontendProcess.kill('SIGKILL'); } catch (e) { /* ignore */ }
+    frontendProcess = null;
+    processes = processes.filter(p => p !== frontendProcess);
+  }
+
+  console.log(`🎨 Starting frontend on port ${CONFIG.frontendPort}...`);
+
+  frontendProcess = spawn(npmCmd, ['run', 'dev', '--', '--port', CONFIG.frontendPort.toString()], {
+    stdio: 'inherit',
+    shell: true,
+    env,
+    windowsHide: true
+  });
+  processes.push(frontendProcess);
+
+  frontendProcess.on('error', (err) => {
+    console.error('❌ Frontend error:', err.message);
+  });
+
+  frontendProcess.on('close', (code) => {
+    if (code !== 0 && code !== null && !isShuttingDown) {
+      console.error(`❌ Frontend exited with code ${code}`);
+      if (!isShuttingDown) {
+        console.log('🛑 Frontend stopped. Exiting...');
+        cleanup();
+      }
+    }
+    frontendProcess = null;
+  });
 }
+
+// ---- Start Everything ----
+
+console.log('📡 Starting application...');
+console.log(`🔍 Checking port ${CONFIG.port}...`);
+console.log('💡 Press Ctrl+C to stop all services.');
+console.log('ℹ️  No auto-restart or monitoring enabled.');
+
+(async () => {
+  // Clean everything before starting
+  await ensureCleanStart();
+  
+  const backendPort = await startBackend();
+  console.log(`✅ Application started with backend on port ${backendPort}`);
+})();
+
+process.on('exit', cleanup);

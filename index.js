@@ -33,7 +33,7 @@ const VALID_MRR_CLIENT_TAGS = new Set(['BT', 'SL', 'LN', 'LUCKY', 'VN', 'ALL']);
 // CREATE APP
 // ============================================================
 const app = createApp({ distPath });
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3939;
 
 // ============================================================
 // MIDDLEWARE

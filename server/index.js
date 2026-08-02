@@ -22,7 +22,7 @@ registerRoutes(app);
 setupWebSocket(server);
 
 // Start the server
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3939;
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
   console.log(`📡 WebSocket server at ws://localhost:${PORT}/api/v2/mrr/fetch/ws`);

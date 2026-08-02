@@ -24,6 +24,13 @@ import {
 // ─── Helper: Format hashrate with unit ──────────────────────────────────
 function formatHashrateWithUnit(value, unit) {
   if (!value || value <= 0) return "0H";
+  const upperUnit = String(unit || "").toUpperCase();
+  if (upperUnit.includes("SOL")) {
+    const num = Number(value);
+    const displayValue = num < 1000 ? num.toFixed(2) : Math.round(num);
+    const unitSuffix = upperUnit.match(/KSOL|MSOL|GSOL|SOL/)?.[0] || "Sol";
+    return `${displayValue}${unitSuffix}/s`;
+  }
   const cleanUnit = cleanHashrateUnit(unit || "H");
   const multiplier = HASHRATE_SUFFIXES[cleanUnit] || 1;
   const rawH = value * multiplier;
@@ -557,8 +564,9 @@ const MrrRigCard = ({
   const marketPriceValue = marketPriceData
     ? getNiceHashPriceValue(marketPriceData)
     : 0;
+  // Prioritize the user's active order price, but fall back to the general market price.
   const niceHashSourcePrice =
-    marketPriceValue > 0 ? marketPriceValue : buyNhPriceWithFee;
+    buyNhPriceWithFee > 0 ? buyNhPriceWithFee : marketPriceValue;
 
   const fromMultiplier = HASHRATE_SUFFIXES[cleanHashrateUnit(myNhUnit)] || 1;
   const toMultiplier = HASHRATE_SUFFIXES[cleanHashrateUnit(mrrUnit)] || 1;
@@ -588,6 +596,15 @@ const MrrRigCard = ({
     }
     return "No NH price";
   }, [roiPercent, niceHashSourcePrice, finalMrrRate, isLoadingMrrRate]);
+
+  const nicehashPriceTooltip = useMemo(() => {
+    if (niceHashPriceInMrrUnit > 0) {
+      const source = buyNhPriceWithFee > 0 ? `Active Order (${buyNhPriceWithFee.toFixed(8)})` : `Market Fallback (${marketPriceValue.toFixed(8)})`;
+      return `Using price from: ${source}`;
+    }
+    if (buyNhPriceWithFee <= 0 && marketPriceValue <= 0) return "No active NH order and no market price available for this algorithm.";
+    return "NiceHash price could not be determined.";
+  }, [niceHashPriceInMrrUnit, buyNhPriceWithFee, marketPriceValue]);
 
   const displayAlgo = getAlgoDisplayName(normalizedAlgo || rawAlgo);
 
@@ -933,6 +950,7 @@ const MrrRigCard = ({
                 background: "rgba(255,255,255,0.03)",
                 borderRadius: "9px",
                 padding: "6px",
+                position: 'relative',
               }}
             >
               <div
@@ -990,7 +1008,8 @@ const MrrRigCard = ({
               >
                 NiceHash
               </div>
-              <div
+              <div 
+                title={nicehashPriceTooltip}
                 style={{ color: "#60a5fa", fontWeight: 800, marginTop: "3px" }}
               >
                 {niceHashPriceInMrrUnit > 0 ? (

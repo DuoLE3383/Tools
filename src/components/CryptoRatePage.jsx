@@ -1,5 +1,5 @@
-// CryptoRatePage.jsx - Add callback to share prices
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+// CryptoRatePage.jsx - Add callback to share prices - ROBUST WS
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   loadCryptoPriceCache,
   saveCryptoPriceCache,
@@ -71,7 +71,7 @@ function Sparkline({ data, width = 180, height = 80, color = "#60a5fa" }) {
   );
 }
 
-export default function CryptoRatePage({ onCall, onPriceUpdate }) {
+export default function CryptoRatePage({ onCall, onPriceUpdate, onNavigateHome }) {
   const [prices, setPrices] = useState(() => loadCryptoPriceCache());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -79,6 +79,7 @@ export default function CryptoRatePage({ onCall, onPriceUpdate }) {
   const [wsEnabled, setWsEnabled] = useState(true);
   const [amounts, setAmounts] = useState({ usd: "1000" });
   const [baseCoin, setBaseCoin] = useState("usd");
+  const socketRef = useRef(null);
 
   const onValueChange = (id, val) => {
     setBaseCoin(id);
@@ -138,9 +139,11 @@ export default function CryptoRatePage({ onCall, onPriceUpdate }) {
         silent: true,
       });
 
-      const data = res; // The callApi from App.jsx already returns the data object.
+      const data = res?.data || (res && typeof res === "object" && !res.error ? res : null);
 
-      if (data && typeof data === 'object' && !data.error) {
+      const hasValidData = data && COINS.some(c => data[c.id] || data[c.symbol.toLowerCase()]);
+
+      if (hasValidData) {
         setPrices(data);
         saveCryptoPriceCache(data, { source: "CryptoRatePage.fetchPrices" });
         // ✅ Send formatted prices to parent
@@ -156,9 +159,9 @@ export default function CryptoRatePage({ onCall, onPriceUpdate }) {
             ? res.includes("<!DOCTYPE html>")
               ? "Cloudflare Intercept"
               : `API Error: ${res.slice(0, 100)}`
-            : res?.error ||
-            res?.message ||
-            `Format Mismatch (Keys: ${res ? Object.keys(res).join(",") : "null"})`;
+            : data?.error ||
+            data?.message ||
+            `Format Mismatch (Keys: ${data ? Object.keys(data).join(",") : "null"})`;
 
         if (isSystemConfig) setWsEnabled(false);
         const cachedPrices = loadCryptoPriceCache();
@@ -167,11 +170,10 @@ export default function CryptoRatePage({ onCall, onPriceUpdate }) {
           if (onPriceUpdate) {
             onPriceUpdate(formatPricesForRigCard(cachedPrices));
           }
-          setError(`Live market data unavailable. Showing cached prices. ${detail}`);
-          return;
+          setError(`Live data unavailable. Showing cached prices. Details: ${detail}`);
+        } else {
+          setError(`Market data unavailable. ${detail}`);
         }
-        if (!prices) setError(`Market data unavailable. ${detail}`);
-        throw new Error(detail);
       }
     } catch (err) {
       console.error(`[CryptoRate] REST fetch failed: ${err.message}`);
@@ -182,8 +184,8 @@ export default function CryptoRatePage({ onCall, onPriceUpdate }) {
           onPriceUpdate(formatPricesForRigCard(cachedPrices));
         }
         setError(`Live market data unavailable. Showing cached prices.`);
-      } else if (!prices) {
-        setError(`Market data unavailable. ${err.message}`);
+      } else {
+        setError(`Failed to fetch prices. ${err.message}`);
       }
     } finally {
       setLoading(false);
@@ -193,75 +195,79 @@ export default function CryptoRatePage({ onCall, onPriceUpdate }) {
   useEffect(() => {
     fetchPrices();
 
-    let socket = null;
     let reconnectTimeout = null;
-    let isComponentMounted = true;
     let retryCount = 0;
 
     const connectWs = () => {
-      if (!isComponentMounted || !wsEnabled) return;
+      if (!wsEnabled) return;
 
-      if (socket) {
-        socket.onclose = null;
-        socket.close();
+      if (socketRef.current) {
+        socketRef.current.onclose = null;
+        socketRef.current.close();
       }
 
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
       const token = localStorage.getItem("token");
       const wsUrl = `${protocol}//${window.location.host}/api/v2/prices/ws${token ? `?token=${token}` : ""}`;
 
-      socket = new WebSocket(wsUrl);
-      if (isComponentMounted) setWsStatus("connecting");
+      socketRef.current = new WebSocket(wsUrl);
+      setWsStatus("connecting");
 
-      socket.onopen = () => {
-        if (isComponentMounted) setWsStatus("connected");
+      socketRef.current.onopen = () => {
+        setWsStatus("connected");
+        retryCount = 0; // Reset on success
       };
 
-      socket.onmessage = (event) => {
-        if (!isComponentMounted) return;
+      socketRef.current.onmessage = (event) => {
         try {
           const message = JSON.parse(event.data);
           if (message.type === "price_update" && message.data) {
             setPrices((prev) => {
               const merged = mergeCryptoPriceCatalog(prev, message.data);
               saveCryptoPriceCache(merged, { source: "CryptoRatePage.ws" });
+              if (onPriceUpdate) {
+                onPriceUpdate(formatPricesForRigCard(merged));
+              }
               return merged;
             });
-            // ✅ Send updated prices to parent
-            if (onPriceUpdate) {
-              const formatted = formatPricesForRigCard(message.data);
-              onPriceUpdate(formatted);
-            }
           }
         } catch (err) {
           console.warn("[WS] Failed to parse price update", err);
         }
       };
 
-      socket.onclose = () => {
-        if (!isComponentMounted) return;
+      socketRef.current.onclose = (event) => {
         setWsStatus("disconnected");
 
-        if (retryCount < 2 && wsEnabled) {
+        // Abnormal closure (e.g., auth failure) should stop retries
+        if (event.code === 1006) {
+          setError("WebSocket connection failed. Check authentication.");
+          setWsEnabled(false);
+          return;
+        }
+
+        if (retryCount < 3 && wsEnabled) {
           const delay = Math.min(30000, 5000 * Math.pow(2, retryCount));
           reconnectTimeout = setTimeout(connectWs, delay);
           retryCount++;
         } else {
           setWsEnabled(false);
-          console.warn("[WS] Maximum reconnection attempts reached.");
+          if (wsEnabled) console.warn("[WS] Maximum reconnection attempts reached.");
         }
       };
 
-      socket.onerror = () => {
-        if (isComponentMounted) setWsStatus("error");
+      socketRef.current.onerror = () => {
+        setWsStatus("error");
       };
     };
 
     if (wsEnabled) connectWs();
 
     return () => {
-      isComponentMounted = false;
-      if (socket) socket.close();
+      if (socketRef.current) {
+        socketRef.current.onclose = null;
+        socketRef.current.close();
+      }
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
     };
   }, [fetchPrices, wsEnabled, onPriceUpdate, formatPricesForRigCard]);
@@ -317,7 +323,16 @@ export default function CryptoRatePage({ onCall, onPriceUpdate }) {
         height: "500px"
       }}
     >
-      {/* Header */}
+      {onNavigateHome && (
+        <button
+          className="btn-pro secondary"
+          onClick={onNavigateHome}
+          style={{ position: "absolute", top: "12px", left: "12px", zIndex: 10 }}
+        >
+          ← Back
+        </button>
+      )}
+
       <div
         style={{
           display: "flex",
