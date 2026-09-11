@@ -1,25 +1,29 @@
-// NiceHash.jsx - RESPONSIVE FULL-WIDTH REDESIGN
+// NiceHash.jsx - FINAL UPGRADED VERSION
+// All API calls use the order's own client. "All Clients" works without errors.
 
 import React, { useEffect, useMemo, useState, useCallback } from "react";
-import Accounting from "../Accounting";
-import CryptoRatePage from "../CryptoRatePage";
+import CryptoRatePage from "../../../CryptoRatePage.jsx";
 import NiceHashOrderCard from "./NiceHashOrdersCard.jsx";
-import { getAlgoMapping } from "../../core/mapping.js";
+import { getAlgoMapping, getNiceHashUnit, convertUnit } from "../../core/mapping.js";
 import { useNiceHashOrders } from "./NiceHashContext";
 
 function NiceHashOrderManager({ onCall, nhClient, setNhClient }) {
   const {
     nicehashOrders,
     refresh: refreshSummary,
+    summary,
+    loading: contextLoading,
     showPriceLookupModal,
     setShowPriceLookupModal,
     getOrderPrice,
     setSelectedOrderId: setContextSelectedOrderId,
+    partialErrors,
   } = useNiceHashOrders();
 
   const [selectedOrderId, setSelectedOrderId] = useState("");
   const [orderDetail, setOrderDetail] = useState(null);
   const [loadingLocal, setLoadingLocal] = useState(false);
+  const [switchingClient, setSwitchingClient] = useState(false);
   const [priceInput, setPriceInput] = useState("");
   const [limitInput, setLimitInput] = useState("0.01");
   const [refillInput, setRefillInput] = useState("");
@@ -33,26 +37,51 @@ function NiceHashOrderManager({ onCall, nhClient, setNhClient }) {
     setSortConfig({ key, direction });
   };
 
+  // Orders filtered by selected client – each order has its own `nhClient`
   const orders = useMemo(() => {
-    return nicehashOrders.map((r) => ({
-      ...r.rawOrder,
-      nhClient: r.account,
-    }));
-  }, [nicehashOrders]);
+    return nicehashOrders
+      .map((r) => ({
+        ...r.rawOrder,
+        nhClient: r.account, // store the client that owns this order
+      }))
+      .filter((o) => {
+        if (nhClient === "ALL") return true;
+        return o.nhClient === nhClient;
+      });
+  }, [nicehashOrders, nhClient]);
 
-  const handleManualRefresh = useCallback(() => {
-    refreshSummary();
-  }, [refreshSummary]);
+  // Refresh – safely call context refresh (with or without client param)
+  const handleManualRefresh = useCallback(async () => {
+    setSwitchingClient(true);
+    try {
+      // Check if the refresh function expects a parameter
+      if (refreshSummary.length > 0) {
+        await refreshSummary(nhClient);
+      } else {
+        await refreshSummary();
+      }
+    } catch (err) {
+      console.error("Refresh failed:", err);
+    } finally {
+      setSwitchingClient(false);
+    }
+  }, [refreshSummary, nhClient]);
 
+  // Fetch order detail – uses the order's own client
   const fetchOrderDetail = async (orderId) => {
     const id = String(orderId || "").trim();
     if (!id) return;
+
+    // Find the order in the current list to get its client
+    const existingOrder = nicehashOrders.find((r) => r.id === id);
+    const client = existingOrder?.account || nhClient; // fallback to global if not found
+
     setLoadingLocal(true);
     try {
-      const data = await onCall(`/api/v2/hashpower/order/${encodeURIComponent(id)}`, { silent: true });
+      const url = `/api/v2/hashpower/order/${encodeURIComponent(id)}?client=${encodeURIComponent(client)}`;
+      const data = await onCall(url, { silent: true });
       if (data && !data.error) {
-        const contextMatch = nicehashOrders.find((r) => r.id === id);
-        setOrderDetail({ ...data, nhClient: contextMatch?.account || nhClient });
+        setOrderDetail({ ...data, nhClient: client });
         setPriceInput(data.price || "");
         setLimitInput(data.limit || "");
       }
@@ -61,6 +90,15 @@ function NiceHashOrderManager({ onCall, nhClient, setNhClient }) {
     } finally {
       setLoadingLocal(false);
     }
+  };
+
+  // Client change handler
+  const handleClientChange = (e) => {
+    const newClient = e.target.value;
+    setNhClient(newClient);
+    setSelectedOrderId("");
+    setOrderDetail(null);
+    setContextSelectedOrderId("");
   };
 
   const handleOrderSelect = (value) => {
@@ -81,41 +119,70 @@ function NiceHashOrderManager({ onCall, nhClient, setNhClient }) {
     }
   };
 
+  // Get the client for a given order ID (helper)
+  const getOrderClient = (orderId) => {
+    return orderDetail?.nhClient || nicehashOrders.find(r => r.id === String(orderId))?.account;
+  };
+
+  // Cancel order – uses order's client
   const cancelOrder = () => {
-    if (!selectedOrderId || !window.confirm("Are you sure you want to cancel this order?")) return;
-    onCall(`/api/v2/hashpower/order/${encodeURIComponent(selectedOrderId)}`, {
+    if (!selectedOrderId) return;
+    const client = getOrderClient(selectedOrderId);
+    if (!client) {
+      alert("Unable to determine client for this order.");
+      return;
+    }
+    if (!window.confirm(`Are you sure you want to cancel this order (client: ${client})?`)) return;
+
+    const url = `/api/v2/hashpower/order/${encodeURIComponent(selectedOrderId)}?client=${encodeURIComponent(client)}`;
+    onCall(url, {
       method: "DELETE",
       showModal: true,
     }).then((res) => {
-      if (res && !res.error) refreshSummary();
+      if (res && !res.error) handleManualRefresh();
     });
   };
 
+  // Update order – uses order's client
   const updateOrder = () => {
     if (!selectedOrderId || priceInput === "" || limitInput === "") {
       alert("Order selection, Price, and Limit are required.");
       return;
     }
-    onCall(`/api/v2/hashpower/order/${encodeURIComponent(selectedOrderId)}/update`, {
+    const client = getOrderClient(selectedOrderId);
+    if (!client) {
+      alert("Unable to determine client for this order.");
+      return;
+    }
+    const url = `/api/v2/hashpower/order/${encodeURIComponent(selectedOrderId)}/update?client=${encodeURIComponent(client)}`;
+    onCall(url, {
       method: "POST",
       body: { price: String(priceInput), limit: String(limitInput) },
       showModal: true,
     }).then((res) => {
-      if (res && !res.errors && !res.error) refreshSummary();
+      if (res && !res.errors && !res.error) handleManualRefresh();
     });
   };
 
+  // Refill order – uses order's client
   const refillOrder = () => {
     if (!selectedOrderId || !refillInput) return;
-    onCall(`/api/v2/hashpower/order/${encodeURIComponent(selectedOrderId)}/refill`, {
+    const client = getOrderClient(selectedOrderId);
+    if (!client) {
+      alert("Unable to determine client for this order.");
+      return;
+    }
+    const url = `/api/v2/hashpower/order/${encodeURIComponent(selectedOrderId)}/refill?client=${encodeURIComponent(client)}`;
+    onCall(url, {
       method: "POST",
       body: { amount: String(refillInput) },
       showModal: true,
     }).then((res) => {
-      if (res && !res.error) refreshSummary();
+      if (res && !res.error) handleManualRefresh();
     });
   };
 
+  // Sorted orders
   const sortedOrders = useMemo(() => {
     return [...orders].sort((a, b) => {
       let aVal, bVal;
@@ -145,80 +212,86 @@ function NiceHashOrderManager({ onCall, nhClient, setNhClient }) {
     });
   }, [orders, sortConfig]);
 
-  const contextOrderPrice = useMemo(() => {
-    if (!selectedOrderId) return null;
-    return getOrderPrice(selectedOrderId);
-  }, [selectedOrderId, getOrderPrice]);
-
-  const matchingOrderInfo = useMemo(
-    () => nicehashOrders.find((r) => r.id === String(selectedOrderId)),
-    [nicehashOrders, selectedOrderId],
-  );
-
+  // Auto-refresh on client change
   useEffect(() => {
     if (nhClient && typeof onCall === "function") {
-      refreshSummary();
+      handleManualRefresh();
     }
-  }, [nhClient, onCall, refreshSummary]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nhClient, onCall]);
+
+  // If context is not ready, show a loading message
+  if (!nicehashOrders) {
+    return <div style={{ padding: "20px", color: "#94a3b8" }}>Loading NiceHash orders...</div>;
+  }
 
   return (
     <div className="nh-order-manager" style={{ padding: "12px", maxWidth: "100%", overflow: "hidden" }}>
-      {/* Header - Client Selection & Summary */}
+      {/* Header */}
       <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: "12px", marginBottom: "16px" }}>
         <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center" }}>
           <select
             className="select-pro"
             value={nhClient}
-            onChange={(e) => setNhClient(e.target.value)}
+            onChange={handleClientChange}
             style={{ fontSize: "clamp(10px, 1vw, 12px)", padding: "4px 8px", minWidth: "120px", backgroundColor: "rgba(255,255,255,0.03)" }}
           >
-            <option value="VN">🌐 All Clients</option>
+            <option value="ALL">🌐 All Clients</option>
             <option value="BT">BT</option>
             <option value="PH">PH</option>
             <option value="PH3">PH3</option>
             <option value="HUDA">HUDA</option>
+            <option value="XT">XT</option>
             <option value="LN">LN</option>
             <option value="NHATLINH">NhatLinh</option>
           </select>
           <NiceHashOrdersCardView />
         </div>
-        
+        {switchingClient && <span style={{ fontSize: "10px", color: "#fbbf24" }}>⏳ Switching...</span>}
       </div>
+
+      {/* Partial failures warning (e.g. one account with invalid credentials) */}
+      {partialErrors && partialErrors.length > 0 && (
+        <div style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: "8px", padding: "8px 12px", marginBottom: "12px", fontSize: "11px", color: "#fca5a5" }}>
+          ⚠️ {partialErrors.length} account(s) failed to load:{" "}
+          {partialErrors.map((e) => `${e?.client || e?.account || "?"}: ${e?.message || "error"}`).join("; ")}
+        </div>
+      )}
 
       {/* Quick Stats */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(80px, 1fr))", gap: "8px", marginBottom: "16px" }}>
         <div style={{ background: "rgba(255,255,255,0.03)", padding: "6px 10px", borderRadius: "6px", textAlign: "center" }}>
           <div style={{ fontSize: "9px", opacity: 0.5 }}>Active</div>
           <div style={{ fontSize: "clamp(14px, 1.5vw, 18px)", fontWeight: "bold", color: "#10b981" }}>
-            {nicehashOrders.filter(o => o.isActive).length}
+            {orders.filter(o => (o.status?.code || o.status) === "ACTIVE").length}
           </div>
         </div>
         <div style={{ background: "rgba(255,255,255,0.03)", padding: "6px 10px", borderRadius: "6px", textAlign: "center" }}>
           <div style={{ fontSize: "9px", opacity: 0.5 }}>Total Paid</div>
           <div style={{ fontSize: "clamp(14px, 1.5vw, 18px)", fontWeight: "bold", color: "#fbbf24" }}>
-            {refreshSummary} BTC
+            {summary?.totalPaid?.toFixed?.(8) || summary?.totalPaid || "0.00000000"} BTC
           </div>
         </div>
         <div style={{ background: "rgba(255,255,255,0.03)", padding: "6px 10px", borderRadius: "6px", textAlign: "center" }}>
           <div style={{ fontSize: "9px", opacity: 0.5 }}>Orders</div>
           <div style={{ fontSize: "clamp(14px, 1.5vw, 18px)", fontWeight: "bold", color: "#60a5fa" }}>
-            {nicehashOrders.length}
+            {summary?.count || orders.length}
           </div>
         </div>
         <div style={{ background: "rgba(255,255,255,0.03)", padding: "6px 10px", borderRadius: "6px", textAlign: "center" }}>
           <div style={{ fontSize: "9px", opacity: 0.5 }}>Inactive</div>
           <div style={{ fontSize: "clamp(14px, 1.5vw, 18px)", fontWeight: "bold", color: "#f87171" }}>
-            {nicehashOrders.filter(o => !o.isActive).length}
+            {orders.filter(o => (o.status?.code || o.status) !== "ACTIVE").length}
           </div>
         </div>
       </div>
 
-      {/* Quick Action Buttons */}
+      {/* Quick Actions */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "16px" }}>
-        <button className="btn-pro secondary" onClick={() => onCall("/api/v2/mining/address")} style={{ fontSize: "clamp(9px, 0.8vw, 11px)", padding: "4px 10px" }}>📍 Address</button>
-        <button className="btn-pro secondary" onClick={() => onCall("/api/v2/algorithms")} style={{ fontSize: "clamp(9px, 0.8vw, 11px)", padding: "4px 10px" }}>📊 Algorithms</button>
-        <button className="btn-pro secondary" onClick={() => onCall("/api/v2/mining/payouts")} style={{ fontSize: "clamp(9px, 0.8vw, 11px)", padding: "4px 10px" }}>💰 Payouts</button>
-        <button className="btn-pro secondary" onClick={() => onCall("/api/v2/mining/history", { query: { algorithm } })} style={{ fontSize: "clamp(9px, 0.8vw, 11px)", padding: "4px 10px" }}>📈 History</button>
+        <button className="btn-pro secondary" onClick={() => onCall(`/api/v2/mining/address?client=${encodeURIComponent(nhClient)}`)} style={{ fontSize: "clamp(9px, 0.8vw, 11px)", padding: "4px 10px" }}>📍 Address</button>
+        <button className="btn-pro secondary" onClick={() => onCall(`/api/v2/algorithms?client=${encodeURIComponent(nhClient)}`)} style={{ fontSize: "clamp(9px, 0.8vw, 11px)", padding: "4px 10px" }}>📊 Algorithms</button>
+        <button className="btn-pro secondary" onClick={() => onCall(`/api/v2/mining/payouts?client=${encodeURIComponent(nhClient)}`)} style={{ fontSize: "clamp(9px, 0.8vw, 11px)", padding: "4px 10px" }}>💰 Payouts</button>
+        <button className="btn-pro secondary" onClick={() => onCall(`/api/v2/mining/history?client=${encodeURIComponent(nhClient)}`)} style={{ fontSize: "clamp(9px, 0.8vw, 11px)", padding: "4px 10px" }}>📈 History</button>
         <button className="btn-pro secondary" onClick={handleManualRefresh} style={{ fontSize: "clamp(10px, 1vw, 12px)", padding: "4px 12px" }}>
           🔄 Refresh
         </button>
@@ -262,26 +335,31 @@ function NiceHashOrderManager({ onCall, nhClient, setNhClient }) {
             <span className={orderDetail.status.code === "ACTIVE" ? "status-success" : "status-ready"} style={{ fontSize: "10px", fontWeight: "bold" }}>
               {orderDetail.status.code}
             </span>
-            {contextOrderPrice !== null && (
-              <span style={{ fontSize: "11px", opacity: 0.7 }}>Price: <strong style={{ color: "#f59e0b" }}>{contextOrderPrice} BTC/TH</strong></span>
+            {getOrderPrice(selectedOrderId) !== null && (
+              <span style={{ fontSize: "11px", opacity: 0.7 }}>Price: <strong style={{ color: "#f59e0b" }}>{getOrderPrice(selectedOrderId)} BTC/TH</strong></span>
             )}
-            {matchingOrderInfo?.orderDiff && (
-              <span style={{ fontSize: "10px", fontWeight: "bold", color: parseFloat(matchingOrderInfo.orderDiff) >= 0 ? "#10b981" : "#f87171" }}>
-                ({parseFloat(matchingOrderInfo.orderDiff) > 0 ? "+" : ""}{matchingOrderInfo.orderDiff}%)
+            {nicehashOrders.find((r) => r.id === String(selectedOrderId))?.orderDiff && (
+              <span style={{ fontSize: "10px", fontWeight: "bold", color: parseFloat(nicehashOrders.find((r) => r.id === String(selectedOrderId))?.orderDiff || 0) >= 0 ? "#10b981" : "#f87171" }}>
+                (({parseFloat(nicehashOrders.find((r) => r.id === String(selectedOrderId))?.orderDiff || 0) > 0 ? "+" : ""}{nicehashOrders.find((r) => r.id === String(selectedOrderId))?.orderDiff || 0}).toFixed(4)%)
               </span>
             )}
-            {matchingOrderInfo?.marketPrice > 0 && (
+            {nicehashOrders.find((r) => r.id === String(selectedOrderId))?.marketPrice > 0 && (
               <span style={{ fontSize: "10px", opacity: 0.6 }}>
-                Market: <strong style={{ color: "#60a5fa" }}>{parseFloat(matchingOrderInfo.marketPrice).toFixed(8)} BTC/{matchingOrderInfo.marketUnit}</strong>
+                Market: <strong style={{ color: "#60a5fa" }}>{parseFloat(nicehashOrders.find((r) => r.id === String(selectedOrderId))?.marketPrice || 0).toFixed(8)} BTC/{nicehashOrders.find((r) => r.id === String(selectedOrderId))?.marketUnit}</strong>
               </span>
             )}
           </div>
         )}
       </div>
 
-      {/* Order Management Panel */}
+      {/* Order Management Panel – uses order's client */}
       {selectedOrderId && (
         <div style={{ background: "rgba(255,255,255,0.02)", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.05)", padding: "12px", marginBottom: "16px" }}>
+          {nhClient === "ALL" && (
+            <div style={{ fontSize: "10px", color: "#fbbf24", marginBottom: "8px" }}>
+              ⚠️ Actions will apply to the selected order's owning client.
+            </div>
+          )}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))", gap: "8px", alignItems: "flex-end", marginBottom: "10px" }}>
             <div>
               <label style={{ fontSize: "9px", opacity: 0.6, display: "block", marginBottom: "2px" }}>NEW PRICE</label>
@@ -312,7 +390,7 @@ function NiceHashOrderManager({ onCall, nhClient, setNhClient }) {
 
       {loadingLocal && <div style={{ fontSize: "11px", opacity: 0.6, margin: "8px 0" }}>Fetching order data...</div>}
 
-      {/* Main Content Grid - Responsive */}
+      {/* Main Content Grid */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "16px", marginTop: "12px" }}>
         {/* Order Detail */}
         {orderDetail && (
@@ -351,7 +429,7 @@ function NiceHashOrderManager({ onCall, nhClient, setNhClient }) {
           <div style={{ background: "rgba(255,255,255,0.02)", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.05)", padding: "12px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
               <h4 style={{ margin: 0, fontSize: "clamp(11px, 1vw, 13px)", opacity: 0.8 }}>📊 My Orders</h4>
-              <button className="btn-pro secondary" style={{ fontSize: "9px", padding: "2px 8px" }} onClick={refreshSummary}>Refresh</button>
+              <button className="btn-pro secondary" style={{ fontSize: "9px", padding: "2px 8px" }} onClick={handleManualRefresh}>Refresh</button>
             </div>
             <div style={{ maxHeight: "300px", overflowY: "auto", border: "1px solid rgba(255,255,255,0.05)", borderRadius: "6px" }}>
               <table style={{ width: "100%", fontSize: "clamp(9px, 0.8vw, 10px)", borderCollapse: "collapse" }}>
@@ -359,7 +437,7 @@ function NiceHashOrderManager({ onCall, nhClient, setNhClient }) {
                   <tr>
                     <th style={{ padding: "6px", cursor: "pointer" }} onClick={() => requestSort("pool")}>POOL {sortConfig.key === "pool" ? (sortConfig.direction === "asc" ? "↑" : "↓") : "↕"}</th>
                     <th style={{ padding: "6px", cursor: "pointer" }} onClick={() => requestSort("algo")}>ALGO {sortConfig.key === "algo" ? (sortConfig.direction === "asc" ? "↑" : "↓") : "↕"}</th>
-                    {nhClient === "VN" && <th style={{ padding: "6px" }}>ACCT</th>}
+                    {nhClient === "ALL" && <th style={{ padding: "6px" }}>ACCT</th>}
                     <th style={{ padding: "6px", textAlign: "right", cursor: "pointer" }} onClick={() => requestSort("price")}>PRICE {sortConfig.key === "price" ? (sortConfig.direction === "asc" ? "↑" : "↓") : "↕"}</th>
                     <th style={{ padding: "6px", textAlign: "right", cursor: "pointer" }} onClick={() => requestSort("speed")}>SPEED {sortConfig.key === "speed" ? (sortConfig.direction === "asc" ? "↑" : "↓") : "↕"}</th>
                   </tr>
@@ -368,14 +446,16 @@ function NiceHashOrderManager({ onCall, nhClient, setNhClient }) {
                   {sortedOrders.map((o, i) => {
                     const id = o.id || o.orderId || o.hashpowerOrderId;
                     const algo = typeof o.algorithm === "object" ? o.algorithm.algorithm : o.algorithm;
+                    const speedUnit = getNiceHashUnit(algo);
+                    const speedInDisplayUnit = convertUnit(parseFloat(o.acceptedCurrentSpeed || 0), 'H', speedUnit);
                     const poolName = o.pool?.name || o.pool?.stratumHostname || o.title || o.name || "N/A";
                     return (
                       <tr key={id || i} onClick={() => handleOrderSelect(id)} style={{ cursor: "pointer", borderBottom: "1px solid rgba(255,255,255,0.02)" }}>
                         <td style={{ padding: "6px" }}>{poolName}</td>
                         <td style={{ padding: "6px" }}>{algo}</td>
-                        {nhClient === "VN" && <td style={{ padding: "6px", opacity: 0.7 }}>{o.nhClient}</td>}
+                        {nhClient === "ALL" && <td style={{ padding: "6px", opacity: 0.7 }}>{o.nhClient}</td>}
                         <td style={{ padding: "6px", textAlign: "right", color: "#f59e0b" }}>{o.price}</td>
-                        <td style={{ padding: "6px", textAlign: "right" }}>{parseFloat(o.acceptedCurrentSpeed || 0).toFixed(4)}</td>
+                        <td style={{ padding: "6px", textAlign: "right" }}>{speedInDisplayUnit.toFixed(4)} {speedUnit}/s</td>
                       </tr>
                     );
                   })}
@@ -384,18 +464,8 @@ function NiceHashOrderManager({ onCall, nhClient, setNhClient }) {
             </div>
           </div>
         )}
-
-        {/* CryptoRatePage */}
         <CryptoRatePage onCall={onCall} />
       </div>
-
-      {/* Accounting Section */}
-      {/* <div style={{ marginTop: "20px", borderTop: "1px solid rgba(255,255,255,0.1)", paddingTop: "16px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
-          <h3 style={{ margin: 0, fontSize: "clamp(13px, 1.2vw, 16px)" }}>💰 Accounting & Wallet</h3>
-        </div>
-        <Accounting onCall={onCall} />
-      </div> */}
     </div>
   );
 }
@@ -411,31 +481,94 @@ export default function MiningRigNiceHash({ onCall, algorithm, nhClient, setNhCl
   );
 }
 
-// Helper component for Active Orders Card View
+// ============================================================
+// ✅ UPGRADED: Active Orders Card View (with scroll & +X more)
+// ============================================================
 function NiceHashOrdersCardView() {
   const { nicehashOrders, summary, loading } = useNiceHashOrders();
-  const activeOrders = useMemo(() => nicehashOrders.filter((order) => order.isActive), [nicehashOrders]);
+  const activeOrders = useMemo(
+    () => nicehashOrders.filter((order) => order.isActive),
+    [nicehashOrders]
+  );
+
+  const MAX_VISIBLE = 7; // Số lượng order hiển thị trực tiếp
+  const visibleOrders = activeOrders.slice(0, MAX_VISIBLE);
+  const remainingCount = activeOrders.length - MAX_VISIBLE;
 
   return (
-    <div style={{ padding: "6px 12px", background: "rgba(255,255,255,0.02)", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.05)" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "4px" }}>
-        <span style={{ fontSize: "clamp(9px, 0.8vw, 11px)", fontWeight: "bold" }}>🟢 Active Orders</span>
+    <div
+      style={{
+        padding: "6px 12px",
+        background: "rgba(255,255,255,0.02)",
+        borderRadius: "8px",
+        border: "1px solid rgba(255,255,255,0.05)",
+        flex: "1 1 100%",
+        minWidth: 0,
+        maxWidth: "100%",
+      }}
+    >
+      {/* Header: tổng quan */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: "4px",
+        }}
+      >
+        <span style={{ fontSize: "clamp(9px, 0.8vw, 11px)", fontWeight: "bold" }}>
+          🟢 Active Orders
+        </span>
         <span style={{ fontSize: "clamp(8px, 0.7vw, 10px)", opacity: 0.6 }}>
-          Paid: <span style={{ color: "#f3ba2f", fontWeight: "bold" }}>{summary.totalPaid} BTC</span>
+          Paid:{" "}
+          <span style={{ color: "#f3ba2f", fontWeight: "bold" }}>
+            {summary?.totalPaid?.toFixed?.(8) || "0.00000000"} BTC
+          </span>
           <span style={{ margin: "0 6px", opacity: 0.3 }}>|</span>
-          Count: <b>{summary.count}</b>
+          Count: <b>{summary?.count || 0}</b>
         </span>
       </div>
+
+      {/* Danh sách order – cuộn ngang */}
       {!loading && activeOrders.length > 0 && (
-        <div style={{ display: "flex", gap: "6px", overflowX: "auto", paddingBottom: "4px", marginTop: "4px" }}>
-          {activeOrders.slice(0, 7).map((order) => (
+        <div
+          style={{
+            display: "flex",
+            gap: "6px",
+            overflowX: "auto",          // Cuộn ngang khi vượt quá chiều rộng
+            width: "100%",
+            minWidth: 0,
+            paddingBottom: "4px",
+            marginTop: "4px",
+          }}
+        >
+          {visibleOrders.map((order) => (
             <NiceHashOrderCard key={order.id} order={order} />
           ))}
-          {activeOrders.length > 7 && <span style={{ fontSize: "9px", opacity: 0.5, padding: "4px" }}>+{activeOrders.length - 5} more</span>}
+          {remainingCount > 0 && (
+            <span
+              style={{
+                fontSize: "9px",
+                opacity: 0.5,
+                padding: "4px",
+                whiteSpace: "nowrap",
+                display: "flex",
+                alignItems: "center",
+              }}
+            >
+              +{remainingCount} more
+            </span>
+          )}
         </div>
       )}
-      {!loading && activeOrders.length === 0 && <span style={{ fontSize: "10px", opacity: 0.5 }}>No active orders</span>}
-      {loading && <span style={{ fontSize: "10px", opacity: 0.5 }}>Loading...</span>}
+
+      {!loading && activeOrders.length === 0 && (
+        <span style={{ fontSize: "10px", opacity: 0.5 }}>No active orders</span>
+      )}
+      {loading && (
+        <span style={{ fontSize: "10px", opacity: 0.5 }}>Loading...</span>
+      )}
     </div>
   );
 }

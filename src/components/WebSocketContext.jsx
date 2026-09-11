@@ -25,7 +25,21 @@ export function WebSocketProvider({ children, token, autoConnect = true }) {
 
   useEffect(() => {
     mountedRef.current = true;
-    return () => { mountedRef.current = false; };
+    return () => {
+      mountedRef.current = false;
+      // Close cleanly during navigation and Vite HMR so the proxy does not
+      // attempt to write to a browser socket that has already been discarded.
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+      if (connectTimerRef.current) clearTimeout(connectTimerRef.current);
+      const ws = wsRef.current;
+      if (ws) {
+        ws.onopen = null;
+        ws.onerror = null;
+        ws.onclose = null;
+        try { ws.close(1000, 'Provider unmounted'); } catch { /* Socket was already closed. */ }
+        wsRef.current = null;
+      }
+    };
   }, []);
 
   const disconnect = useCallback(() => {

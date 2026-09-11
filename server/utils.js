@@ -1,14 +1,17 @@
 export const asyncHandler = fn => (req, res, next) => {
   Promise.resolve(fn(req, res, next)).catch(err => {
     console.error(`[api:error] ${req.method} ${req.originalUrl}`, err);
-    const status = err.statusCode || 500;
+    const status = err.upstream ? 502 : (err.statusCode || 500);
 
     if (status === 429 && err.headers) {
       if (err.headers['retry-after']) res.set('Retry-After', err.headers['retry-after']);
       if (err.headers['x-ratelimit-limit']) res.set('X-RateLimit-Limit', err.headers['x-ratelimit-limit']);
     }
 
-    res.status(status).json({ error: err.message });
+    res.status(status).json({
+      error: err.message,
+      ...(err.upstream ? { upstream: err.upstream, upstreamStatus: err.statusCode } : {}),
+    });
   });
 };
 

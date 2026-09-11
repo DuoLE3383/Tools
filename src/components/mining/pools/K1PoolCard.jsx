@@ -1,7 +1,8 @@
-// K1PoolCard.jsx - Multi-wallet monitor (HeroMinersLookup pattern)
-import { useState, useCallback, useMemo, useEffect, useRef } from "react";
+// K1PoolCard.jsx — Multi-wallet monitor rendered through the shared MiningPanel.
+import { useState, useCallback, useEffect, useRef } from "react";
 import ProfitAlert from "../ProfitAlert.jsx";
-import { loadStringFromStorage, saveStringToStorage } from "../../../core/storage.js";
+import { BankIcon, TrashIcon, AlertIcon } from "../Icons.jsx";
+import MiningPanel, { PanelActions, StatTile, StatGrid } from "../MiningPanel.jsx";
 
 const STORAGE_KEY = "k1pool_monitor_pairs";
 const AUTO_REFRESH_KEY = "k1pool_auto_refresh";
@@ -46,15 +47,6 @@ function deriveCoin(pool) {
   const match = p.match(/^([a-z]+)/);
   if (match) return match[1].toUpperCase();
   return 'RVN';
-}
-
-function MiniStat({ label, value, color }) {
-  return (
-    <div style={{ padding: "6px 8px", borderRadius: "6px", background: "rgba(0,0,0,0.15)" }}>
-      <div style={{ color: "#64748b", fontSize: "9px", textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</div>
-      <div style={{ color: color || "#e2e8f0", fontSize: "13px", fontWeight: 800, marginTop: "2px", overflow: "hidden", textOverflow: "ellipsis" }}>{value}</div>
-    </div>
-  );
 }
 
 export default function K1PoolCard({ onCall }) {
@@ -150,65 +142,42 @@ export default function K1PoolCard({ onCall }) {
   };
 
   return (
-    <div style={{
-      padding: "clamp(10px, 1vw, 14px)",
-      background: "rgba(15,23,42,0.72)",
-      border: "1px solid rgba(148,163,184,0.12)",
-      borderRadius: "12px",
-      boxShadow: "0 18px 40px rgba(0,0,0,0.20)",
-      display: "flex",
-      flexDirection: "column",
-      gap: "10px",
-    }}>
-      {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div>
-          <h4 style={{ margin: 0, color: "#a78bfa", fontSize: "clamp(12px, 1vw, 14px)" }}>
-            🏛 K1Pool Monitor
-          </h4>
-          <div style={{ fontSize: "clamp(9px, 0.7vw, 11px)", color: "#94a3b8", marginTop: "2px" }}>
-            {pairs.length} wallet{pairs.length !== 1 ? "s" : ""}
-            {autoRefresh ? " · Auto 30s" : " · Manual"}
-            {lastFetched && ` · ${lastFetched.toLocaleTimeString()}`}
-          </div>
-        </div>
-        {pairs.length > 0 && (
-          <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
-            <label style={{ fontSize: "clamp(8px, 0.6vw, 10px)", display: "flex", alignItems: "center", gap: "3px", cursor: "pointer", color: autoRefresh ? "#34d399" : "#64748b" }}>
-              <input type="checkbox" checked={autoRefresh} onChange={toggleAutoRefresh} style={{ width: "12px", height: "12px" }} />
-              Auto
-            </label>
-            <button className="btn-sm" onClick={() => fetchAll(true)} disabled={loading.size > 0} style={{ fontSize: "clamp(9px, 0.7vw, 11px)", padding: "3px 10px" }}>
-              {loading.size > 0 ? "⏳" : "🔄"}
-            </button>
-            <button className="btn-sm" onClick={clearAll} style={{ fontSize: "clamp(9px, 0.7vw, 11px)", padding: "3px 10px", color: "#f87171" }}>
-              ✕ Clear
-            </button>
-          </div>
-        )}
-      </div>
-
+    <MiningPanel
+      icon={<BankIcon size={16} color="#a78bfa" />}
+      accent="#a78bfa"
+      title="K1Pool"
+      subtitle={`${pairs.length} wallet${pairs.length !== 1 ? "s" : ""}${autoRefresh ? " · Auto 30s" : " · Manual"}${lastFetched ? ` · ${lastFetched.toLocaleTimeString()}` : ""}`}
+      actions={
+        <PanelActions
+          autoRefresh={autoRefresh}
+          onToggleAuto={toggleAutoRefresh}
+          onRefresh={() => fetchAll(true)}
+          loading={loading.size > 0}
+          onClear={clearAll}
+        />
+      }
+    >
       {/* Add new pair */}
       <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
         <input value={poolInput} onChange={(e) => setPoolInput(e.target.value.toLowerCase())}
-          placeholder="Pool (e.g. quaikawpowsolo)"
-          style={{ flex: "0 0 100px", padding: "6px 10px", background: "rgba(0,0,0,0.25)",
-            border: "1px solid rgba(148,163,184,0.15)", borderRadius: "6px", color: "#e2e8f0",
-            fontSize: "clamp(10px, 0.8vw, 12px)" }} />
+          placeholder="Pool"
+          style={{ flex: "0 0 110px", padding: "8px 10px", background: "rgba(0,0,0,0.25)",
+            border: "1px solid rgba(148,163,184,0.15)", borderRadius: "8px", color: "#e2e8f0",
+            fontSize: "8px" }} />
         <input value={addressInput} onChange={(e) => setAddressInput(e.target.value)}
           placeholder="Wallet address"
-          style={{ flex: "1", minWidth: "160px", padding: "6px 10px", background: "rgba(0,0,0,0.25)",
-            border: "1px solid rgba(148,163,184,0.15)", borderRadius: "6px", color: "#e2e8f0",
-            fontSize: "clamp(10px, 0.8vw, 12px)" }}
+          style={{ flex: "1", minWidth: "160px", padding: "8px 10px", background: "rgba(0,0,0,0.25)",
+            border: "1px solid rgba(148,163,184,0.15)", borderRadius: "8px", color: "#e2e8f0",
+            fontSize: "8px" }}
           onKeyDown={(e) => { if (e.key === "Enter") addPair(); }} />
-        <button className="btn-primary" onClick={addPair} disabled={!poolInput || !addressInput}
-          style={{ padding: "6px 14px", fontSize: "clamp(10px, 0.8vw, 12px)" }}>
+        <button className="btn-pro primary" onClick={addPair} disabled={!poolInput || !addressInput}
+          style={{ padding: "8px 14px", fontSize: "8px" }}>
           + Add
         </button>
       </div>
 
       {pairs.length === 0 && (
-        <div style={{ fontSize: "clamp(9px, 0.7vw, 11px)", color: "#64748b", padding: "8px", textAlign: "center", fontStyle: "italic" }}>
+        <div style={{ fontSize: "8px", color: "#64748b", padding: "12px", textAlign: "center", fontStyle: "italic" }}>
           Add pool + address pairs to monitor. E.g. <strong>quaikawpowsolo</strong> + your wallet.
         </div>
       )}
@@ -233,49 +202,53 @@ export default function K1PoolCard({ onCall }) {
               <div key={pair.id} style={{
                 background: "rgba(0,0,0,0.25)",
                 borderRadius: "8px",
-                border: `1px solid ${accent}22`,
+                border: `1px solid ${accent}33`,
                 padding: "10px",
-                display: "flex", flexDirection: "column", gap: "6px",
+                display: "flex", flexDirection: "column", gap: "8px",
               }}>
                 {/* Header */}
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                    <span style={{ background: accent, color: "#000", fontWeight: 900, padding: "1px 8px", borderRadius: "4px", fontSize: "12px" }}>
+                    <span style={{ background: accent, color: "#000", fontWeight: 900, padding: "2px 8px", borderRadius: "4px", fontSize: "8px" }}>
                       {coin}
                     </span>
-                    <span style={{ color: "#94a3b8", fontSize: "9px", maxWidth: "100px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <span style={{ color: "#94a3b8", fontSize: "8px", maxWidth: "100px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {pair.pool}
                     </span>
-                    <span style={{ color: "#64748b", fontSize: "10px", maxWidth: "120px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <span style={{ color: "#64748b", fontSize: "8px", maxWidth: "120px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {pair.address.slice(0, 10)}...{pair.address.slice(-4)}
                     </span>
                   </div>
-                  <button onClick={() => removePair(pair.id)} style={{ background: "none", border: "none", color: "#f87171", cursor: "pointer", fontSize: "12px", padding: "0 4px" }}>
-                    ✕
+                  <button onClick={() => removePair(pair.id)} style={{ background: "none", border: "none", color: "#f87171", cursor: "pointer", padding: "2px", display: "flex" }} title="Remove" aria-label="Remove">
+                    <TrashIcon size={14} />
                   </button>
                 </div>
 
-                {isLoading && <div style={{ color: "#fbbf24", fontSize: "11px" }}>Loading...</div>}
-                {error && !isLoading && <div style={{ color: "#f87171", fontSize: "10px" }}>⚠ {error}</div>}
+                {isLoading && <div style={{ color: "#fbbf24", fontSize: "8px" }}>Loading...</div>}
+                {error && !isLoading && (
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px", color: "#f87171", fontSize: "8px" }}>
+                    <AlertIcon size={13} /> {error}
+                  </div>
+                )}
 
                 {data && !isLoading && (
                   <>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "4px" }}>
-                      <MiniStat label="Hashrate" value={miner.curHashrateStr || "0 H/s"} color={accent} />
-                      <MiniStat label="Avg (3h)" value={miner.avgHashrateStr || "0 H/s"} color="#34d399" />
-                      <MiniStat label="Workers" value={`${workerStats.online} / ${workerStats.total}`} color="#e2e8f0" />
-                      <MiniStat label="Luck" value={miner.soloLuck ? `${miner.soloLuck}%` : "N/A"} color="#f472b6" />
-                    </div>
+                    <StatGrid cols={2}>
+                      <StatTile label="Hashrate" value={miner.curHashrateStr || "0 H/s"} color={accent} />
+                      <StatTile label="Avg (3h)" value={miner.avgHashrateStr || "0 H/s"} color="#34d399" />
+                      <StatTile label="Workers" value={`${workerStats.online} / ${workerStats.total}`} color="#e2e8f0" />
+                      <StatTile label="Luck" value={miner.soloLuck ? `${miner.soloLuck}%` : "N/A"} color="#f472b6" />
+                    </StatGrid>
                     <ProfitAlert
-                      pair={{ coin, address: pair.address }}
+                      pair={{ id: pair.id, coin, address: pair.address, pool: pair.pool, source: 'k1pool' }}
                       onCall={onCall}
                       poolName={`K1Pool-${pair.pool}`}
-                      nhClient="VN"
+                      nhClient="ALL"
                     />
                   </>
                 )}
                 {!data && !isLoading && !error && (
-                  <div style={{ color: "#64748b", fontSize: "10px", fontStyle: "italic", textAlign: "center", padding: "8px" }}>
+                  <div style={{ color: "#64748b", fontSize: "8px", fontStyle: "italic", textAlign: "center", padding: "10px" }}>
                     Awaiting first fetch...
                   </div>
                 )}
@@ -284,6 +257,6 @@ export default function K1PoolCard({ onCall }) {
           })}
         </div>
       )}
-    </div>
+    </MiningPanel>
   );
 }

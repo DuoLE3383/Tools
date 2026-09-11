@@ -3,6 +3,7 @@
 import { getDb } from '../db.js';
 import { TRACKED_COINS } from './coinMapping.js';
 import { CONFIG } from '../config.js';
+import { getCmcPrices } from '../cmcClient.js';
 import { 
   getCoinPrice,
   getPricesForCoins,
@@ -16,6 +17,32 @@ export * from './coinGeckoService.js';
 
 let lastPriceSave = 0;
 
+const CMC_SYMBOL_BY_ID = {
+  bitcoin: 'BTC',
+  ethereum: 'ETH',
+  monero: 'XMR',
+  ravencoin: 'RVN',
+  ergo: 'ERG',
+  kaspa: 'KAS',
+  beam: 'BEAM',
+  'ethereum-classic': 'ETC',
+  litecoin: 'LTC',
+  dogecoin: 'DOGE',
+  'bitcoin-cash': 'BCH',
+  'zephyr-protocol': 'ZEPH',
+  salvium: 'SAL',
+  'iron-fish': 'IRON',
+  dynex: 'DNX',
+  alephium: 'ALPH',
+  nexa: 'NEXA',
+  'clore-ai': 'CLORE',
+  'conflux-token': 'CFX',
+  'quantum-resistant-ledger': 'QRL',
+  xelis: 'XEL',
+  zano: 'ZANO',
+  aipg: 'AIPG',
+};
+
 export async function fetchAndSaveCoinPrices(force = false) {
   const now = Date.now();
   const ttl = CONFIG.COINGECKO_PRICE_TTL || 300000;
@@ -27,6 +54,20 @@ export async function fetchAndSaveCoinPrices(force = false) {
   try {
     console.log('[CoinGecko] Fetching and saving coin prices to DB...');
     const prices = await getPricesForCoins(TRACKED_COINS, ['usd', 'btc']);
+    const missingIds = TRACKED_COINS.filter((coinId) => {
+      const usd = Number(prices?.[coinId]?.usd || 0);
+      return usd <= 0 && CMC_SYMBOL_BY_ID[coinId];
+    });
+    let cmcPrices = {};
+    if (missingIds.length > 0 && process.env.CMC_API) {
+      try {
+        const symbols = missingIds.map((coinId) => CMC_SYMBOL_BY_ID[coinId]);
+        cmcPrices = await getCmcPrices([...new Set([...symbols, 'BTC'])]);
+        console.log(`[CoinGecko] CMC fallback returned ${Object.keys(cmcPrices).length} prices.`);
+      } catch (cmcError) {
+        console.warn(`[CoinGecko] CMC fallback failed: ${cmcError.message}`);
+      }
+    }
     const db = await getDb();
     const capturedAt = new Date().toISOString();
 
@@ -40,13 +81,15 @@ export async function fetchAndSaveCoinPrices(force = false) {
 
       let updatedCount = 0;
       for (const coinId of TRACKED_COINS) {
-          const data = prices[coinId];
-          if (data) {
+            const data = prices[coinId];
+            const cmcData = cmcPrices[CMC_SYMBOL_BY_ID[coinId]];
+            const priceData = Number(data?.usd) > 0 ? data : cmcData;
+            if (priceData) {
               await stmt.run(
                   coinId, null, null,
-                  data.usd || 0, data.btc || 0,
-                  data.usd_market_cap || 0, data.usd_24h_vol || 0,
-                  data.usd_24h_change || 0, capturedAt
+                priceData.usd || 0, priceData.btc || 0,
+                priceData.usd_market_cap || 0, priceData.usd_24h_vol || 0,
+                priceData.usd_24h_change || 0, capturedAt
               );
               updatedCount++;
           }

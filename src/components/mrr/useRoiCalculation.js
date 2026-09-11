@@ -1,3 +1,5 @@
+// useRoiCalculation.js - FINAL VERSION (supports pre-converted price)
+
 import { useMemo } from "react";
 import {
   calculatePriceComparison,
@@ -7,33 +9,35 @@ import {
 export const useRoiCalculation = ({
   finalMrrRate,
   mrrUnit,
-  niceHashSourceUnit, // The original unit of the NH price (e.g., 'TH' or 'Gsol')
-  niceHashSourcePrice,
+  niceHashSourceUnit, // Optional, used only if conversion needed
+  niceHashSourcePrice, // Raw NH price (not converted)
+  niceHashPriceInMrrUnit, // Pre-converted NH price (optional)
   normalizedAlgo,
   rawAlgo,
   isLoadingMrrRate,
   skipUnitConversion = false,
 }) => {
-  const niceHashPriceInMrrUnit = useMemo(() => {
+  // If a pre-converted price is provided, use it directly.
+  const effectiveNiceHashPrice = useMemo(() => {
+    if (niceHashPriceInMrrUnit !== undefined && niceHashPriceInMrrUnit > 0) {
+      return niceHashPriceInMrrUnit;
+    }
     if (niceHashSourcePrice <= 0) return 0;
-    // When skipUnitConversion is true, the caller passes the NH price already in TH
-    // (the standard NH API unit). Do not apply convertNiceHashToMrr which uses
-    // the algo mapping's niceHashUnit that does not match the actual API unit.
     if (skipUnitConversion) return niceHashSourcePrice;
+    // Otherwise, convert using the mapping (fallback)
     return convertNiceHashToMrr(niceHashSourcePrice, normalizedAlgo || rawAlgo);
-  }, [niceHashSourcePrice, normalizedAlgo, rawAlgo, skipUnitConversion]);
+  }, [niceHashPriceInMrrUnit, niceHashSourcePrice, skipUnitConversion, normalizedAlgo, rawAlgo]);
 
   const roiPercent = useMemo(() => {
-    if (finalMrrRate <= 0 || niceHashPriceInMrrUnit <= 0) return null;
-    // If we skipped unit conversion, the NH price is still in its original unit.
-    const nhUnitForComparison = skipUnitConversion ? niceHashSourceUnit : mrrUnit;
+    if (finalMrrRate <= 0 || effectiveNiceHashPrice <= 0) return null;
+    // Both values are now in the same unit (mrrUnit)
     return calculatePriceComparison(
       finalMrrRate,
       mrrUnit,
-      niceHashPriceInMrrUnit,
-      nhUnitForComparison,
+      effectiveNiceHashPrice,
+      mrrUnit, // same unit, so conversion is 1:1
     );
-  }, [finalMrrRate, mrrUnit, niceHashPriceInMrrUnit, skipUnitConversion, niceHashSourceUnit]);
+  }, [finalMrrRate, mrrUnit, effectiveNiceHashPrice]);
 
   const formatPercent = (value) => {
     const num = Number(value);
@@ -43,16 +47,16 @@ export const useRoiCalculation = ({
 
   const roiLabel = useMemo(() => {
     if (roiPercent !== null) return formatPercent(roiPercent);
-    if (niceHashSourcePrice > 0) {
+    if (niceHashSourcePrice > 0 || niceHashPriceInMrrUnit > 0) {
       if (finalMrrRate >= 0)
         return isLoadingMrrRate ? "Loading..." : "No MRR rate";
       return "Waiting for data";
     }
     return "No NH price";
-  }, [roiPercent, niceHashSourcePrice, finalMrrRate, isLoadingMrrRate]);
+  }, [roiPercent, niceHashSourcePrice, niceHashPriceInMrrUnit, finalMrrRate, isLoadingMrrRate]);
 
   return {
-    niceHashPriceInMrrUnit,
+    niceHashPriceInMrrUnit: effectiveNiceHashPrice,
     roiPercent,
     roiLabel,
   };

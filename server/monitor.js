@@ -5,7 +5,7 @@ import { mrrApiCall, mrrConfigs, markGhostRental, mrrGetCache } from './mrr.js';
 import { resolveNhClient, getNiceHashApp, isAggregate, nhConfigs } from './nh.js';
 import { extractRentalInfo, extractRigInfo } from './utils.js';
 import { TELEGRAM_CONFIG, TelegramTemplates } from '../src/core/telegram.js';
-import { ALGO_DISPLAY_NAMES } from '../src/core/mapping.js';
+import { ALGO_DISPLAY_NAMES, getAlgoDisplayName } from '../src/core/mapping.js';
 
 // Helper to escape HTML for safe inclusion in Telegram message titles.
 function escapeHtml(unsafe) {
@@ -22,11 +22,11 @@ import { getDb } from './db.js';
 // Import utilities (assuming these files exist and are correct)
 import { getRentalIdFromRig, getRigLookupKeys, isRentalActive, isLiveRigCurrentlyRented, resolveRentalAlgo, parseUtcDate } from './mrr/rental-utils.js';
 import { isRealRental, splitRentals as validateRentals } from './mrr/rental-validator.js';
-import { 
-  cleanHashrateUnit, 
-  convertHashrateValue, 
+import {
+  cleanHashrateUnit,
+  convertHashrateValue,
   ALGO_MAPPING,
-  getPerformanceEmoji 
+  getPerformanceEmoji
 } from './mrr/hashrate-utils.js';
 
 import { TTLMap } from './mrr/cache-utils.js';
@@ -36,7 +36,7 @@ import { TTLMap } from './mrr/cache-utils.js';
 // ==========================
 
 const { ALERT_COOLDOWN_MS, WARNING_RIG_THRESHOLD } = TELEGRAM_CONFIG;
-const RENTED_HEARTBEAT_MS = 15 * 60 * 1000;
+const NH_ZERO_HASHRATE_ALERT_COOLDOWN_MS = 30 * 60 * 1000; // 10 minutes
 
 // ==========================
 //  TELEGRAM BOT CONFIGURATION
@@ -44,14 +44,19 @@ const RENTED_HEARTBEAT_MS = 15 * 60 * 1000;
 
 const TELEGRAM_BOTS = {
   MAIN_BOT: {
-    token: process.env.TELEGRAM_BOT_TOKEN,
-    chatId: process.env.TELEGRAM_CHAT_ID,
+    token: process.env.TELEGRAM_TOKEN || process.env.TELEGRAM_TOKEN,
+    chatId: process.env.TELEGRAM_ID || process.env.TELEGRAM_ID,
     name: 'Main Bot',
   },
   MINE_BOT: {
     token: process.env.TELEGRAM_MINE_BOT_TOKEN || process.env.TELEGRAM_TOKEN,
     chatId: process.env.TELEGRAM_GROUP_ID || process.env.TELEGRAM_ID,
     name: 'Mining Bot',
+  },
+  NH_BOT: {
+    token: process.env.TELEGRAM_NH_TOKEN || process.env.TELEGRAM_TOKEN,
+    chatId: process.env.TELEGRAM_NH_ID || process.env.TELEGRAM_ID,
+    name: 'NH Bot',
   }
 };
 
@@ -61,14 +66,15 @@ const TELEGRAM_BOTS = {
 
 let isMonitorRunning = false;
 const monitorInitTracker = new Set();
-const lastAlertTimes = new Map([['global_summary', Date.now()]]);
+const lastAlertTimes = new Map();
 const lastRigStates = new Map();
+const lastNhZeroHashrateAlert = new Map();
 
 // Use TTLMap for caches
-const nhPriceCache = new TTLMap(60000);
+const nhPriceCache = new TTLMap(600000);
 const nhPriceErrorCache = new TTLMap(600000);
-const nhOrdersCache = new TTLMap(60000);
-const ghostCache = new TTLMap(300000);
+const nhOrdersCache = new TTLMap(600000);
+const ghostCache = new TTLMap(600000);
 
 // ==========================
 //  HELPERS
@@ -150,7 +156,7 @@ export async function getNhMarketPrice(algo, clientName) {
 
   try {
     const orderbook = await getNiceHashApp(client).hashpower.getOrderBook({ algorithm: algo });
-    
+
     const euPrice = parseFloat(orderbook?.stats?.EU?.price);
     const usaPrice = parseFloat(orderbook?.stats?.USA?.price);
 
@@ -171,6 +177,70 @@ export async function getNhMarketPrice(algo, clientName) {
     console.warn(`[Monitor] Failed to get market price for ${algo}: ${err.message}`);
     return null;
   }
+}
+
+/**
+ * Scan all configured NiceHash accounts for ACTIVE orders that are not
+ * receiving any hashrate (acceptedCurrentSpeed === 0).
+ *
+ * Applies a per-order cooldown so repeated alerts are not spammed.
+ *
+ * @param {boolean} forceNotify - If true, ignore the cooldown and alert every time.
+ * @returns {Promise<Array<{account: string, orderId: string, order: object}>>}
+ */
+export async function checkNhZeroHashrateOrders(forceNotify = false) {
+  const alerts = [];
+
+  // Iterate over each concrete (non-aggregate) NiceHash account.
+  const nhAccounts = Object.keys(nhConfigs)
+    .filter(k => nhConfigs[k]?.apiKey && nhConfigs[k]?.apiSecret && nhConfigs[k]?.orgId)
+    .filter(k => !isAggregate(k));
+
+  for (const acct of nhAccounts) {
+    let activeOrders;
+    try {
+      activeOrders = await getMonitorNhActiveOrders(acct);
+    } catch (err) {
+      console.warn(`[NH ZeroHashrate] Failed to fetch orders for ${acct}: ${err.message}`);
+      continue;
+    }
+
+    if (!Array.isArray(activeOrders) || activeOrders.length === 0) continue;
+
+    for (const order of activeOrders) {
+      const status = String(order?.status?.code || order?.status || '').toUpperCase();
+      if (status !== 'ACTIVE') continue;
+
+      // Normalize the hashrate field. NiceHash returns `acceptedCurrentSpeed`
+      // (hashes/sec) for buy orders. Fall back to a few alternative field names.
+      const speed = parseFloat(
+        order?.acceptedCurrentSpeed ??
+        order?.speedAccepted ??
+        order?.algorithmSpeed ??
+        order?.acceptedSpeed ??
+        0
+      ) || 0;
+
+      // An ACTIVE order with zero accepted hashrate means nobody is delivering
+      // hashpower to it — alert the user.
+      if (speed <= 0) {
+        const orderId = String(order?.id || order?.orderId || 'unknown');
+        const alertKey = `${acct}:${orderId}`;
+        const now = Date.now();
+        const lastSent = lastNhZeroHashrateAlert.get(alertKey) || 0;
+
+        if (forceNotify || (now - lastSent) >= NH_ZERO_HASHRATE_ALERT_COOLDOWN_MS) {
+          lastNhZeroHashrateAlert.set(alertKey, now);
+          alerts.push({ account: acct, orderId, order });
+        }
+      }
+    }
+  }
+
+  if (alerts.length > 0) {
+    console.log(`[NH ZeroHashrate] Found ${alerts.length} zero-hashrate order(s)`);
+  }
+  return alerts;
 }
 
 // ==========================
@@ -260,9 +330,9 @@ export async function sendTelegramInternal(message, botType = 'MAIN_BOT', option
       const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          chat_id: chatId, 
-          text, 
+        body: JSON.stringify({
+          chat_id: chatId,
+          text,
           parse_mode: 'HTML',
           disable_web_page_preview: true,
           ...options
@@ -270,12 +340,12 @@ export async function sendTelegramInternal(message, botType = 'MAIN_BOT', option
       });
 
       const data = await res.json();
-      
+
       if (res.ok && data?.ok) {
         console.log(`[telegram:${botType}] Message sent successfully (attempt ${attempt})`);
         return { ok: true, data };
       }
-      
+
       throw new Error(data?.description || `HTTP ${res.status}`);
     } catch (err) {
       lastError = err;
@@ -353,6 +423,8 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
     const queueTelegramMessage = (message, options = {}) => {
       const text = String(message || '').trim();
       if (!text) return;
+      // Debug: log queued message details
+      console.debug(`[Monitor] Queueing telegram message (${(text || '').slice(0, 80).replace(/\n/g, ' ')}...) type=${options.type || options.label || 'Monitor'} label=${options.label || 'Monitor'}`);
       queuedTelegramMessages.push({
         message: text,
         label: options.label || 'Monitor',
@@ -384,13 +456,17 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
         }
 
         try {
+          // Debug: log which bot we're sending to and length
+          console.debug(`[Monitor] Flushing telegram messages for type='${type}' items=${items.length} chars=${messageToSend.length}`);
           // Fallback for very long grouped messages to avoid hitting Telegram API limits.
           if (messageToSend.length > 4096) {
             console.warn(`[Monitor] Grouped message for type '${type}' is too long. Sending individually.`);
             for (const item of items) {
+              console.debug(`[Monitor] Sending individual queued message label=${item.label} chars=${String(item.message).length}`);
               await sendTelegramInternal(item.message);
             }
           } else {
+            console.debug(`[Monitor] Sending grouped message to MAIN_BOT by default`);
             await sendTelegramInternal(messageToSend);
           }
 
@@ -431,8 +507,13 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
     const accountsToProcess = Array.isArray(mrrAccts) ? mrrAccts : [];
 
     await Promise.all(accountsToProcess.map(async (acct) => {
+      // Collect ghost rental IDs for this account to reduce noisy logs
+      const ghostedIds = [];
       const harvestedRentalIds = new Set();
       const rigLookupByRentalId = new Map();
+      // `rentalsMap` contains aliases for both rental and rig IDs. Process an
+      // actual rental only once so aliases cannot create duplicate notices.
+      const processedRentalIds = new Set();
 
       const metric = {
         name: acct,
@@ -468,7 +549,7 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
           for (const rig of rigs) {
             // ✅ Skip if rig is invalid
             if (!rig) continue;
-            
+
             const status = String(typeof rig.status === 'object' ? rig.status.status : rig.status || '').toLowerCase();
             const rentedFlag = Boolean(rig?.status?.rented);
             const rentalId = getRentalIdFromRig(rig);
@@ -572,29 +653,46 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
         let realRentalCount = 0;
 
         for (const [rentalId, r] of rentalsMap) {
-          // Skip if not a real rental
-          const info = extractRentalInfo(r);
-          if (!isRealRental(r, info)) {
-            console.log(`[monitor:${acct}] Skipping ghost rental: ${rentalId}`);
-            continue;
-          }
+          // A new MRR rental can appear on a rented rig before its rental
+          // record has price/hashrate data. Merge that live state first,
+          // otherwise the initial notification is incorrectly suppressed as
+          // a ghost rental.
+          const liveRig = getRigLookupKeys(r, rentalId)
+            .map(key => rigLookupByRentalId.get(key))
+            .find(Boolean);
+          // Fallback records are keyed by rig ID, while MRR rental records
+          // are keyed by rental ID. The live rig is the authoritative bridge
+          // between them, so use its rental ID to collapse both entries.
+          const canonicalRentalId = String(
+            getRentalIdFromRig(liveRig) || r?.id || r?.rentalid || r?.rental_id || rentalId || ''
+          ).trim();
+          if (!canonicalRentalId || processedRentalIds.has(canonicalRentalId)) continue;
+          processedRentalIds.add(canonicalRentalId);
 
-          const liveRig = getRigLookupKeys(r).map(key => rigLookupByRentalId.get(key)).find(Boolean);
           if (liveRig) {
             r.name = liveRig.name || r.name;
             if (!r.hashrate || typeof r.hashrate !== 'object') r.hashrate = {};
             const liveVal = parseFloat(liveRig.hashrate || liveRig.status?.hashrate || 0);
-            if (liveVal > 0) {
-              r.hashrate.current = liveVal;
+            if (liveVal > 0) r.hashrate.current = liveVal;
+            if ((!r.algo || r.algo === 'Unknown') && liveRig.algo) r.algo = liveRig.algo;
+          }
+
+          const info = extractRentalInfo(r);
+          const isLiveRental = Boolean(liveRig?.status?.rented) || isLiveRigCurrentlyRented(liveRig);
+          if (!isRealRental(r, info) && !isLiveRental) {
+            // Only track truthy rental ids to avoid 'false' entries
+            if (rentalId) {
+              ghostedIds.push(String(rentalId));
+              try {
+                ghostCache.set(String(rentalId), { name: r?.name || r?.rig?.id || String(rentalId), client: acct, reason: 'No mining activity detected', detectedAt: now });
+              } catch (e) { /* ignore cache errors */ }
             }
-            if ((!r.algo || r.algo === 'Unknown') && liveRig.algo) {
-              r.algo = liveRig.algo;
-            }
+            continue;
           }
 
           const startT = parseUtcDate(info.startTime);
           const endT = parseUtcDate(info.endTime);
-          
+
           // Determine if the rental is currently active.
           // A rental is active if its end time hasn't passed OR if the live rig reports it as rented.
           // This handles rentals that might not have an end time yet (e.g., pay-as-you-go).
@@ -604,14 +702,14 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
 
           if (hasFinishedStatus || (hasPassedEndTime && !isRentedOnRig)) {
             // This rental is definitively finished.
-            await db.run(`DELETE FROM rentals WHERE id = ?`, [String(r.id)]).catch(() => {});
+            await db.run(`DELETE FROM rentals WHERE id = ?`, [String(r.id)]).catch(() => { });
             continue;
           }
           const remainingMs = Math.max(0, endT - now);
 
           // This is a real active rental - count it
           realRentalCount++;
-          currentActiveRentalIds.add(rentalId);
+          currentActiveRentalIds.add(canonicalRentalId);
 
           // Get hashrate data
           const advertised = parseFloat(info.hashrate?.advertised || 0);
@@ -630,7 +728,7 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
 
           // Calculate order diff
           let orderDiff = (100 - efficiency).toFixed(1);
-          
+
           // Try to get NiceHash price for comparison
           try {
             const nhAlgo = normalizeAlgoForNiceHash(info.algo);
@@ -664,12 +762,15 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
             // Ignore - use default orderDiff
           }
 
-          // Save to database
+          const existingRental = await db.get(`SELECT last_notified FROM rentals WHERE id = ?`, [String(r.id)]).catch(() => null);
+          const lastNotified = existingRental?.last_notified || 0;
+
+          // Save to database - CRITICAL: include last_notified so we don't re-notify every cycle
           await db.run(
             `INSERT INTO rentals (
               id, name, client, start_time, end_time, algo, target_100, order_diff, 
-              last_updated, current_hashrate, average_hashrate, advertised_hashrate, price_paid
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              last_updated, current_hashrate, average_hashrate, advertised_hashrate, price_paid, last_notified
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET 
               name=excluded.name, client=excluded.client, algo=excluded.algo,
               start_time=excluded.start_time, end_time=excluded.end_time, 
@@ -678,24 +779,25 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
               current_hashrate=excluded.current_hashrate, 
               average_hashrate=excluded.average_hashrate,
               advertised_hashrate=excluded.advertised_hashrate, 
-              price_paid=excluded.price_paid`,
+              price_paid=excluded.price_paid,
+              last_notified=excluded.last_notified`,
             [
               String(r.id), r.name || r.id, acct, startT, endT, info.algo,
               displayTarget, orderDiff, now, currentHash, average, advertised,
-              info.price?.paid || 0
+              info.price?.paid || 0, lastNotified
             ]
           ).catch(err => console.error(`[monitor:db] Upsert error for ${r.id}: ${err.message}`));
 
           // Build active rental line for summary
           const remStr = formatRemainingTime(remainingMs);
-          const perfEmoji = efficiency >= 100 ? '✅' : 
-                            efficiency >= 90 ? '🟢' : 
-                            efficiency >= 70 ? '🔵' : 
-                            efficiency >= 50 ? '🟡' : '🔴';
-          
+          const perfEmoji = efficiency >= 100 ? '✅' :
+            efficiency >= 90 ? '🟢' :
+              efficiency >= 70 ? '🔵' :
+                efficiency >= 50 ? '🟡' : '🔴';
+
           const algo = resolveRentalAlgo(r, info);
           const speedStatus = currentHash > 0 ? `${info.niceHashrate}H` : '⚠️ 0 H/s';
-          
+
           activeRentalLines.push(TelegramTemplates.activeRentalLine(
             perfEmoji,
             getAlgoDisplayName(algo),
@@ -713,17 +815,15 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
           ));
 
           // Send new rental notification if new
-          const row = await db.get(`SELECT last_notified FROM rentals WHERE id = ?`, [String(r.id)]).catch(() => null);
-          const lastNotified = row?.last_notified || 0;
-          const isNew = lastNotified === 0;
+          const isNew = lastNotified === 0 && !notifiedRentalIdsThisRun.has(canonicalRentalId);
 
-          if (forceNotify || isNew) {
-            const hbType = forceNotify ? 'MONITOR' : 'NEW RENTAL';
+          // Disable the detailed [MONITOR] summary on forceNotify, but still allow new rental notifications.
+          if (isNew) {
+            notifiedRentalIdsThisRun.add(canonicalRentalId);
+            const hbType = 'NEW RENTAL';
             const ads = info.niceAdvertisedHashrate || info.hashrate?.advertised?.nice || info.hashrate?.advertised || 'N/A';
-            const msg = forceNotify
-              ? TelegramTemplates.rentedNotice(hbType, r, info, acct, orderDiff, remStr, getAlgoDisplayName(algo), ads)
-              : TelegramTemplates.newRental(acct, r, info.price?.paid || '0.00', info.startTime, info.endTime, getAlgoDisplayName(algo), ads);
-            
+            const msg = TelegramTemplates.newRental(acct, r, info, info.startTime, info.endTime, getAlgoDisplayName(algo), ads);
+
             queueTelegramMessage(msg, {
               type: hbType,
               label: `${hbType} ${acct} ${r.id}`,
@@ -739,6 +839,14 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
         }
 
         metric.rented = realRentalCount;
+        rentedAll += realRentalCount;
+        // Log an aggregated ghost summary for this account to reduce noise
+        if (ghostedIds.length > 0) {
+          const sample = ghostedIds.slice(0, 10).join(', ');
+          console.log(`[monitor:${acct}] Skipping ${ghostedIds.length} ghost rentals: ${sample}${ghostedIds.length > 10 ? ' ...' : ''}`);
+          ghostTotal += ghostedIds.length;
+        }
+
         accountMetrics.push(metric);
         if (!metric.error) successfulAccts.push(acct);
 
@@ -756,7 +864,7 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
 
     if (successfulAcctList.length > 0) {
       const placeholders = successfulAcctList.map(() => '?').join(',');
-      
+
       // Delete rentals not in active list
       if (currentActiveRentalIds.size > 0) {
         const activePlaceholders = Array.from(currentActiveRentalIds).map(() => '?').join(',');
@@ -772,6 +880,88 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
       }
     }
 
+    // ✅ Send a periodic global heartbeat/summary if cooldown passed
+    try {
+      const nowTs = Date.now();
+      const lastGlobal = lastAlertTimes.get('global_summary');
+      const cooldown = Number(ALERT_COOLDOWN_MS || 0);
+      // Send if we never sent before, or cooldown elapsed
+      if (typeof lastGlobal === 'undefined' || (nowTs - lastGlobal) > cooldown) {
+        const algoLines = Array.from(globalOnlineAlgos.entries())
+          .sort((a, b) => b[1] - a[1])
+          .map(([algo, count]) => `• ${escapeHtml(algo)}: <b>${count}</b>`);
+
+        const summaryMsg = TelegramTemplates.heartbeatSummary({
+          online: onlineAll || 0,
+          onlineAll: onlineAll || 0,
+          rented: rentedAll || 0,
+          rentedAll: rentedAll || 0,
+          offline: offlineAll || 0,
+          offlineAll: offlineAll || 0,
+          disabled: disabledAll || 0,
+          disabledAll: disabledAll || 0,
+          total: totalAll || 0,
+          totalAll: totalAll || 0,
+          activeRentalLines,
+          activeRentals: activeRentalLines,
+          monitorTime: new Date(nowTs).toLocaleTimeString(),
+          rented24h: 0,
+          onlineAlgoLines: algoLines,
+          algos: algoLines,
+        });
+
+        queueTelegramMessage(summaryMsg, {
+          type: 'GLOBAL_SUMMARY',
+          label: 'GLOBAL_SUMMARY',
+          onSuccess: async () => {
+            lastAlertTimes.set('global_summary', Date.now());
+          }
+        });
+      }
+    } catch (err) {
+      console.warn('[Monitor] Failed to queue heartbeat summary:', err.message);
+    }
+
+    // ✅ Detect and alert on NiceHash orders with zero hashrate (via NH_BOT)
+    try {
+      const zeroHashrateAlerts = await checkNhZeroHashrateOrders(false);
+      if (zeroHashrateAlerts.length > 0) {
+        // Group all alerts into one message
+        const accountAlerts = new Map();
+        for (const alert of zeroHashrateAlerts) {
+          const account = alert.account;
+          if (!accountAlerts.has(account)) accountAlerts.set(account, []);
+          accountAlerts.get(account).push(alert);
+        }
+
+        // Build a summary per account and overall
+        let groupedMessage = `⚠️ <b>Zero Hashrate Alerts</b>\n`;
+        groupedMessage += `Detected ${zeroHashrateAlerts.length} order(s) with zero hashrate.\n\n`;
+        for (const [account, alerts] of accountAlerts) {
+          groupedMessage += `<b>Account: ${account}</b>\n`;
+          alerts.forEach((alert, idx) => {
+            const rawAlgo = typeof alert.order?.algorithm === 'object'
+              ? alert.order.algorithm.algorithm
+              : (alert.order?.algorithm || 'N/A');
+            const orderId = alert.orderId || alert.order?.id || 'N/A';
+            const pool = alert.order?.pool?.name || alert.order?.pool?.stratumHostname || 'N/A';
+            groupedMessage += ` Algo: ${getAlgoDisplayName(rawAlgo)} | Pool: ${pool}\n`;
+          });
+          groupedMessage += '\n';
+        }
+        groupedMessage += `Please investigate the rigs.`;
+
+        // Send grouped message
+        try {
+          await sendTelegramInternal(groupedMessage, 'NH_BOT');
+          console.log(`[NH ZeroHashrate] Grouped alert sent to NH_BOT for ${zeroHashrateAlerts.length} orders`);
+        } catch (sendErr) {
+          console.error(`[NH ZeroHashrate] Failed to send grouped alert: ${sendErr.message}`);
+        }
+      }
+    } catch (err) {
+      console.warn('[Monitor] Zero-hashrate check failed:', err.message);
+    }
     // ✅ Flush queued telegram messages
     await flushQueuedTelegramMessages();
 

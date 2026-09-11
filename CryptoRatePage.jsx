@@ -1,97 +1,50 @@
 // CryptoRatePage.jsx
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useWebSocket } from './src/components/WebSocketContext';
 import { COIN_ALIASES, COINS } from './src/core/coinGrecko.js';
 
-function Sparkline({ data, width = 180, height = 80, color = "#60a5fa" }) {
-  if (!data || !Array.isArray(data) || data.length < 2) {
-    return (
-      <div
-        style={{
-          width,
-          height,
-          background: "rgba(255,255,255,0.02)",
-          borderRadius: "8px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      />
-    );
-  }
-
-  const min = Math.min(...data);
-  const max = Math.max(...data);
-  const range = max - min || 1;
-
-  const points = data
-    .map((val, i) => {
-      const x = (i / (data.length - 1)) * width;
-      const y = height - ((val - min) / range) * height;
-      return `${x},${y}`;
-    })
-    .join(" ");
-
-  return (
-    <svg
-      width={width}
-      height={height}
-      viewBox={`0 0 ${width} ${height}`}
-      preserveAspectRatio="none"
-      style={{ overflow: "visible", filter: `drop-shadow(0 0 4px ${color}44)` }}
-    >
-      <polyline
-        fill="none"
-        stroke={color}
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        points={points}
-      />
-    </svg>
-  );
-}
-
-export default function CryptoRatePage({ onCall, onPriceUpdate, onNavigateHome, coinPrices }) {
-  const [prices, setPrices] = useState(coinPrices || null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+export default function CryptoRatePage({ onNavigateHome, coinPrices }) {
   const [amounts, setAmounts] = useState({ usd: "1000" });
   const [baseCoin, setBaseCoin] = useState("usd");
   const { isConnected: wsConnected, prices: wsPrices } = useWebSocket();
 
   const onValueChange = (id, val) => {
     setBaseCoin(id);
-    setAmounts({ [id]: val });
+    // ✅ Merge instead of replace so switching base coins keeps prior amounts
+    // (e.g. the USD amount isn't wiped when you select a coin as the base).
+    setAmounts(prev => ({ ...prev, [id]: val }));
   };
 
-  useEffect(() => {
-    if (coinPrices) setPrices(coinPrices);
-  }, [coinPrices]);
+  // ✅ Clicking a coin card selects it as the base currency. If the user hasn't
+  // entered an amount for that coin yet, seed it with its current calculated
+  // value so the input is immediately editable and the conversion stays consistent.
+  const handleSelectBase = (coin) => {
+    const existing = amounts[coin.id];
+    const hasExisting = existing !== undefined && existing !== null && existing !== '';
+    const baseVal = hasExisting
+      ? existing
+      : coin.calculated > 0
+        ? coin.calculated.toFixed(6)
+        : '0';
+    setBaseCoin(coin.id);
+    setAmounts(prev => ({ ...prev, [coin.id]: baseVal }));
+  };
 
-  const formatPricesForRigCard = useCallback((data) => {
-    const formatted = {};
-    Object.keys(data).forEach(key => {
-      const coinData = data[key];
-      // Find the matching COIN entry
-      const coin = COINS.find(c => c.id === key);
-      const symbol = coin?.symbol || key.toUpperCase();
-      
-      formatted[symbol] = {
-        usd: coinData?.usd || 0,
-        btc: coinData?.btc || 0,
-        change24h: coinData?.usd_24h_change || 0,
-        marketCap: coinData?.usd_market_cap || 0,
-        volume24h: coinData?.usd_24h_vol || 0,
-      };
-    });
-    return formatted;
-  }, []);
+  // Derive the effective price map from the parent-provided REST snapshot
+  // (coinPrices) merged with the live WebSocket prices. Deriving via useMemo
+  // avoids setState-inside-effect cascading renders.
+  const prices = useMemo(() => {
+    const base = coinPrices ? { ...coinPrices } : null;
+    if (wsPrices && Object.keys(wsPrices).length > 0) {
+      return { ...(base || {}), ...wsPrices };
+    }
+    return base;
+  }, [coinPrices, wsPrices]);
 
-  // ✅ FIXED: Use 'prices' instead of 'data'
+  // ✅ Use derived 'prices' instead of a stale 'data' variable
   const getCoinData = useCallback((coinOrId) => {
     if (!prices) return null;
-    
+
     const coin = COINS.find((c) => c.id === coinOrId || c.symbol === coinOrId);
     const candidates = [
       coinOrId,
@@ -113,17 +66,7 @@ export default function CryptoRatePage({ onCall, onPriceUpdate, onNavigateHome, 
     return null;
   }, [prices]);
 
-  useEffect(() => {
-    if (wsPrices && Object.keys(wsPrices).length > 0) {
-      setPrices(prev => {
-        const merged = { ...prev, ...wsPrices };
-        // Parent now handles updates via PriceManager
-        return merged;
-      });
-    }
-  }, [wsPrices]);
-
-  const getPrice = (data) => data?.usd || (typeof data === "number" ? data : 0);
+  const getPrice = (data) => data?.usd ?? (typeof data === "number" ? data : 0);
 
   const results = useMemo(() => {
     const currentInput = parseFloat(amounts[baseCoin]) || 0;
@@ -137,12 +80,11 @@ export default function CryptoRatePage({ onCall, onPriceUpdate, onNavigateHome, 
         ...coin,
         price,
         change: data?.usd_24h_change || 0,
-        history: data?.sparkline_in_7d?.price || data?.sparkline || null,
         calculated: price > 0 ? usdValue / price : 0,
         usdValue: usdValue,
       };
-    });    
-  }, [prices, amounts, baseCoin, getCoinData]);
+    });
+  }, [amounts, baseCoin, getCoinData]);
 
   return (
     <div
@@ -209,7 +151,7 @@ export default function CryptoRatePage({ onCall, onPriceUpdate, onNavigateHome, 
           </span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <span style={{ fontSize: "1rem", color: "#60a5fa", fontWeight: "700" }}>
+          <span style={{ fontSize: "0.8rem", color: "#60a5fa", fontWeight: "700" }}>
             $
           </span>
           <input
@@ -226,7 +168,7 @@ export default function CryptoRatePage({ onCall, onPriceUpdate, onNavigateHome, 
               border: "1px solid rgba(255,255,255,0.06)",
               borderRadius: "8px",
               padding: "4px 8px",
-              fontSize: "1.3rem",
+              fontSize: "1.5rem",
               color: "#fff",
               fontFamily: "monospace",
               outline: "none",
@@ -248,6 +190,7 @@ export default function CryptoRatePage({ onCall, onPriceUpdate, onNavigateHome, 
         {results.map((coin) => (
           <div
             key={coin.id}
+            onClick={() => handleSelectBase(coin)}
             style={{
               aspectRatio: "2 / 1",
               background: baseCoin === coin.id ? "rgba(96,165,250,0.06)" : "rgba(30,41,59,0.12)",
@@ -258,17 +201,18 @@ export default function CryptoRatePage({ onCall, onPriceUpdate, onNavigateHome, 
               flexDirection: "column",
               justifyContent: "space-between",
               transition: "all 0.2s ease",
+              cursor: "pointer",
             }}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontWeight: "800", color: "#d660fa", fontSize: "0.85rem" }}>
+              <span style={{ fontWeight: "800", color: "#d660fa", fontSize: "1rem" }}>
                 {coin.symbol}
               </span>
               <span
                 style={{
                   color: coin.change >= 0 ? "#10b981" : "#f87171",
                   fontWeight: "600",
-                  fontSize: "0.85rem",
+                  fontSize: "1rem",
                 }}
               >
                 {coin.change >= 0 ? "▲" : "▼"} {Math.abs(coin.change).toFixed(1)}%
@@ -289,7 +233,7 @@ export default function CryptoRatePage({ onCall, onPriceUpdate, onNavigateHome, 
                   background: "rgba(0,0,0,0.25)",
                   border: "1px solid rgba(255,255,255,0.05)",
                   borderRadius: "6px",
-                  padding: "6px 8px",
+                  padding: "4px 6px",
                   fontSize: "1.2rem",
                   color: "#fff",
                   fontFamily: "monospace",
@@ -313,19 +257,6 @@ export default function CryptoRatePage({ onCall, onPriceUpdate, onNavigateHome, 
           </div>
         ))}
       </div>
-
-      {error && (
-        <div
-          style={{
-            fontSize: "0.75rem",
-            color: "#f87171",
-            textAlign: "center",
-            marginTop: "10px",
-          }}
-        >
-          {error}
-        </div>
-      )}
     </div>
   );
 }

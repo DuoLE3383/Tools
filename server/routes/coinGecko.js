@@ -1,6 +1,7 @@
 // routes/coinGecko.js
 import { asyncHandler } from "../utils.js";
 import { getDb } from "../db.js";
+import { getCoinGeckoId } from "../coinGecko/coinMapping.js";
 
 /**
  * Fetches coin metadata directly from the database.
@@ -20,6 +21,18 @@ let coinGeckoCache = {
   data: null,
   timestamp: 0,
 };
+
+async function resolveCoinIdFromMetadata(query, db) {
+  const normalized = String(query || "").trim();
+  if (!normalized) return null;
+
+  const meta = await db.get(
+    `SELECT coin_id FROM coin_metadata WHERE lower(symbol) = ? OR lower(coin_id) = ? OR lower(coin_name) = ? LIMIT 1`,
+    [normalized.toLowerCase(), normalized.toLowerCase(), normalized.toLowerCase()],
+  );
+
+  return meta?.coin_id || null;
+}
 
 async function getCachedCoinPrices(ids) {
   const now = Date.now();
@@ -72,36 +85,30 @@ export function registerCoinGeckoRoutes(app) {
     "/api/v2/prices/coingecko",
     asyncHandler(async (req, res) => { // This is your main price endpoint
       const defaultIds = "bitcoin,ethereum,litecoin,dogecoin,monero,ravencoin,kaspa";
-      // Prioritize `coinId` for single lookups, then `ids`, then fallback to default
       let idsParam = req.query.coinId || req.query.ids || defaultIds;
-      const vsCurrency = req.query.vs_currency || 'usd';
-      let ids = idsParam.split(",").map((s) => s.trim()).filter(Boolean).join(",");
-      const originalRequestedIds = ids.split(',');
+      const originalRequestedIds = idsParam.split(",").map((s) => s.trim()).filter(Boolean);
+      const db = await getDb();
+      const resolvedIds = [];
 
-      // If it's a single ID request from coinId, try to resolve it from symbol to coin_id
-      if (req.query.coinId && originalRequestedIds.length === 1) {
-        const db = await getDb();
-        const meta = await db.get('SELECT coin_id FROM coin_metadata WHERE symbol = ? OR coin_id = ?', [originalRequestedIds[0].toLowerCase(), originalRequestedIds[0]]);
-        if (meta && meta.coin_id) {
-          ids = meta.coin_id; // Replace symbol (e.g., 'cfx') with actual coin_id (e.g., 'conflux-token')
-        }
+      for (const requestedId of originalRequestedIds) {
+        const resolvedId = getCoinGeckoId(requestedId) || await resolveCoinIdFromMetadata(requestedId, db);
+        resolvedIds.push(resolvedId || requestedId);
       }
 
-      try {
-        const data = await getCachedCoinPrices(ids);
-        const resolvedIds = ids.split(',');
+      const ids = resolvedIds.join(",");
 
-        // If a single ID was requested, return just that coin's data for compatibility with the modal
+      try {
+        let data = await getCachedCoinPrices(ids);
         if (originalRequestedIds.length === 1) {
-          const coinData = data[resolvedIds[0]]; // Use the (potentially resolved) ID to look up
+          const lookupId = resolvedIds[0];
+          const coinData = data[lookupId] || data[originalRequestedIds[0]];
           if (coinData && coinData.usd !== undefined && coinData.usd > 0) {
-            return res.json({ success: true, data: coinData, source: "db_cache" });
+            return res.json({ success: true, data: coinData, source: "database" });
           }
-          // Coin not found in DB — return error so the frontend knows to try fallback
           return res.status(404).json({ success: false, error: `Price not found for ${originalRequestedIds[0]}` });
         }
 
-        res.json({ success: true, data, source: "db_cache" });
+        res.json({ success: true, data, source: "database" });
       } catch (err) {
         res.status(500).json({ success: false, error: err.message });
       }

@@ -1,4 +1,4 @@
-// MrrRigCard.jsx (Main - Final)
+// MrrRigCard.jsx - FINAL with multi-source NiceHash price and logging
 
 import { useEffect, useMemo, useState, useCallback } from "react";
 import {
@@ -9,6 +9,7 @@ import {
   getStatusClass,
   getRoiColor,
   getNiceHashPriceValue,
+  convertPriceBetweenUnits,
 } from "../../core/mrrUtils.js";
 import {
   HASHRATE_SUFFIXES,
@@ -38,12 +39,13 @@ import { RigEfficiencySection } from "./RigEfficiencySection";
 import { RigPoolSection } from "./RigPoolSection";
 import { RigActions } from "./RigActions";
 
-// Import utils
+// ✅ Import convertHashrateValue from formatters
 import {
   formatHashrateWithUnit,
   convertHashrateValue,
   cleanHashrateUnit,
 } from "./formatters";
+
 import {
   getMrrAlgoKey,
   COINGECKO_BY_CURRENCY,
@@ -104,7 +106,7 @@ const convertPaidToBtc = (
   if (upperCurrency === "BTC") return amount;
   const coinId = COINGECKO_BY_CURRENCY[upperCurrency];
   const apiBtcRate = coinId
-    ? Number.parseFloat(coinPrices?.[coinId]?.btc || 0)
+    ? Number.parseFloat(coinPrices?.[coinId]?.price_btc ?? coinPrices?.[coinId]?.btc ?? 0)
     : 0;
   if (apiBtcRate > 0) return amount * apiBtcRate;
   const fallbackRate = FALLBACK_BTC_RATES[upperCurrency];
@@ -150,7 +152,7 @@ const MrrRigCard = ({
   const rentalId = rig.rentalid || rig.current_rental_id || rig.rental_id;
   const isLoadingDetails = loadingInfoIds.has(rig.id);
   const isRented =
-    info?.isRental === true || // Trust the detailed info from /rental/:id endpoint first
+    info?.isRental === true ||
     statusStr.includes("rented") ||
     statusStr.includes("active") ||
     Boolean(rentalId);
@@ -186,14 +188,33 @@ const MrrRigCard = ({
         LTC: "litecoin",
         DOGE: "dogecoin",
         BCH: "bitcoin-cash",
+        ETC: "ethereum-classic",
       };
-      const id = map[String(currency).toUpperCase()];
+      const upper = String(currency).toUpperCase();
+      const id = map[upper];
       if (!id || !coinPrices) return 0;
+
       const coinData =
         coinPrices[id] ||
-        coinPrices[String(currency).toUpperCase()] ||
-        coinPrices[String(currency).toLowerCase()];
-      return coinData?.usd || 0;
+        coinPrices[upper] ||
+        coinPrices[upper.toLowerCase()];
+
+      if (!coinData) {
+        // Symbol-keyed lookup fallback
+        const bySymbol = Object.values(coinPrices).find(
+          (p) => String(p?.symbol || "").toUpperCase() === upper,
+        );
+        return Number(bySymbol?.usd) > 0 ? Number(bySymbol.usd) : 0;
+      }
+
+      if (Number(coinData.usd) > 0) return Number(coinData.usd);
+
+      // Fall back to BTC-denominated price × BTC USD.
+      const btcRate = Number(coinData.price_btc || coinData.btc || 0);
+      const btcUsd = getUsdPrice("BTC");
+      if (btcRate > 0 && btcUsd > 0) return btcRate * btcUsd;
+
+      return 0;
     },
     [coinPrices],
   );
@@ -275,8 +296,14 @@ const MrrRigCard = ({
   const usdValue = useMemo(() => {
     if (!paidAmount || paidAmount <= 0) return 0;
     const price = getUsdPrice(paidCurrency);
-    return paidAmount * price;
-  }, [paidAmount, paidCurrency, getUsdPrice]);
+    if (price > 0) return paidAmount * price;
+    // Fallback: derive USD from the already-computed BTC amount × BTC USD price.
+    if (paidBtcAmount > 0) {
+      const btcUsd = getUsdPrice("BTC");
+      if (btcUsd > 0) return paidBtcAmount * btcUsd;
+    }
+    return 0;
+  }, [paidAmount, paidCurrency, paidBtcAmount, getUsdPrice]);
 
   const paidUsdtAmount = useMemo(
     () => getUsdtAmountDirect(paidAmount, paidCurrency, coinPrices),
@@ -314,10 +341,11 @@ const MrrRigCard = ({
     displayId,
   });
 
-  // ── NiceHash Price ──
+  // ── NiceHash Price Resolution ──
   const normalizedCardAlgo = normalizeAlgoForNiceHash(algoName || rawAlgo);
+  console.log(`[MrrRigCard] ${rig.id} algo: ${rawAlgo} -> normalized: ${normalizedCardAlgo}`);
 
-  // Find matching order from NiceHash context (has active order prices from myOrders API)
+  // 1. Try active orders from context
   const sortedOrders = useMemo(() => [...(nhOrders || [])]
     .sort((a, b) =>
       Number(b?.isActive || b?.rawOrder?.status?.code === "ACTIVE" || b?.rawOrder?.status === "ACTIVE") -
@@ -326,59 +354,67 @@ const MrrRigCard = ({
 
   const nhOrder = useMemo(() => {
     const rigClient = String(rig.mrrClient || mrrClient || '').toUpperCase();
-
-    // We only care about active orders for price comparison.
     const activeOrders = sortedOrders.filter(order =>
       order.isActive ||
       (order.rawOrder?.status?.code === 'ACTIVE') ||
       (order.rawOrder?.status === 'ACTIVE')
     );
-
-    // First, try to find an ACTIVE order matching both algo and client.
-    const clientSpecificOrder = activeOrders.find((order) => {
+    // Try client-specific match first
+    const clientSpecific = activeOrders.find(order => {
       const orderAlgo = normalizeOrderAlgo(order);
       const orderClient = String(order.account || order.client || '').toUpperCase();
       return orderAlgo === normalizedCardAlgo && orderClient === rigClient;
     });
-
-    if (clientSpecificOrder) return clientSpecificOrder;
-
-    // If no client-specific order is found, find the first ACTIVE order for that algo from any client.
-    // This handles cases where MRR account names (e.g., 'SL') don't map 1:1 to NiceHash account names.
-    return activeOrders.find((order) => {
+    if (clientSpecific) return clientSpecific;
+    // Fallback to any client matching the algo
+    return activeOrders.find(order => {
       const orderAlgo = normalizeOrderAlgo(order);
       return orderAlgo === normalizedCardAlgo;
     });
   }, [sortedOrders, normalizedCardAlgo, rig.mrrClient, mrrClient]);
 
-  // The NiceHash myOrders API actually returns prices per TH (not per the mapping's niceHashUnit).
-  // For example SHA256 (listed as EH in mapping) returns 0.4558 BTC/TH/Day, not BTC/EH/Day.
-  // getNiceHashPriceValue returns the raw number — this IS the correct per-TH price.
-  // BUGFIX: The comment above is misleading. `getNiceHashPriceValue` incorrectly converts Equihash (Gsol) to TH.
-  // We must use `parsePriceValueLocal` to get the raw price number without any unit conversion,
-  // as the calling context is aware of the special case for Equihash units.
-  const niceHashSourcePrice = nhOrder
+  const nhOrderPrice = nhOrder
     ? parsePriceValueLocal(nhOrder?.price ?? nhOrder?.rawOrder?.price ?? nhOrder)
     : 0;
+  const nhOrderUnit = nhOrder?.algoUnit || getNiceHashUnit(normalizedAlgo);
 
-  console.log(`[MrrRigCard] ${normalizedCardAlgo} nhOrder account=${nhOrder?.account} rawPrice=${nhOrder?.rawOrder?.price} niceHashSourcePrice=${niceHashSourcePrice}`);
+  console.log(`[MrrRigCard] Order match: ${!!nhOrder}, price: ${nhOrderPrice}, unit: ${nhOrderUnit}`);
 
-  // The myOrders API generally returns price per TH, but for Equihash it's per Gsol.
-  // We need to handle this exception for both display and ROI calculation.
-  const myNhUnit = nhOrder?.algoUnit || getNiceHashUnit(normalizedAlgo);
+  // 2. Market price from aggregated endpoint
+  const marketPriceData = algoMarketPrices?.[normalizedCardAlgo];
+  let marketPrice = 0;
+  let marketUnit = getNiceHashUnit(normalizedAlgo) || 'TH';
+  if (marketPriceData?.success) {
+    marketPrice = parseFloat(marketPriceData.price) || 0;
+    marketUnit = marketPriceData.unit || marketUnit;
+  }
+  console.log(`[MrrRigCard] Market price: ${marketPrice} ${marketUnit}`);
+
+  // 3. Choose the best available price
+  const niceHashSourcePrice = nhOrderPrice > 0 ? nhOrderPrice : marketPrice;
+  const niceHashSourceUnit = nhOrderPrice > 0 ? nhOrderUnit : marketUnit;
+
+  if (niceHashSourcePrice <= 0) {
+    console.warn(`[MrrRigCard] ❌ No NiceHash price for ${normalizedCardAlgo}`);
+  }
+
+  // Convert the NiceHash price (BTC/unit/day) to the MRR display unit.
+  // NOTE: price conversion is the INVERSE of hashrate conversion — a per-unit
+  // price scales UP when the target unit is LARGER (1 PH earns 1000× what 1 TH
+  // earns). convertHashrateValue applies hashrate semantics (value*from/to),
+  // which produces a wildly wrong price. Use the price-aware converter.
+  const niceHashPriceInMrrUnit = useMemo(() => {
+    if (niceHashSourcePrice <= 0) return 0;
+    return convertPriceBetweenUnits(niceHashSourcePrice, niceHashSourceUnit, mrrUnit);
+  }, [niceHashSourcePrice, niceHashSourceUnit, mrrUnit]);
 
   // ── ROI calculation ──
-  const { niceHashPriceInMrrUnit, roiPercent, roiLabel } = useRoiCalculation({
+  const { roiPercent, roiLabel } = useRoiCalculation({
     finalMrrRate,
     mrrUnit,
-    niceHashSourceUnit: myNhUnit,
-    niceHashSourcePrice,
-    normalizedAlgo,
-    rawAlgo,
+    niceHashPriceInMrrUnit,
+    skipUnitConversion: true,
     isLoadingMrrRate,
-    // The `myOrders` API returns prices for a specific unit (e.g., BTC/EH/Day).
-    // The hook handles comparison between different units.
-    skipUnitConversion: true, // This likely means we pass the raw price without pre-conversion.
   });
 
   const displayAlgo = getAlgoDisplayName(normalizedAlgo || rawAlgo);
@@ -401,7 +437,7 @@ const MrrRigCard = ({
     info?.hashrate_unit ||
     info?.unit ||
     mrrUnit ||
-    myNhUnit ||
+    niceHashSourceUnit ||
     "";
 
   const getEfficiencyAccent = (efficiency) => {
@@ -417,24 +453,24 @@ const MrrRigCard = ({
 
   // ── Styles ──
   const shellStyle = {
-  background: `radial-gradient(circle at top right, ${accent} 0%, transparent 88%)`,
-  border: `1.5px solid ${accent}`,
-  borderTop: `2px solid ${getRoiColor(effNum)}`,
-  borderRight: `3px solid ${getRoiColor(effNum)}`,
-  borderBottom: `2px solid ${getRoiColor(effNum)}`,
-  borderLeft: `1px solid ${getRoiColor(effNum)}`,
-  borderRadius: "16px",
-  padding: "8px",
-  paddingTop: "5px", 
-  position: "relative",
-  display: "flex",
-  flexDirection: "column",
-  gap: "6px",
-  boxShadow: "0 10px 22px rgba(0, 0, 0, 0.16)",
-  overflow: "hidden",
-  width: "300px",
-  height: "auto",
-};
+    background: `radial-gradient(circle at top right, ${accent} 0%, transparent 88%)`,
+    border: `1.5px solid ${accent}`,
+    borderTop: `2px solid ${getRoiColor(effNum)}`,
+    borderRight: `3px solid ${getRoiColor(effNum)}`,
+    borderBottom: `2px solid ${getRoiColor(effNum)}`,
+    borderLeft: `1px solid ${getRoiColor(effNum)}`,
+    borderRadius: "16px",
+    padding: "8px",
+    paddingTop: "5px",
+    position: "relative",
+    display: "flex",
+    flexDirection: "column",
+    gap: "6px",
+    boxShadow: "0 10px 22px rgba(0, 0, 0, 0.16)",
+    overflow: "hidden",
+    width: "300px",
+    height: "auto",
+  };
 
   const asicBoostBadge = isAsicBoostAlgo ? (
     <span
@@ -491,7 +527,7 @@ const MrrRigCard = ({
           mrrUsedKey={mrrUsedKey}
           mrrUnit={mrrUnit}
           niceHashPriceInMrrUnit={niceHashPriceInMrrUnit}
-          myNhUnit={myNhUnit}
+          myNhUnit={mrrUnit}
           rentalStartTime={rentalStartTime}
         />
 

@@ -23,7 +23,7 @@ function saveOrderId(pairId, orderId) {
 export default function ProfitAlert({ 
   pair,           // Auto-detected from pool monitor
   onCall,
-  nhClient = 'VN',
+  nhClient = 'ALL',
   poolName,
   onProfitUpdate,
 }) {
@@ -93,6 +93,7 @@ export default function ProfitAlert({
       'NEXA': 'NEXAPOW',
       'CLORE': 'KAWPOW',
       'AIPG': 'KAWPOW',
+      'QUAI': 'KAWPOW',
     };
     return algoMap[coinUpper] || coinUpper;
   };
@@ -187,11 +188,15 @@ export default function ProfitAlert({
         }}>
           <StatItem 
             label="Profit/Hour" 
-            value={`$${formatDisplayNumber(profit.netProfitPerHour)}`} 
-            color={profit.isProfitable ? '#34d399' : '#f87171'}
+            value={profit.comparisonStatus === 'comparable' ? `$${formatDisplayNumber(profit.netProfitPerHour)}` : 'N/A'}
+            color={profit.comparisonStatus === 'comparable' ? (profit.isProfitable ? '#34d399' : '#f87171') : '#fbbf24'}
             bold
           />
-          <StatItem label="ROI" value={`${formatDisplayNumber(profit.roi)}%`} color={profit.roi > 0 ? '#34d399' : '#f87171'} />
+          <StatItem 
+            label="24h ROI" 
+            value={profit.roi === null ? 'N/A' : `${formatDisplayNumber(profit.roi)}%`} 
+            color={profit.roi === null ? '#fbbf24' : profit.roi > 0 ? '#34d399' : '#f87171'} 
+          />
           <StatItem 
             label="Income (24h)" 
             value={`$${profit.paid24hUSD.toFixed(2)}`} 
@@ -218,7 +223,7 @@ export default function ProfitAlert({
         }}>
           <span>NH Price: {niceHashPriceBTC.toFixed(8)} BTC/GH/day</span>
           <span>Speed: {orderedHashrateGH.toFixed(2)} GH/s</span>
-          <span>Cost: {profit.costPerDay.toFixed(8)} BTC/day</span>
+          <span>Cost: {profit.comparisonStatus === 'comparable' ? `${profit.costPerDay.toFixed(8)} BTC/day` : 'Awaiting active order'}</span>
           <span>BTC: ${profit.btcPrice.toFixed(0)}</span>
         </div>
       )}
@@ -231,7 +236,7 @@ export default function ProfitAlert({
           textAlign: 'right',
         }}>
           Last check: {lastCheck.toLocaleString()}
-          {isProfitable !== null && (
+          {isProfitable !== null ? (
             <span style={{ 
               marginLeft: '8px',
               color: isProfitable ? '#34d399' : '#f87171',
@@ -239,7 +244,7 @@ export default function ProfitAlert({
             }}>
               {isProfitable ? '✅ PROFITABLE' : '⚠️ NEGATIVE'}
             </span>
-          )}
+          ) : <span style={{ marginLeft: '8px', color: '#fbbf24', fontWeight: 600 }}>⏳ AWAITING ACTIVE ORDER</span>}
         </div>
       )}
 

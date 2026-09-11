@@ -14,8 +14,8 @@ const BOTS = {
   },
   MINE: {
     name: 'Mining Bot (Workspace)',
-    token: process.env.TELEGRAM_MINE_BOT_TOKEN,
-    chatId: process.env.TELEGRAM_GROUP_ID,
+    token: process.env.TELEGRAM_MINE_BOT_TOKEN || process.env.TELEGRAM_TOKEN,
+    chatId: process.env.TELEGRAM_GROUP_ID || process.env.TELEGRAM_ID,
   },
 };
 

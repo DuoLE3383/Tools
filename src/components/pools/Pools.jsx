@@ -11,6 +11,8 @@ import { VerificationResults } from "./VerificationResults";
 import { AutomationControls } from "./AutomationControls";
 import { AlgorithmSummary } from "./AlgorithmSummary";
 import { ErrorModal } from "./ErrorModal";
+import { exportVerificationResultsToXlsx } from "./exportVerificationResults";
+import { importPoolsFromXlsxFile } from "./importPoolsFromXlsx";
 import { getAlgoDisplayName } from "../../core/poolUtils";
 import { sanitizeNhClientTag } from "../../core/poolUtils";
 
@@ -56,16 +58,17 @@ export default function Pools({
     detailsLoading,
     error: verificationError,
     setError,
+    progress: verificationProgress,
+    playing: verificationPlaying,
     verifyPool,
     verifyAllOnce,
     verifyAlgorithm,
     getAlgoCountsSummary,
+    stopVerification,
   } = usePoolVerification({ onCall, nhClient, pools, filePools, extractedPools, useExtractedPools, verifyFromFile });
 
   const {
     running,
-    playing,
-    progress,
     runCount,
     currentRunElapsed,
     lastRunTime,
@@ -89,6 +92,7 @@ export default function Pools({
     verifyAllOnce,
     setVerifyResults,
     setResponse,
+    isVerifying: verificationPlaying,
   });
 
   // ============================================
@@ -106,11 +110,54 @@ export default function Pools({
   // HANDLERS
   // ============================================
   const handleExportResults = useCallback(() => {
-    // ... export logic
-  }, [verifyResults]);
+    try {
+      const { rowCount } = exportVerificationResultsToXlsx(verifyResults);
+      if (rowCount === 0) {
+        setError("No completed verification results to export yet.");
+      }
+    } catch (err) {
+      setError(`Export failed: ${err.message || String(err)}`);
+    }
+  }, [verifyResults, setError]);
 
-  const handleImportXlsx = async (e) => {
-    // ... import logic
+  // Both hooks keep their own stop flag, so a Stop has to reach both: the
+  // verification loop owns the in-flight request, the automation owns the timers.
+  const handleStop = useCallback(() => {
+    stopVerification();
+    stopAutomation();
+  }, [stopVerification, stopAutomation]);
+
+  const handleImportXlsx = async (event) => {
+    const input = event.target;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    try {
+      const { pools: importedPools, skipped } = await importPoolsFromXlsxFile(
+        file,
+        nhClient,
+      );
+
+      if (importedPools.length === 0) {
+        setError(
+          `No usable pools found in ${file.name}. ${skipped} row(s) skipped.`,
+        );
+        return;
+      }
+
+      setFilePools(importedPools);
+      setVerifyFromFile(true);
+
+      if (skipped > 0) {
+        setError(
+          `Imported ${importedPools.length} pool(s) from ${file.name}; skipped ${skipped} incomplete row(s).`,
+        );
+      }
+    } catch (err) {
+      setError(`Import failed: ${err.message || String(err)}`);
+    } finally {
+      input.value = "";
+    }
   };
 
   const handleSelectPool = useCallback((pool, key) => {
@@ -175,15 +222,18 @@ export default function Pools({
         >
           <option value="BT">NiceHash Client: BT</option>
           <option value="PH">NiceHash Client: PH</option>
+          <option value="PH3">NiceHash Client: PH3</option>
           <option value="LN">NiceHash Client: LN</option>
           <option value="NHATLINH">NiceHash Client: NHATLINH</option>
-          <option value="VN">NiceHash Client: VN (all NH Pools)</option>
+          <option value="XT">NiceHash Client: XT</option>
+          <option value="HUDA">NiceHash Client: HUDA</option>
+          <option value="ALL">NiceHash Client: ALL (all NH Pools)</option>
         </select>
         {/* Automation Controls */}
       <AutomationControls
         running={running}
-        playing={playing}
-        progress={progress}
+        playing={verificationPlaying}
+        progress={verificationProgress}
         runCount={runCount}
         currentRunElapsed={currentRunElapsed}
         lastRunTime={lastRunTime}
@@ -201,7 +251,7 @@ export default function Pools({
         extractedPoolsLength={extractedPools.length}
         completedResultsLength={completedResults.length}
         onStartRun={startRun}
-        onStopAutomation={stopAutomation}
+        onStopAutomation={handleStop}
         onLoadExtracted={loadExtractedPools}
         onVerifyAll={verifyAllOnce}
         onExportResults={handleExportResults}
@@ -249,7 +299,7 @@ export default function Pools({
             <AlgorithmSummary
               algorithmGroups={poolAlgorithmGroups}
               onVerifyAlgorithm={verifyAlgorithm}
-              disabled={verificationLoading || playing || running}
+              disabled={verificationLoading || verificationPlaying || running}
             />
           </div>
         )}

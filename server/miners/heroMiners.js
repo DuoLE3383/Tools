@@ -2,6 +2,7 @@
 import { COMMON_HEADERS, CONFIG } from "../config.js";
 import { normalizeAlgo } from "../../src/core/mapping.js";
 import { getBtcPrice } from "../utils/priceUtils.js";
+import { normalizeHeroMinersHost } from "./herominers-api.js";
 
 const HERO_CACHE = new Map();
 const HERO_CACHE_TTL = 60000;
@@ -97,7 +98,8 @@ async function scrapeHeroMinersAddress(address, coin) {
 
   try {
     // Revert to using the coin-specific subdomain, which is more reliable.
-    const url = `https://${coin.toLowerCase()}.herominers.com/api/stats_address?address=${address}`;
+    const hostCoin = normalizeHeroMinersHost(coin);
+    const url = `https://${hostCoin}.herominers.com/api/stats_address?address=${address}`;
     const response = await fetch(url, {
       headers: { ...COMMON_HEADERS, Accept: "application/json" },
       signal: AbortSignal.timeout(CONFIG.REQUEST_TIMEOUT_MS),
@@ -134,7 +136,8 @@ async function scrapeHeroMinersCoin(coin, btcPrice) {
   if (cached && Date.now() - cached.timestamp < HERO_CACHE_TTL) return cached.data;
 
   try {
-    const url = `https://${coin}.herominers.com/api/stats`;
+    const hostCoin = normalizeHeroMinersHost(coin);
+    const url = `https://${hostCoin}.herominers.com/api/stats`;
     const response = await fetch(url, {
       headers: { ...COMMON_HEADERS, Accept: "application/json" },
       signal: AbortSignal.timeout(CONFIG.REQUEST_TIMEOUT_MS),

@@ -1,11 +1,12 @@
 // server/utils/priceUtils.js
-// Centralized price fetching utilities
+// Centralized database price utilities
+import { getCoinPricesFromDb } from "../coinGecko/coinGeckoClient.js";
 
-let btcPriceCache = { price: 66666, timestamp: 0 };
+let btcPriceCache = { price: 0, timestamp: 0 };
 const BTC_PRICE_TTL = 3600000; // 60 minute
 
 /**
- * Get current BTC price in USD with caching
+ * Get the hourly-refreshed BTC price from the database.
  */
 export async function getBtcPrice() {
   const now = Date.now();
@@ -14,18 +15,11 @@ export async function getBtcPrice() {
   }
 
   try {
-    const res = await fetch(
-      "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd",
-      {
-        signal: AbortSignal.timeout(5000),
-      },
-    );
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    btcPriceCache = { price: data?.bitcoin?.usd || 66666, timestamp: now };
+    const prices = await getCoinPricesFromDb(["bitcoin"]);
+    btcPriceCache = { price: Number(prices?.bitcoin?.usd) || 0, timestamp: now };
   } catch (err) {
-    console.warn("[BTC Price] Failed to fetch, using fallback:", err.message);
-    btcPriceCache = { price: 66666, timestamp: now };
+    console.warn("[BTC Price] Failed to read database price:", err.message);
+    btcPriceCache = { price: 0, timestamp: now };
   }
   return btcPriceCache.price;
 }
@@ -34,6 +28,6 @@ export async function getBtcPrice() {
  * Clear BTC price cache (force refresh on next call)
  */
 export function clearBtcPriceCache() {
-  btcPriceCache = { price: 62774, timestamp: 0 };
+  btcPriceCache = { price: 0, timestamp: 0 };
   console.log("[BTC Price] Cache cleared");
 }

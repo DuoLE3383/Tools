@@ -19,7 +19,7 @@ export function AlgorithmSummary({
         <div
           className="algorithm-grid"
           style={{
-            maxHeight: "650px",
+            maxHeight: "850px",
             overflowY: "auto",
             scrollbarWidth: "thin",
             scrollbarColor: "rgba(255,255,255,0.1) transparent",

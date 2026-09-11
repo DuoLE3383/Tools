@@ -1,12 +1,150 @@
-// server/routes/mrr.js – Complete version
+// server/routes/mrr.js – Complete version with fixed /compare route
 import { asyncHandler, extractRentalInfo, extractRigInfo } from "../utils.js";
 import { mrrApiCall, mrrRequest, fetchAggregatedRentals, mrrConfigs, defaultMrrClient } from "../mrr.js";
-import { resolveNhClient, isAggregate, getNiceHashApp, normalizeAlgoForNiceHash, getCachedNhPools } from "../nh.js";
-import { getDb } from "../db.js";
+import { resolveNhClient, isAggregate, getNiceHashApp, normalizeAlgoForNiceHash, getCachedNhPools, nhConfigs } from "../nh.js";
+import { getNiceHashUnit } from "../../src/core/mapping.js";
+import { getDb, withSavepoint } from "../db.js";
 import { saveToDatabase } from "./_helpers.js";
-import { runRentalMonitor } from "../monitor.js"; // Corrected path
+import { runRentalMonitor } from "../monitor.js";
+import { exportMrrRentalsToXlsx, RENTAL_EXPORT_PATH } from "../mrr/rental-xlsx-export.js";
+
+const nhPriceCache = new Map();
+const NH_PRICE_CACHE_TTL_MS = 30_000;
+
+async function getMatchingNiceHashPools(clientName) {
+  // MRR account labels are not necessarily NiceHash account labels (for
+  // example SL and LUCKY). Only attempt a pool lookup when that NiceHash
+  // account is actually configured.
+  if (!nhConfigs[clientName]) return [];
+  return getCachedNhPools(clientName);
+}
 
 export function registerMrrRoutes(app) {
+  app.get("/api/v2/mrr/nicehash/price", asyncHandler(async (req, res) => {
+    const algorithm = normalizeAlgoForNiceHash(req.query.algorithm);
+    const market = String(req.query.market || "USA").toUpperCase();
+    if (!algorithm || algorithm === "UNKNOWN") {
+      return res.status(400).json({ success: false, error: "A supported algorithm is required." });
+    }
+
+    const cacheKey = `${algorithm}:${market}`;
+    const cached = nhPriceCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < NH_PRICE_CACHE_TTL_MS) {
+      return res.json({ ...cached.data, cached: true });
+    }
+
+    const clients = Object.keys(nhConfigs).filter((name) => {
+      const config = nhConfigs[name];
+      return config?.apiKey && config?.apiSecret && config?.orgId && !isAggregate(name);
+    });
+    const results = await Promise.all(clients.map(async (clientName) => {
+      try {
+        const { client } = resolveNhClient(clientName);
+        const niceHash = getNiceHashApp(client).hashpower;
+        try {
+          const quote = await niceHash.getOrderPrice({
+            algorithm,
+            market,
+            amount: "0.01",
+          });
+          const price = Number.parseFloat(quote?.price ?? quote?.fixedPrice);
+          if (Number.isFinite(price) && price > 0) {
+            return { client: clientName, price, unit: quote?.speedUnit || getNiceHashUnit(algorithm) || "TH", source: "order-calculate" };
+          }
+        } catch {
+          // Some algorithms reject the minimum calculate amount. Fall back to
+          // the live order book for this same client instead of dropping it.
+        }
+
+        const orderBook = await niceHash.getOrderBook({ algorithm, market });
+        const orders = [
+          ...(orderBook?.buy || orderBook?.data?.buy || []),
+          ...Object.values(orderBook?.stats || {}).flatMap((stat) => stat?.orders || []),
+        ];
+        const prices = orders
+          .map((order) => Number.parseFloat(order?.price ?? order?.fixedPrice ?? order?.rate))
+          .filter((price) => Number.isFinite(price) && price > 0);
+        if (prices.length === 0) throw new Error("NiceHash returned no usable price.");
+        return {
+          client: clientName,
+          price: Math.max(...prices),
+          unit: orderBook?.stats?.BTC?.displayPriceFactor || getNiceHashUnit(algorithm) || "TH",
+          source: "order-book",
+        };
+      } catch (error) {
+        return { client: clientName, error: error.message };
+      }
+    }));
+
+    let prices = results.filter((result) => !result.error);
+
+    // Fallback: global 24h stats are reliable for algorithms with a thin or
+    // empty order book/calculate quote. Mirror /api/v2/hashpower/order/price so
+    // client=ALL never fails just because no live order/quote exists.
+    if (prices.length === 0 && clients.length > 0) {
+      try {
+        const { client: fallbackClient } = resolveNhClient(clients[0]);
+        if (fallbackClient && !fallbackClient.isAggregate) {
+          const fallbackApp = getNiceHashApp(fallbackClient);
+          const stats24h = await fallbackApp.hashpower.getGlobalStats24h();
+          const algoList = await fallbackApp.public.getAlgorithms();
+          const algorithms = algoList?.miningAlgorithms || [];
+          const algoMetaMap = new Map(algorithms.flatMap((item, index) => [
+            [item.order, item],
+            [index, item],
+          ]).filter(([key]) => Number.isFinite(Number(key))));
+          const match = (stats24h?.algos || []).find(stat => {
+            const meta = algoMetaMap.get(Number(stat.a));
+            return meta && normalizeAlgoForNiceHash(meta.algorithm) === algorithm;
+          });
+          const price = parseFloat(match?.p || 0);
+          if (price > 0) {
+            const unit = getNiceHashUnit(algorithm) || "TH";
+            prices = [{
+              client: clients[0],
+              price,
+              unit,
+              source: "global-stats-24h",
+            }];
+          }
+        }
+      } catch (e) {
+        console.warn(`[NH Price] Global stats fallback failed for ${algorithm}:`, e.message);
+      }
+    }
+
+    if (prices.length === 0) {
+      return res.status(502).json({
+        success: false,
+        error: `No NiceHash account returned a price for ${algorithm}.`,
+        errors: results,
+      });
+    }
+
+    // Preserve the existing UI contract while exposing every account's quote.
+    const selected = prices.reduce((best, current) => current.price > best.price ? current : best);
+    const data = {
+      success: true,
+      algorithm,
+      market,
+      price: selected.price,
+      fixedPrice: selected.price.toFixed(8),
+      unit: selected.unit,
+      client: selected.client,
+      prices,
+      errors: results.filter((result) => result.error),
+    };
+    nhPriceCache.set(cacheKey, { timestamp: Date.now(), data });
+    res.json(data);
+  }));
+
+  app.post("/api/v2/mrr/rentals/export", asyncHandler(async (req, res) => {
+    const client = String(req.query.client || req.body?.client || 'ALL').trim().toUpperCase();
+    const exportResult = await exportMrrRentalsToXlsx(client);
+    console.log(`[MRR export] Manual rental workbook exported (${exportResult.activeCount} active rentals).`);
+    res.download(RENTAL_EXPORT_PATH, 'rentals.xlsx');
+  }));
+
   // ─── Monitor ──────────────────────────────────────────────────
   app.post("/api/v2/mrr/monitor/run", asyncHandler(async (req, res) => {
     const scope = String(req.query.client || req.body?.client || "ALL").trim().toUpperCase();
@@ -28,7 +166,6 @@ export function registerMrrRoutes(app) {
   }));
 
   // ─── MRR Public Info/Algos (no auth needed) ─────────────────
-  // Provides market rental prices without requiring API credentials
   app.get("/api/v2/mrr/info/algos", asyncHandler(async (req, res) => {
     try {
       const response = await fetch("https://www.miningrigrentals.com/api/v2/info/algos", {
@@ -62,31 +199,25 @@ export function registerMrrRoutes(app) {
             const rigIds = rigs.map(r => r.id).join(';');
             const { data: poolsData } = await mrrApiCall({ endpoint: `/rig/${rigIds}/pool`, clientNameRaw: clientName });
             if (poolsData && poolsData.success) {
-              const nhPools = await getCachedNhPools(clientName);
+              const nhPools = await getMatchingNiceHashPools(clientName);
               const poolItems = Array.isArray(poolsData.data) ? poolsData.data : (poolsData.data?.result || []);
               const poolMap = new Map(await Promise.all(poolItems.map(async (item) => {
                 const id = String(item.rigId || item.rigid || item.id || item.rentalid || '');
                 if (Array.isArray(item.pools) && item.pools.length > 0) {
-                  const savepointName = `mrr_rig_pool_sync_${id.replace(/[^a-zA-Z0-9]/g, "")}`;
-                  let savepointCreated = false;
                   try {
-                    // Use savepoints to allow nesting within other transactions.
-                    await db.run(`SAVEPOINT ${savepointName}`);
-                    savepointCreated = true;
-                    const stmt = await db.prepare(`INSERT OR REPLACE INTO mrr_pools (id, name, algo, host, port, user, mrrClient, last_updated) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`);
-                    for (const p of item.pools) {
-                      const algo = p.algo || p.algorithm || p.type || item.algo || item.algorithm || '';
-                      await stmt.run(id, p.name || `RigPool-${id}`, algo, p.host || p.stratumHost, p.port || p.stratumPort, p.user || p.username, clientName);
-                    }
-                    await stmt.finalize();
-                    await db.run(`RELEASE SAVEPOINT ${savepointName}`);
+                    await withSavepoint(db, `mrr_rig_pool_sync_${id}`, async () => {
+                      const stmt = await db.prepare(`INSERT OR REPLACE INTO mrr_pools (id, name, algo, host, port, user, mrrClient, last_updated) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`);
+                      try {
+                        for (const p of item.pools) {
+                          const algo = p.algo || p.algorithm || p.type || item.algo || item.algorithm || '';
+                          await stmt.run(id, p.name || `RigPool-${id}`, algo, p.host || p.stratumHost, p.port || p.stratumPort, p.user || p.username, clientName);
+                        }
+                      } finally {
+                        await stmt.finalize();
+                      }
+                    });
                   } catch (e) {
                     console.error(`[mrr:rigs] DB pool sync failed for rig ${id}:`, e.message);
-                    if (savepointCreated) {
-                      try {
-                        await db.run(`ROLLBACK TO SAVEPOINT ${savepointName}`);
-                      } catch (rollbackErr) { console.warn(`[mrr:rigs] Savepoint rollback failed for rig ${id}: ${rollbackErr.message}`); }
-                    }
                   }
                 }
                 if (Array.isArray(item.pools)) {
@@ -381,23 +512,19 @@ export function registerMrrRoutes(app) {
       const db = await getDb();
       const pools = data.data || [];
       if (pools.length > 0) {
-        const savepointName = `mrr_acct_pool_sync_${clientName.replace(/[^a-zA-Z0-9]/g, "")}`;
-        let savepointCreated = false;
         try {
-          await db.run(`SAVEPOINT ${savepointName}`);
-          savepointCreated = true;
-          const stmt = await db.prepare(`INSERT OR REPLACE INTO mrr_pools (id, name, algo, host, port, user, mrrClient, last_updated) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`);
-          for (const p of pools) {
-            await stmt.run(p.id, p.name, p.algo, p.host, p.port, p.user, clientName);
-          }
-          await stmt.finalize();
-          await db.run(`RELEASE SAVEPOINT ${savepointName}`);
-        } catch (e) {
-          if (savepointCreated) {
+          await withSavepoint(db, `mrr_acct_pool_sync_${clientName}`, async () => {
+            const stmt = await db.prepare(`INSERT OR REPLACE INTO mrr_pools (id, name, algo, host, port, user, mrrClient, last_updated) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`);
             try {
-              await db.run(`ROLLBACK TO SAVEPOINT ${savepointName}`);
-            } catch (rollbackErr) { console.warn(`[mrr:acct-pool] Savepoint rollback failed: ${rollbackErr.message}`); }
-          }
+              for (const p of pools) {
+                await stmt.run(p.id, p.name, p.algo, p.host, p.port, p.user, clientName);
+              }
+            } finally {
+              await stmt.finalize();
+            }
+          });
+        } catch (e) {
+          console.warn(`[mrr:acct-pool] Pool sync failed for ${clientName}: ${e.message}`);
         }
       }
     }
@@ -408,7 +535,7 @@ export function registerMrrRoutes(app) {
     const clientParam = String(req.query.client || defaultMrrClient).toUpperCase();
     const { statusCode, data, clientName } = await mrrApiCall({ endpoint: `/account/pool/${req.params.poolIds}`, clientNameRaw: clientParam });
     if (statusCode === 200 && data?.success) {
-      const nhPools = await getCachedNhPools(clientName);
+      const nhPools = await getMatchingNiceHashPools(clientName);
       const items = Array.isArray(data.data) ? data.data : [data.data];
       items.forEach(item => {
         const mrrUser = String(item.user || item.username || '').trim().toLowerCase();
@@ -440,37 +567,125 @@ export function registerMrrRoutes(app) {
   app.delete("/api/v2/mrr/account/pool/:poolIds", asyncHandler(async (req, res) => mrrRequest(`/account/pool/${req.params.poolIds}`, req, res, 'DELETE')));
 
   // ─── Compare ──────────────────────────────────────────────────
+  // FIXED: uses nhClient query parameter and aggregates over all NiceHash clients when nhClient=ALL
   app.get("/api/v2/mrr/compare", asyncHandler(async (req, res) => {
-    const clientParam = String(req.query.client || defaultMrrClient).toUpperCase();
-    const algoParam = req.query.algorithm || req.query.algo;
-    const { data: mrrData } = await mrrApiCall({ endpoint: '/rig', query: { algo: algoParam }, clientNameRaw: clientParam });
-    const rigs = Array.isArray(mrrData?.data?.rigs) ? mrrData.data.rigs : Array.isArray(mrrData?.data) ? mrrData.data : [];
-    if (rigs.length === 0) return res.json({ success: true, data: [] });
-    const uniqueAlgos = [...new Set(rigs.map(r => String(r.algo || r.type || 'SHA256').toUpperCase()))];
-    const { client: nhClient } = resolveNhClient(clientParam);
-    const nhApp = getNiceHashApp(nhClient);
-    const priceMap = new Map();
-    for (const a of uniqueAlgos) {
-      try {
-        priceMap.set(a, await nhApp.hashpower.getOrderPrice({ algorithm: a, market: 'USA' }));
-      } catch (e) { /* ignore */ }
-    }
-    const comparison = rigs.map(r => {
-      const a = String(r.algo || r.type || 'SHA256').toUpperCase();
-      return {
-        mrrRig: {
-          id: r.id,
-          name: r.name,
-          algo: r.algo || r.type,
-          nicehashAlgo: normalizeAlgoForNiceHash(r.algo || r.type),
-          price: r.price || r.min_price || '0',
-          currency: r.price_unit || 'BTC',
-          hashrate_unit: r.hashrate_unit || 'TH',
-        },
-        nicehashPrice: priceMap.get(a) || null
-      };
+    const mrrClient = String(req.query.client || defaultMrrClient).toUpperCase();
+    const nhClient = String(req.query.nhClient || mrrClient).toUpperCase(); // 👈 read nhClient
+
+    // 1. Fetch MRR rigs for the given MRR client
+    const { data: mrrData } = await mrrApiCall({
+      endpoint: '/rig',
+      method: 'GET',
+      clientNameRaw: mrrClient,
+      query: { all: 'true' }
     });
-    res.json({ success: true, data: comparison });
+
+    if (!mrrData?.success || !Array.isArray(mrrData.data)) {
+      return res.status(400).json({ success: false, error: 'Failed to fetch MRR rigs' });
+    }
+
+    const rigs = mrrData.data;
+
+    // 2. Resolve NiceHash client(s)
+    const nhClientsToTry = [];
+    if (isAggregate(nhClient)) {
+      const allNhClients = Object.keys(nhConfigs).filter(k => nhConfigs[k].apiKey && !isAggregate(k));
+      for (const name of allNhClients) {
+        const { client } = resolveNhClient(name);
+        if (client) nhClientsToTry.push({ client, name });
+      }
+    } else {
+      const { client, clientName } = resolveNhClient(nhClient);
+      if (client) nhClientsToTry.push({ client, name: clientName });
+    }
+
+    if (nhClientsToTry.length === 0) {
+      return res.status(400).json({ success: false, error: `No valid NiceHash client(s) for "${nhClient}"` });
+    }
+
+    // 3. For each rig, get MRR price and NiceHash price
+    const results = await Promise.all(
+      rigs.map(async (rig) => {
+        const mrrAlgo = rig.algo || rig.algorithm || rig.type;
+        const nicehashAlgo = normalizeAlgoForNiceHash(mrrAlgo);
+        let nicehashPrice = null;
+
+        if (nicehashAlgo && nicehashAlgo !== 'UNKNOWN') {
+          for (const { client, name } of nhClientsToTry) {
+            try {
+              const app = getNiceHashApp(client);
+              const priceResult = await app.hashpower.getOrderPrice({
+                algorithm: nicehashAlgo,
+                market: 'USA',
+                amount: '0.01'
+              });
+              if (priceResult && priceResult.price) {
+                const unit = priceResult.speedUnit || getNiceHashUnit(nicehashAlgo) || 'TH';
+                nicehashPrice = {
+                  algorithm: nicehashAlgo,
+                  fixedPrice: parseFloat(priceResult.price).toFixed(8),
+                  currency: 'BTC',
+                  speedUnit: unit,
+                  source: 'order-calculate',
+                  nhClient: name
+                };
+                break;
+              }
+            } catch (e) { /* try next client */ }
+          }
+
+          // Fallback: order book (using first client)
+          if (!nicehashPrice && nhClientsToTry.length > 0) {
+            try {
+              const { client } = nhClientsToTry[0];
+              const app = getNiceHashApp(client);
+              const orderBook = await app.hashpower.getOrderBook({ algorithm: nicehashAlgo, market: 'USA' });
+              const buyOrders = orderBook?.buy || [];
+              if (buyOrders.length > 0) {
+                const bestPrice = Math.max(...buyOrders.map(o => parseFloat(o.price || 0)).filter(p => p > 0));
+                if (bestPrice > 0) {
+                  nicehashPrice = {
+                    algorithm: nicehashAlgo,
+                    fixedPrice: bestPrice.toFixed(8),
+                    currency: 'BTC',
+                    speedUnit: getNiceHashUnit(nicehashAlgo) || 'TH',
+                    source: 'order-book',
+                    nhClient: nhClientsToTry[0].name
+                  };
+                }
+              }
+            } catch (e2) { /* ignore */ }
+          }
+        }
+
+        return {
+          mrrRig: {
+            id: rig.id,
+            name: rig.name || rig.rig_name || 'N/A',
+            algo: mrrAlgo,
+            price: rig.price,
+            currency: rig.currency || 'BTC',
+            type: rig.type
+          },
+          nicehashPrice
+        };
+      })
+    );
+
+    // 4. Filter out rigs without a valid MRR price
+    const filteredResults = results.filter(r => r.mrrRig.price && parseFloat(r.mrrRig.price) > 0);
+
+    res.json({
+      success: true,
+      data: filteredResults,
+      meta: {
+        mrrClient,
+        nhClient: isAggregate(nhClient) ? 'ALL' : nhClient,
+        totalRigs: rigs.length,
+        matched: filteredResults.length,
+        withNiceHashPrice: filteredResults.filter(r => r.nicehashPrice).length
+      }
+    });
   }));
 
   // ─── Rig Info ─────────────────────────────────────────────────
@@ -482,7 +697,7 @@ export function registerMrrRoutes(app) {
     const clientParam = String(req.query.client || defaultMrrClient).toUpperCase();
     const { statusCode, data, clientName } = await mrrApiCall({ endpoint: `/rig/${req.params.rigIds}/pool`, clientNameRaw: clientParam });
     if (statusCode === 200 && data?.success) {
-      const nhPools = await getCachedNhPools(clientName);
+      const nhPools = await getMatchingNiceHashPools(clientName);
       const items = Array.isArray(data.data) ? data.data : [data.data];
       items.forEach(item => {
         if (Array.isArray(item.pools)) {

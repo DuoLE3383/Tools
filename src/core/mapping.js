@@ -51,12 +51,12 @@ export const ALGO_MAPPING = {
   KAWPOW: { displayName: 'KawPow', niceHash: 'KAWPOW', unit: 'GH', niceHashUnit: 'TH', mrrUnit: 'GH' },
 
   // DaggerHashimoto / Ethash
-  DAGGERHASHIMOTO: { displayName: 'DaggerHashimoto', niceHash: 'DAGGERHASHIMOTO', unit: 'MH', niceHashUnit: 'TH', mrrUnit: 'MH' },
-  'ETHASH': { displayName: 'DaggerHashimoto', niceHash: 'DAGGERHASHIMOTO', unit: 'MH', niceHashUnit: 'TH', mrrUnit: 'MH' },
-  'HASHIMOTOS': { displayName: 'DaggerHashimoto', niceHash: 'DAGGERHASHIMOTO', unit: 'MH', niceHashUnit: 'TH', mrrUnit: 'MH' },
+  DAGGERHASHIMOTO: { displayName: 'DaggerHashimoto', niceHash: 'DAGGERHASHIMOTO', unit: 'GH', niceHashUnit: 'TH', mrrUnit: 'GH' },
+  'ETHASH': { displayName: 'DaggerHashimoto', niceHash: 'DAGGERHASHIMOTO', unit: 'GH', niceHashUnit: 'TH', mrrUnit: 'GH' },
+  'HASHIMOTOS': { displayName: 'DaggerHashimoto', niceHash: 'DAGGERHASHIMOTO', unit: 'GH', niceHashUnit: 'TH', mrrUnit: 'GH' },
 
   // Etchash
-  ETCHASH: { displayName: 'ETCHash', niceHash: 'ETCHASH', unit: 'MH', niceHashUnit: 'TH', mrrUnit: 'MH' },
+  ETCHASH: { displayName: 'ETCHash', niceHash: 'ETCHASH', unit: 'GH', niceHashUnit: 'TH', mrrUnit: 'GH' },
 
   // Equihash
   EQUIHASH: { displayName: 'Equihash', niceHash: 'EQUIHASH', unit: 'Gsol', niceHashUnit: 'GSol', mrrUnit: 'GSol' },

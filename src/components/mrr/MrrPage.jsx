@@ -7,9 +7,9 @@ import TelegramManager from "../TelegramManager";
 import NavBar from "../NavBar";
 import CryptoRatePage from "../../CryptoRatePage.jsx";
 
-export default function MrrPage({ onCall, onNavigateHome, nhClient = "VN", currentUser }) {
+export default function MrrPage({ onCall, onNavigateHome, nhClient = "ALL", currentUser }) {
   const pathname = window.location.pathname || "/";
-  const [mrrClient, setMrrClient] = useState("VN");
+  const [mrrClient, setMrrClient] = useState("ALL");
   const [mrrPoolData, setMrrPoolData] = useState(null);
   const [mrrPoolRigId, setMrrPoolRigId] = useState("");
   const [mrrPoolRentalId, setMrrPoolRentalId] = useState("");
@@ -21,8 +21,8 @@ export default function MrrPage({ onCall, onNavigateHome, nhClient = "VN", curre
   const handleOpenMrrPools = useCallback(
     async (rig) => {
       if (!rig || !mrrClient) return;
-      const targetClient = mrrClient === "VN" && rig.mrrClient ? rig.mrrClient : mrrClient;
-      if (targetClient === "VN") return;
+      const targetClient = mrrClient === "ALL" && rig.mrrClient ? rig.mrrClient : mrrClient;
+      if (targetClient === "ALL") return;
 
       const rigObj = typeof rig === "object" ? rig : { id: rig };
       const statusStr = String(

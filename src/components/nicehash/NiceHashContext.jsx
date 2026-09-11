@@ -1,4 +1,6 @@
-// NiceHashContext.jsx - FIXED VERSION
+// NiceHashContext.jsx - FINAL UPGRADED VERSION
+// Fetches orders, market prices, and computes orderDiff accurately.
+
 import React, {
   createContext,
   useContext,
@@ -8,13 +10,12 @@ import React, {
   useMemo,
 } from "react";
 
-// ✅ Import the correct functions from mapping
 import {
   normalizeAlgoForNiceHash,
   getAlgoMapping,
-  getNiceHashUnit,      // ✅ Use the correct unit getter for NiceHash
+  getNiceHashUnit,
   getAlgoDisplayName,
-  convertPrice,         // ✅ Import price conversion utility
+  calculatePriceComparison,
 } from "../../core/mapping.js";
 
 export const NiceHashOrderContext = createContext();
@@ -34,100 +35,77 @@ export function NiceHashOrderProvider({ children, nhClient, callApi }) {
   // Core state
   const [nicehashOrders, setNicehashOrders] = useState([]);
   const [summary, setSummary] = useState({ totalPaid: "0.00000000", count: 0 });
-  const [marketPrices, setMarketPrices] = useState({}); // algo:market -> { value, unit }
+  const [marketPrices, setMarketPrices] = useState({}); // algo -> { price, unit }
   const [loading, setLoading] = useState(false);
-  const isLoadingRef = React.useRef(false); // Ref to prevent overlapping fetches
+  const isLoadingRef = React.useRef(false);
   const [error, setError] = useState(null);
+  const [partialErrors, setPartialErrors] = useState([]);
   const [selectedOrderId, setSelectedOrderId] = useState(null);
   const [showPriceLookupModal, setShowPriceLookupModal] = useState(false);
   const [lastRefreshTime, setLastRefreshTime] = useState(null);
 
-  // Derived: selected order from the list
   const selectedOrder = useMemo(
-    () =>
-      nicehashOrders.find((order) => order.id === String(selectedOrderId)) ||
-      null,
-    [nicehashOrders, selectedOrderId],
+    () => nicehashOrders.find((o) => o.id === String(selectedOrderId)) || null,
+    [nicehashOrders, selectedOrderId]
   );
 
-  // Helper: Get price by order ID
   const getOrderPrice = useCallback(
     (orderId) => {
       const order = nicehashOrders.find((o) => o.id === String(orderId));
       return order?.price ?? null;
     },
-    [nicehashOrders],
+    [nicehashOrders]
   );
 
-  // Helper: Get market price by order ID
   const getMarketPrice = useCallback(
     (orderId) => {
       const order = nicehashOrders.find((o) => o.id === String(orderId));
       return order?.marketPrice ?? null;
     },
-    [nicehashOrders],
+    [nicehashOrders]
   );
 
-  // Helper: Get price difference by order ID
   const getOrderDiff = useCallback(
     (orderId) => {
       const order = nicehashOrders.find((o) => o.id === String(orderId));
       return order?.orderDiff ?? null;
     },
-    [nicehashOrders],
+    [nicehashOrders]
   );
 
-  // Helper: Get complete order info by ID
   const getOrderById = useCallback(
-    (orderId) => {
-      return nicehashOrders.find((o) => o.id === String(orderId)) || null;
-    },
-    [nicehashOrders],
+    (orderId) => nicehashOrders.find((o) => o.id === String(orderId)) || null,
+    [nicehashOrders]
   );
 
-  // Main fetch function
+  // ─── Main fetch function ──────────────────────────────────────────
   const fetchNiceHashOrders = useCallback(async () => {
-    // Prevent overlapping fetches from the auto-refresh interval.
     if (isLoadingRef.current) {
-      console.warn("[NiceHashOrderContext] Refresh skipped: a fetch is already in progress.");
+      console.warn("[NH Context] Refresh skipped – fetch in progress.");
       return;
     }
-    if (!nhClient || !callApi) {
-      return;
-    }
+    if (!nhClient || !callApi) return;
 
     isLoadingRef.current = true;
     setLoading(true);
     setError(null);
 
     try {
+      // 1. Fetch orders
       const data = await callApi("/api/v2/hashpower/myOrders", {
-        // Use the client from the provider props. This allows the UI to control the data source.
-        // The MRR page will temporarily set this to 'VN' to ensure it gets all orders.
         query: { op: "LE", limit: 100, client: nhClient },
         silent: true,
       });
 
-      if (data?.error) {
-        throw new Error(data.error);
-      }
+      if (data?.error) throw new Error(data.error);
 
-      const list =
-        data?.list || data?.myOrders || (Array.isArray(data) ? data : []);
-      console.log(
-        `[NiceHashOrderContext] Fetched ${list.length} orders for client ${nhClient}`
-      );
+      // Capture partial per-client failures (e.g. one account with invalid
+      // credentials returns "Invalid session (1010)") so the UI can surface
+      // them without discarding the successful data from the other accounts.
+      setPartialErrors(Array.isArray(data?.errors) ? data.errors : []);
 
-      // Separate active and inactive orders
-      const activeOrders = [];
-      const inactiveOrders = [];
-      list.forEach((o) => {
-        if ((o.status?.code || o.status) === "ACTIVE") {
-          activeOrders.push(o);
-        } else {
-          inactiveOrders.push(o);
-        }
-      });
+      const list = data?.list || data?.myOrders || (Array.isArray(data) ? data : []);
+      console.log(`[NH Context] Fetched ${list.length} orders for ${nhClient}`);
 
       if (list.length === 0) {
         setNicehashOrders([]);
@@ -136,119 +114,140 @@ export function NiceHashOrderProvider({ children, nhClient, callApi }) {
         return;
       }
 
-      // Process all orders to get basic info
-      const tempProcessed = list.map((o) => {
+      // 2. Extract unique algorithms to fetch market prices
+      const uniqueAlgos = new Set();
+      list.forEach((o) => {
         const rawAlgo =
           typeof o.algorithm === "object"
             ? o.algorithm.algorithm || o.algorithm.displayName
             : o.algorithm;
-        const algoCode = (rawAlgo || "").toUpperCase();
-        const rawMarket = String(
-          typeof o.market === "object" ? o.market.id : o.market || "",
-        ).toUpperCase();
-        const marketCode = ["USA", "EU"].includes(rawMarket)
-          ? rawMarket
-          : "USA";
+        const algoCode = normalizeAlgoForNiceHash(rawAlgo);
+        if (algoCode && algoCode !== "UNKNOWN") uniqueAlgos.add(algoCode);
+      });
 
-        // ✅ Use getAlgoMapping to get algorithm info
+      // 3. Fetch market prices for each algorithm (using aggregated endpoint)
+      const marketPricePromises = Array.from(uniqueAlgos).map(async (algo) => {
+        try {
+          const priceData = await callApi("/api/v2/mrr/nicehash/price", {
+            query: { algorithm: algo, market: "USA" },
+            silent: true,
+            background: true,
+          });
+          if (priceData?.success) {
+            return {
+              algo,
+              price: parseFloat(priceData.price) || 0,
+              unit: priceData.unit || getNiceHashUnit(algo) || "TH",
+            };
+          }
+        } catch (e) {
+          console.warn(`[NH Context] Failed to fetch market price for ${algo}`, e);
+        }
+        return null;
+      });
+
+      const marketResults = (await Promise.all(marketPricePromises)).filter(
+        (r) => r && r.price > 0
+      );
+      const newMarketPrices = {};
+      marketResults.forEach((r) => {
+        newMarketPrices[r.algo] = { price: r.price, unit: r.unit };
+      });
+      setMarketPrices((prev) => ({ ...prev, ...newMarketPrices }));
+
+      // 4. Process orders
+      const processed = list.map((o) => {
+        const rawAlgo =
+          typeof o.algorithm === "object"
+            ? o.algorithm.algorithm || o.algorithm.displayName
+            : o.algorithm;
+        const algoCode = normalizeAlgoForNiceHash(rawAlgo);
         const algoMapping = getAlgoMapping(algoCode);
-        
-        // ✅ Use getNiceHashUnit to get the correct price unit for the algorithm
-        const algoUnit = getNiceHashUnit(algoCode);
+        const algoUnit = getNiceHashUnit(algoCode) || "TH";
+        const market = typeof o.market === "object" ? o.market.id : o.market || "USA";
+
+        const orderPrice = parseFloat(o.price || 0);
+        const marketInfo = newMarketPrices[algoCode] || null;
+        let marketPrice = marketInfo?.price || 0;
+        let marketUnit = marketInfo?.unit || algoUnit;
+
+        // If no market price from aggregated endpoint, fallback to raw order's marketPrice if present
+        if (!marketPrice && o.marketPrice) {
+          marketPrice = parseFloat(o.marketPrice);
+          marketUnit = o.marketUnit || algoUnit;
+        }
+
+        let orderDiff = null;
+        if (orderPrice > 0 && marketPrice > 0) {
+          // Calculate percentage difference: (orderPrice / marketPrice - 1) * 100
+          // But need unit conversion if units differ
+          // Use calculatePriceComparison which handles unit conversion
+          orderDiff = calculatePriceComparison(
+            orderPrice,
+            algoUnit,
+            marketPrice,
+            marketUnit
+          );
+        }
 
         return {
           id: String(o.id || o.orderId || ""),
           paid: o.payedAmount || "0.00000000",
-          price: o.price || 0,
-          // When using an aggregate client ('VN'), the backend returns an `nhClient` field.
-          // Falling back to the provider's 'nhClient' prop is incorrect, as it would
-          // mislabel all orders from the aggregate call with the client of the current page.
+          price: orderPrice,
           account: o.nhClient || o.account || null,
           algo: algoCode,
           algoDisplayName: algoMapping.displayName || algoCode,
-          algoUnit: algoUnit,
-          market: marketCode,
-          speed: o.acceptedCurrentSpeed || 0,
-          poolName:
-            o.pool?.name ||
-            o.pool?.stratumHostname ||
-            o.title ||
-            o.name ||
-            "N/A",
-          // Raw data for debugging
+          algoUnit,
+          market,
+          speed: parseFloat(o.acceptedCurrentSpeed || 0),
+          poolName: o.pool?.name || o.pool?.stratumHostname || o.title || o.name || "N/A",
           rawOrder: o,
           isActive: (o.status?.code || o.status) === "ACTIVE",
+          marketPrice,
+          marketUnit,
+          orderDiff,
         };
       });
 
-      // ✅ Process with market data - use the correct unit
-      const processed = tempProcessed
-        .map((p) => {
-          // Get market price from rawOrder if available, or fetch it
-          let marketPrice = p.rawOrder?.marketPrice || 0;
-          let marketUnit = p.rawOrder?.marketUnit || p.algoUnit;
-          
-          // If marketPrice is not available, try to calculate it
-          if (marketPrice === 0 && p.price > 0 && p.rawOrder?.marketPrice === undefined) {
-            // You might want to fetch market price here
-            // For now, we'll use a placeholder (e.g., 5% less than order price)
-            marketPrice = p.price * 0.95; 
-          }
-          
-          // Calculate order difference if both prices exist
-          let orderDiff = p.rawOrder?.orderDiff || null;
-          if (orderDiff === null && marketPrice > 0 && p.price > 0 && marketUnit !== p.algoUnit) {
-            orderDiff = calculatePriceComparison(
-              p.price,
-              p.algoUnit,
-              marketPrice,
-              marketUnit
-            );
-          }
+      // 5. Sort: active first, then by speed descending
+      processed.sort((a, b) => {
+        if (a.isActive && !b.isActive) return -1;
+        if (!a.isActive && b.isActive) return 1;
+        return (b.speed || 0) - (a.speed || 0);
+      });
 
-          return {
-            ...p,
-            marketPrice,
-            marketUnit,
-            orderDiff,
-          };
-        })
-        .sort((a, b) => parseFloat(b.speed || 0) - parseFloat(a.speed || 0));
+      // 6. Separate active/inactive for summary
+      const activeOrders = processed.filter((p) => p.isActive);
+      const inactiveOrders = processed.filter((p) => !p.isActive).slice(0, 100);
+      const combinedList = [...activeOrders, ...inactiveOrders];
 
-      // Create the final list: all active orders + the last 20 inactive ones
-      const finalActive = processed.filter((p) => p.isActive);
-      const finalInactive = processed.filter((p) => !p.isActive).slice(0, 20);
-      const combinedList = [...finalActive, ...finalInactive];
-
-      // Calculate total paid
       const totalPaid = activeOrders
-        .reduce((sum, o) => sum + parseFloat(o.payedAmount || 0), 0)
+        .reduce((sum, o) => sum + parseFloat(o.paid || 0), 0)
         .toFixed(8);
 
       setNicehashOrders(combinedList);
-      setSummary({ totalPaid, count: finalActive.length });
+      setSummary({ totalPaid, count: activeOrders.length });
       setLastRefreshTime(new Date().toISOString());
 
-      console.log(
-        `[NiceHashOrderContext] Updated ${combinedList.length} orders`,
-      );
+      console.log(`[NH Context] Updated ${combinedList.length} orders`);
     } catch (err) {
-      console.error("[NiceHashOrderContext] Error fetching orders:", err);
+      console.error("[NH Context] Error fetching orders:", err);
       setError(err.message || "Failed to fetch NiceHash orders");
       setNicehashOrders([]);
       setSummary({ totalPaid: "0.00000000", count: 0 });
+      setPartialErrors([]);
     } finally {
       isLoadingRef.current = false;
       setLoading(false);
     }
   }, [nhClient, callApi]);
 
-  // Auto-refresh when client changes
+  // ─── Auto‑refresh on client change ──────────────────────────────
   useEffect(() => {
     fetchNiceHashOrders();
   }, [fetchNiceHashOrders]);
 
-  // ✅ Optional: Auto-refresh every 60 seconds with proper cleanup
+  // ─── Periodic refresh (every 60s) ──────────────────────────────
   useEffect(() => {
     if (!nhClient) return;
 
@@ -256,9 +255,9 @@ export function NiceHashOrderProvider({ children, nhClient, callApi }) {
 
     const intervalId = setInterval(() => {
       if (document.visibilityState !== "visible") return;
-      console.log("[NiceHashOrderContext] Auto-refreshing orders...");
+      console.log("[NH Context] Auto-refreshing orders...");
       fetchNiceHashOrders();
-    }, 60000); // 1 minute
+    }, 60000);
 
     if (typeof window !== "undefined") {
       window[REFRESH_TIMER_KEY] = intervalId;
@@ -272,35 +271,25 @@ export function NiceHashOrderProvider({ children, nhClient, callApi }) {
     };
   }, [nhClient, fetchNiceHashOrders]);
 
-  // ✅ Context value with all functions
+  // ─── Context value ──────────────────────────────────────────────
   const value = {
-    // Core data
     nicehashOrders,
     marketPrices,
     summary,
     loading,
     error,
+    partialErrors,
     lastRefreshTime,
-
-    // Selected order
     selectedOrder,
     selectedOrderId,
     setSelectedOrderId,
-
-    // Helper functions
     getOrderPrice,
     getMarketPrice,
     getOrderDiff,
     getOrderById,
-
-    // Refresh
     refresh: fetchNiceHashOrders,
-
-    // Modal control
     showPriceLookupModal,
     setShowPriceLookupModal,
-
-    // Utility
     isReady: !loading && !error && nicehashOrders.length > 0,
   };
 
@@ -311,12 +300,11 @@ export function NiceHashOrderProvider({ children, nhClient, callApi }) {
   );
 }
 
-// Custom hook with error handling
 export const useNiceHashOrders = () => {
   const context = useContext(NiceHashOrderContext);
   if (!context) {
     throw new Error(
-      "useNiceHashOrders must be used within a NiceHashOrderProvider",
+      "useNiceHashOrders must be used within a NiceHashOrderProvider"
     );
   }
   return context;

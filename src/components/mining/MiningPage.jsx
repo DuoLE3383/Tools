@@ -1,10 +1,9 @@
-// MiningPage.jsx - COMPACT REASONING VIEW
-// Pool Lookup moved to top, opportunistic routes tightened
+// MiningPage.jsx - REDESIGNED
+// Cleaner ops-terminal layout: readable type, SVG icon controls, no emoji glyphs.
 
 import DashboardHeader from "../Dashboard/DashboardHeader.jsx";
-import HeroMinersCard from "./HeroMinersCard.jsx";
 import HeroMinersLookup from "./HeroMinersLookup.jsx";
-import MiningCoin, { HeaderCell, BodyCell } from "./MiningCoin.jsx";
+import MiningCoin from "./MiningCoin.jsx";
 import { RentedRigProvider } from "../mrr/RentedRigContext.jsx";
 import {
   MiningWorkspaceProvider,
@@ -12,8 +11,7 @@ import {
 } from "./MiningWorkspaceProvider";
 import { btcValue, compactNumber, percentValue } from "./miningWorkspaceData";
 import { NiceHashOrderProvider } from "../nicehash/NiceHashContext.jsx";
-import { useState, useMemo, useCallback, useRef, useEffect } from "react";
-import { useAsyncButtonState } from "./useAsyncButtonState.js";
+import { useState, useCallback, useRef, useEffect } from "react";
 import TelegramSendModal from "./TelegramSendModal.jsx";
 import { useTelegramMine, TelegramMineProvider } from "../mrr/TelegramMineContext.jsx";
 import { CoinPriceProvider, useCoinPrice } from "./CoinPriceContext.jsx";
@@ -24,31 +22,150 @@ import {
   MiningDutchPoolCard,
   K1PoolCard,
   KryptexCard,
+  ExternalPoolMonitor,
 } from "./pools/index.js";
+import PoolMonitor from "./PoolMonitor.jsx";
+import {
+  RefreshIcon,
+  HeartbeatIcon,
+  BellIcon,
+  LayersIcon,
+} from "./Icons.jsx";
 
-const HEARTBEAT_INTERVAL_MS = 120000;
+const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000;
 const HEARTBEAT_COOLDOWN_MS = 60000;
 
+// Shared design tokens
+const C = {
+  panel: "rgba(15,23,42,0.72)",
+  panelBorder: "rgba(148,163,184,0.12)",
+  muted: "#64748b",
+  faint: "#94a3b8",
+  text: "#e2e8f0",
+  accent: "#38bdf8",
+  positive: "#34d399",
+  negative: "#f87171",
+  warning: "#fbbf24",
+  purple: "#a78bfa",
+  pink: "#f472b6",
+  blue: "#60a5fa",
+  indigo: "#818cf8",
+};
+
 // ============================================
-// STATUS BAR (compact)
+// REUSABLE UI PRIMITIVES
 // ============================================
 
 function StatusDot({ color, pulse }) {
   return (
-    <span style={{
-      display: "inline-block",
-      width: "6px", height: "6px",
-      borderRadius: "50%",
-      background: color,
-      boxShadow: pulse ? `0 0 6px ${color}66` : "none",
-      animation: pulse ? "pulse-dot 1.5s infinite" : "none",
-      marginRight: "3px",
-    }} />
+    <span
+      style={{
+        display: "inline-block",
+        width: "8px",
+        height: "8px",
+        borderRadius: "50%",
+        background: color,
+        boxShadow: pulse ? `0 0 8px ${color}66` : "none",
+        animation: pulse ? "pulse-dot 1.2s infinite" : "none",
+        marginRight: "6px",
+        flexShrink: 0,
+      }}
+    />
+  );
+}
+
+function ToolbarButton({ icon, label, onClick, disabled, active, activeColor = C.positive, tone = "muted", title }) {
+  const base = {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "4px",
+    padding: "4px 6px",
+    borderRadius: "4px",
+    border: "1px solid rgba(148,163,184,0.18)",
+    background: active ? "rgba(52,211,153,0.10)" : "rgba(148,163,184,0.08)",
+    color: active ? activeColor : tone === "danger" ? C.negative : C.faint,
+    fontSize: "8px",
+    fontWeight: 600,
+    cursor: disabled ? "default" : "pointer",
+    opacity: disabled ? 0.55 : 1,
+    transition: "border-color 0.15s, background 0.15s",
+    whiteSpace: "nowrap",
+  };
+  return (
+    <button className="btn-pro secondary" onClick={onClick} disabled={disabled} style={base} title={title}>
+      {icon}
+      {label}
+    </button>
+  );
+}
+
+function StatusPill({ label, color, detail }) {
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: "4px",
+        padding: "4px 8px",
+        borderRadius: "999px",
+        border: `1px solid ${color}33`,
+        background: `${color}12`,
+        color,
+        fontSize: "8px",
+        fontWeight: 600,
+        whiteSpace: "nowrap",
+      }}
+    >
+      <StatusDot color={color} />
+      {label}
+      {detail && <span style={{ color: C.muted, fontWeight: 500 }}>{detail}</span>}
+    </span>
+  );
+}
+
+function SourceDot({ label, ok, loading }) {
+  const color = loading ? C.warning : ok ? C.positive : C.muted;
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: "3px", whiteSpace: "nowrap" }}>
+      <StatusDot color={color} pulse={loading} />
+      <span style={{ color: loading ? C.warning : ok ? C.faint : C.muted, fontSize: "10px", fontWeight: 500 }}>
+        {label}
+      </span>
+    </span>
+  );
+}
+
+function CompactStat({ label, value, color }) {
+  return (
+    <span style={{ color: C.faint, fontSize: "10px", whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: "6px" }}>
+      <span style={{ color: C.muted }}>{label}:</span>
+      <span style={{ color, fontWeight: 700 }}>{value}</span>
+    </span>
+  );
+}
+
+function HeartbeatBadge({ status, lastResult }) {
+  const color =
+    status === "running" ? C.warning :
+    status === "success" ? C.positive :
+    status === "error" ? C.negative :
+    C.muted;
+  const label =
+    status === "running" ? "Heartbeat running" :
+    status === "success" ? "Heartbeat OK" :
+    status === "error" ? "Heartbeat failed" :
+    "Heartbeat idle";
+  return (
+    <StatusPill
+      label={label}
+      color={color}
+      detail={lastResult?.summary?.totals ? `${lastResult.summary.totals.rented || 0}r / ${lastResult.summary.totals.ghost || 0}g` : undefined}
+    />
   );
 }
 
 // ============================================
-// MINING ROUTE HERO (compact)
+// MINING ROUTE HERO
 // ============================================
 
 function MiningRouteHero({ onCall }) {
@@ -56,10 +173,8 @@ function MiningRouteHero({ onCall }) {
     opportunities,
     heroStats,
     heroLoading,
-    heroError,
     dutchStats,
     dutchLoading,
-    dutchError,
     loading,
     error,
     lastUpdated,
@@ -75,13 +190,11 @@ function MiningRouteHero({ onCall }) {
   const heartbeatCooldownRef = useRef(0);
   const [opportunityAlertsEnabled, setOpportunityAlertsEnabled] = useState(true);
 
-  const bestRoute = opportunities[0] || null;
   const activeRouteCount = opportunities.filter(
     (r) => (r.miningDutchBtcPerDay || 0) > 0 || (r.heroMiners || 0) > 0,
   ).length;
-  const profitableCount = opportunities.filter((r) => r.spread > 0).length;
+  const profitableCount = opportunities.filter((r) => (r.bestSpreadPercent ?? 0) > 0).length;
   const bestOpportunity = opportunities[0] || null;
-  const { status: priceUpdateStatus, trigger: triggerPriceUpdate } = useAsyncButtonState(3000);
 
   const runHeartbeat = useCallback(async (isAuto = false) => {
     if (!isAuto) {
@@ -96,7 +209,7 @@ function MiningRouteHero({ onCall }) {
       setHeartbeatStatus("success");
       refresh(true);
       return res;
-    } catch (err) { setHeartbeatStatus("error"); return null; }
+    } catch { setHeartbeatStatus("error"); return null; }
   }, [onCall, refresh]);
 
   const fetchOpportunityAlertsStatus = useCallback(async () => {
@@ -105,7 +218,7 @@ function MiningRouteHero({ onCall }) {
       if (res && typeof res.enabled === 'boolean') {
         setOpportunityAlertsEnabled(res.enabled);
       }
-    } catch {}
+    } catch { /* ignore */ }
   }, [onCall]);
 
   const handleToggleOpportunityAlerts = useCallback(async () => {
@@ -119,18 +232,22 @@ function MiningRouteHero({ onCall }) {
       if (res && typeof res.enabled === 'boolean') {
         setOpportunityAlertsEnabled(res.enabled);
       }
-    } catch (err) {}
+    } catch { /* ignore */ }
   }, [onCall, opportunityAlertsEnabled]);
 
   useEffect(() => {
-    if (!autoRefresh) { if (heartbeatTimerRef.current) clearInterval(heartbeatTimerRef.current); return; }
+    if (!autoRefresh) {
+      if (heartbeatTimerRef.current) clearInterval(heartbeatTimerRef.current);
+      return;
+    }
     heartbeatTimerRef.current = setInterval(() => runHeartbeat(true), HEARTBEAT_INTERVAL_MS);
     return () => { if (heartbeatTimerRef.current) clearInterval(heartbeatTimerRef.current); };
   }, [runHeartbeat, autoRefresh]);
 
   useEffect(() => {
     if (!lastUpdated) refresh(true);
-    fetchOpportunityAlertsStatus();
+    const id = setTimeout(() => fetchOpportunityAlertsStatus(), 0);
+    return () => clearTimeout(id);
   }, [lastUpdated, refresh, fetchOpportunityAlertsStatus]);
 
   const handleForceHeartbeat = useCallback(async () => {
@@ -143,129 +260,177 @@ function MiningRouteHero({ onCall }) {
     } catch (err) { await sendMineNotice(`❌ Heartbeat failed: ${err.message}`); }
   }, [runHeartbeat, sendMineNotice]);
 
-  const heartbeatTimeAgo = useMemo(() => {
-    if (!lastHeartbeatResult?.summary?.totals) return null;
-    return new Date().toLocaleTimeString();
-  }, [lastHeartbeatResult]);
-
   return (
     <section style={{ display: "grid", gap: "6px", width: "100%" }}>
-      {/* Top bar: compact status + controls */}
-      <div style={{
-        display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center",
-        gap: "6px", padding: "6px 12px", borderRadius: "8px",
-        border: "1px solid rgba(148,163,184,0.08)", background: "rgba(2,6,23,0.4)",
-        fontSize: "clamp(9px, 0.7vw, 11px)",
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+      {/* Toolbar */}
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: "6px",
+          padding: "4px 8px",
+          borderRadius: "6px",
+          border: `1px solid ${C.panelBorder}`,
+          background: C.panel,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "16px", flexWrap: "wrap" }}>
           <HeartbeatBadge status={heartbeatStatus} lastResult={lastHeartbeatResult} />
           <SourceDot label="Hero" ok={!!heroStats?.coinStats?.length} loading={heroLoading} />
           <SourceDot label="Dutch" ok={!!dutchStats?.coinStats?.length} loading={dutchLoading} />
-          <StatusDot color={error ? "#f87171" : "#34d399"} />
-          <span style={{ color: error ? "#f87171" : "#64748b", whiteSpace: "nowrap" }}>
+          <StatusDot color={error ? C.negative : C.positive} pulse={loading} />
+          <span style={{ color: error ? C.negative : C.muted, whiteSpace: "nowrap", fontSize: "10px" }}>
             {error ? "Error" : lastUpdated ? new Date(lastUpdated).toLocaleTimeString() : "Initializing..."}
           </span>
         </div>
-        <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center" }}>
-          <ToggleBtn active={autoRefresh} onToggle={() => setAutoRefresh(p => !p)} label={autoRefresh ? "Auto ON" : "Auto OFF"} />
-          <ToggleBtn active={opportunityAlertsEnabled} onToggle={handleToggleOpportunityAlerts} label={opportunityAlertsEnabled ? "Opp. Alerts ON" : "Opp. Alerts OFF"} />
-          <button className="btn-pro secondary" onClick={handleForceHeartbeat} disabled={heartbeatStatus === "running"} style={{ fontSize: "clamp(9px, 0.7vw, 11px)", padding: "2px 8px" }}>
-            {heartbeatStatus === "running" ? "⏳" : "💓"}
-          </button>
-          <button className="btn-pro secondary" onClick={() => refresh(true)} disabled={loading} style={{ fontSize: "clamp(9px, 0.7vw, 11px)", padding: "2px 8px" }}>
-            {loading ? "⏳" : "🔄"}
-          </button>
+        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
+          <ToolbarButton
+            icon={<HeartbeatIcon size={14} color="currentColor" />}
+            label={autoRefresh ? "Auto ON" : "Auto OFF"}
+            active={autoRefresh}
+            onClick={() => setAutoRefresh(p => !p)}
+          />
+          <ToolbarButton
+            icon={<BellIcon size={14} color="currentColor" />}
+            label={opportunityAlertsEnabled ? "Alerts ON" : "Alerts OFF"}
+            active={opportunityAlertsEnabled}
+            onClick={handleToggleOpportunityAlerts}
+          />
+          <ToolbarButton
+            icon={<HeartbeatIcon size={14} color="currentColor" />}
+            label="Heartbeat"
+            onClick={handleForceHeartbeat}
+            disabled={heartbeatStatus === "running"}
+          />
+          <ToolbarButton
+            icon={<RefreshIcon size={14} color="currentColor" spinning={loading} />}
+            label="Refresh"
+            onClick={() => refresh(true)}
+            disabled={loading}
+          />
         </div>
       </div>
 
-      {/* Compact route summary + table */}
-      <div style={{
-        border: "1px solid rgba(148,163,184,0.10)", borderRadius: "8px",
-        background: "rgba(15,23,42,0.6)", overflow: "hidden",
-      }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 10px", borderBottom: "1px solid rgba(148,163,184,0.06)" }}>
+      {/* Route summary + table */}
+      <div
+        style={{
+          border: `1px solid ${C.panelBorder}`,
+          borderRadius: "10px",
+          background: C.panel,
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            padding: "6px 8px",
+            borderBottom: "1px solid rgba(148,163,184,0.08)",
+            gap: "6px",
+            flexWrap: "wrap",
+          }}
+        >
           <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
-            <span style={{ color: "#38bdf8", fontWeight: 700, fontSize: "clamp(9px, 0.7vw, 11px)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: "6px", color: C.accent, fontWeight: 700, fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+              <LayersIcon size={15} color={C.accent} />
               Route Intel
             </span>
-            <CompactStat label="Routes" value={activeRouteCount} color="#a78bfa" />
-            <CompactStat label="Positive" value={profitableCount} color="#34d399" />
-            <CompactStat label="NH prices" value={Object.keys(niceHashPrices || {}).length} color="#60a5fa" />
+            <CompactStat label="Routes" value={activeRouteCount} color={C.purple} />
+            <CompactStat label="Positive" value={profitableCount} color={C.positive} />
+            <CompactStat label="NH prices" value={Object.keys(niceHashPrices || {}).length} color={C.blue} />
           </div>
           {bestOpportunity && (
-            <div style={{ textAlign: "right", fontSize: "clamp(9px, 0.7vw, 11px)" }}>
-              <span style={{ color: "#e2e8f0", fontWeight: 700 }}>{bestOpportunity.label}</span>
-              {bestOpportunity.spread > 0 && (
-                <span style={{ color: "#34d399", marginLeft: "8px" }}>{percentValue(bestOpportunity.spread)}</span>
+            <div style={{ textAlign: "right", fontSize: "10px", lineHeight: "1.2" }}>
+              <span style={{ color: C.text, fontWeight: 700 }}>{bestOpportunity.label}</span>
+              {bestOpportunity.bestSpreadPercent !== null && bestOpportunity.bestSpreadPercent > 0 && (
+                <span style={{ color: C.positive, marginLeft: "10px", fontWeight: 700 }}>{percentValue(bestOpportunity.bestSpreadPercent)}</span>
               )}
-              <span style={{ color: "#64748b", marginLeft: "6px" }}>{btcValue(bestOpportunity.opportunityScore)} BTC</span>
+              <span style={{ color: C.muted, marginLeft: "8px" }}>{btcValue(bestOpportunity.profitBtc)} BTC profit</span>
             </div>
           )}
         </div>
 
-        <div style={{ overflowX: "auto", maxHeight: "320px", overflowY: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "clamp(9px, 0.7vw, 11px)" }}>
+        <div style={{ overflowX: "auto", maxHeight: "300px", overflowY: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "10px" }}>
             <thead>
-              <tr style={{ color: "#64748b", borderBottom: "1px solid rgba(148,163,184,0.08)" }}>
+              <tr style={{ color: C.muted, borderBottom: "1px solid rgba(148,163,184,0.10)" }}>
                 <th style={{ padding: "4px 6px", textAlign: "left", fontWeight: 600 }}>Algo</th>
-                <th style={{ padding: "4px 6px", textAlign: "right", fontWeight: 600 }}>MD</th>
-                <th style={{ padding: "4px 6px", textAlign: "right", fontWeight: 600 }}>MS</th>
-                <th style={{ padding: "4px 6px", textAlign: "right", fontWeight: 600 }}>WTM</th>
-                <th style={{ padding: "4px 6px", textAlign: "right", fontWeight: 600 }}>HN</th>
-                <th style={{ padding: "4px 6px", textAlign: "right", fontWeight: 600 }}>NH</th>
-                <th style={{ padding: "4px 6px", textAlign: "right", fontWeight: 600 }}>Sprd</th>
-                <th style={{ padding: "4px 6px", textAlign: "right", fontWeight: 600 }}>Min</th>
+                <th style={{ padding: "4px 6px", textAlign: "right", fontWeight: 600 }}>Dutch</th>
+                <th style={{ padding: "4px 6px", textAlign: "right", fontWeight: 600 }}>Minerstat</th>
+                <th style={{ padding: "4px 6px", textAlign: "right", fontWeight: 600 }}>WhatToMine</th>
+                <th style={{ padding: "4px 6px", textAlign: "right", fontWeight: 600 }}>Hashrate.no</th>
+                <th style={{ padding: "4px 6px", textAlign: "right", fontWeight: 600 }}>NiceHash</th>
+                <th style={{ padding: "4px 6px", textAlign: "right", fontWeight: 600 }}>Spread</th>
+                <th style={{ padding: "4px 6px", textAlign: "right", fontWeight: 600 }}>Miners</th>
                 <th style={{ padding: "4px 6px", textAlign: "left", fontWeight: 600 }}>Coins</th>
               </tr>
             </thead>
             <tbody>
               {opportunities.slice(0, 15).map((row, index) => (
-                <tr key={`${row.nicehashAlgo}-${index}`} style={{ borderBottom: "1px solid rgba(148,163,184,0.04)" }}>
-                  <td style={{ padding: "3px 6px", color: "#e2e8f0", whiteSpace: "nowrap" }}>
+                <tr key={`${row.nicehashAlgo}-${index}`} style={{ borderBottom: "1px solid rgba(148,163,184,0.06)" }}>
+                  <td style={{ padding: "4px 6px", color: C.text, whiteSpace: "nowrap", fontWeight: 500 }}>
                     {row.label}
-                    <span style={{ color: "#64748b", fontSize: "8px", marginLeft: "4px" }}>{row.nicehashAlgo}</span>
+                    <span style={{ color: C.muted, fontSize: "10px", marginLeft: "6px", fontFamily: "monospace" }}>{row.nicehashAlgo}</span>
                   </td>
-                  <td style={{ padding: "3px 6px", textAlign: "right", fontWeight: 700, color: (row.miningDutchBtcPerDay || 0) > 0 ? "#34d399" : "#64748b" }}>
+                  <td style={{ padding: "4px 6px", textAlign: "right", fontWeight: 700, color: (row.miningDutchBtcPerDay || 0) > 0 ? C.positive : C.muted, fontFamily: "monospace" }}>
                     {btcValue(row.miningDutchBtcPerDay)}
                   </td>
-                  <td style={{ padding: "3px 6px", textAlign: "right", fontWeight: 700, color: (row.minerstatBtcPerDay || 0) > 0 ? "#f472b6" : "#64748b" }}>
+                  <td style={{ padding: "4px 6px", textAlign: "right", fontWeight: 700, color: (row.minerstatBtcPerDay || 0) > 0 ? C.pink : C.muted, fontFamily: "monospace" }}>
                     {btcValue(row.minerstatBtcPerDay)}
                   </td>
-                  <td style={{ padding: "3px 6px", textAlign: "right", fontWeight: 700, color: (row.wtmBtcPerDay || 0) > 0 ? "#38bdf8" : "#64748b" }}>
+                  <td style={{ padding: "4px 6px", textAlign: "right", fontWeight: 700, color: (row.wtmBtcPerDay || 0) > 0 ? C.accent : C.muted, fontFamily: "monospace" }}>
                     {btcValue(row.wtmBtcPerDay)}
                   </td>
-                  <td style={{ padding: "3px 6px", textAlign: "right", fontWeight: 700, color: (row.hashrateNoBtcPerDay || 0) > 0 ? "#818cf8" : "#64748b" }}>
+                  <td style={{ padding: "4px 6px", textAlign: "right", fontWeight: 700, color: (row.hashrateNoBtcPerDay || 0) > 0 ? C.indigo : C.muted, fontFamily: "monospace" }}>
                     {btcValue(row.hashrateNoBtcPerDay)}
                   </td>
-                  <td style={{ padding: "3px 6px", textAlign: "right", fontWeight: 700, color: "#60a5fa" }}>
+                  <td style={{ padding: "4px 6px", textAlign: "right", fontWeight: 700, color: C.blue, fontFamily: "monospace" }}>
                     {btcValue(row.niceHashPrice)}
                   </td>
-                  <td style={{ padding: "3px 6px", textAlign: "right", fontWeight: 900 }}>
-                    <span style={{ color: row.spread > 0 ? "#34d399" : row.spread < 0 ? "#f87171" : "#94a3b8" }}>
-                      {row.spread === null ? "N/A" : percentValue(row.spread)}
+                  <td style={{ padding: "4px 6px", textAlign: "right", fontWeight: 800 }}>
+                    <span style={{ color: (row.bestSpreadPercent ?? 0) > 0 ? C.positive : (row.bestSpreadPercent ?? 0) < 0 ? C.negative : C.faint }}>
+                      {row.bestSpreadPercent === null ? "N/A" : percentValue(row.bestSpreadPercent)}
                     </span>
                   </td>
-                  <td style={{ padding: "3px 6px", textAlign: "right", color: "#94a3b8" }}>
+                  <td style={{ padding: "4px 6px", textAlign: "right", color: C.faint, fontFamily: "monospace" }}>
                     {compactNumber(row.heroMiners, 0)}
                   </td>
-                  <td style={{ padding: "3px 6px" }}>
-                    <div style={{ display: "flex", gap: "2px", flexWrap: "wrap" }}>
+                  <td style={{ padding: "4px 6px" }}>
+                    <div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
                       {row.heroCoins?.slice(0, 4).map((c) => (
-                        <button key={c} onClick={() => openCoinModal(c)} style={{
-                          border: "1px solid rgba(96,165,250,0.2)", color: "#bfdbfe",
-                          background: "rgba(37,99,235,0.1)", borderRadius: "99px",
-                          padding: "0 4px", fontSize: "8px", cursor: "pointer", lineHeight: "14px",
-                        }}>{c}</button>
+                        <button
+                          key={c}
+                          onClick={() => openCoinModal(c)}
+                          style={{
+                            border: "1px solid rgba(96,165,250,0.22)",
+                            color: "#bfdbfe",
+                            background: "rgba(37,99,235,0.10)",
+                            borderRadius: "999px",
+                            padding: "2px 8px",
+                            fontSize: "8px",
+                            cursor: "pointer",
+                            lineHeight: "8px",
+                          }}
+                        >
+                          {c}
+                        </button>
                       ))}
                       {(row.heroCoins?.length || 0) > 4 && (
-                        <span style={{ color: "#64748b", fontSize: "8px", lineHeight: "14px" }}>+{row.heroCoins.length - 4}</span>
+                        <span style={{ color: C.muted, fontSize: "8px", lineHeight: "12px" }}>+{row.heroCoins.length - 4}</span>
                       )}
                     </div>
                   </td>
                 </tr>
               ))}
               {opportunities.length === 0 && (
-                <tr><td colSpan={9} style={{ padding: "16px", textAlign: "center", color: "#64748b" }}>No route data yet.</td></tr>
+                <tr>
+                  <td colSpan={9} style={{ padding: "14px", textAlign: "center", color: C.muted, fontSize: "8px" }}>
+                    No route data yet.
+                  </td>
+                </tr>
               )}
             </tbody>
           </table>
@@ -275,76 +440,41 @@ function MiningRouteHero({ onCall }) {
   );
 }
 
-// Small helpers
-function CompactStat({ label, value, color }) {
-  return (
-    <span style={{ color: "#94a3b8", fontSize: "clamp(9px, 0.7vw, 11px)", whiteSpace: "nowrap" }}>
-      {label}: <span style={{ color, fontWeight: 700 }}>{value}</span>
-    </span>
-  );
-}
-
-function ToggleBtn({ active, onToggle, label }) {
-  return (
-    <button className="btn-pro secondary" onClick={onToggle} style={{
-      fontSize: "clamp(9px, 0.7vw, 11px)", padding: "2px 8px",
-      color: active ? "#34d399" : "#f87171",
-    }}>{label}</button>
-  );
-}
-
-function HeartbeatBadge({ status, lastResult }) {
-  const color = status === "running" ? "#fbbf24" : status === "success" ? "#34d399" : status === "error" ? "#f87171" : "#64748b";
-  return (
-    <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-      <StatusDot color={color} pulse={status === "running"} />
-      <span style={{ color, fontWeight: 600, fontSize: "clamp(9px, 0.7vw, 11px)" }}>
-        {status === "running" ? "HB..." : status === "success" ? "HB OK" : status === "error" ? "HB Fail" : "HB Idle"}
-      </span>
-      {lastResult?.summary?.totals && (
-        <span style={{ color: "#94a3b8", fontSize: "clamp(8px, 0.6vw, 10px)" }}>
-          {lastResult.summary.totals.rented || 0}r / {lastResult.summary.totals.ghost || 0}g
-        </span>
-      )}
-    </span>
-  );
-}
-
-function SourceDot({ label, ok, loading }) {
-  return (
-    <span style={{ display: "flex", alignItems: "center", gap: "3px", whiteSpace: "nowrap" }}>
-      <StatusDot color={loading ? "#fbbf24" : ok ? "#34d399" : "#64748b"} pulse={loading} />
-      <span style={{ color: loading ? "#fbbf24" : ok ? "#94a3b8" : "#64748b", fontSize: "clamp(8px, 0.6vw, 10px)" }}>
-        {label}
-      </span>
-    </span>
-  );
-}
-
 // ============================================
-// SHELL (NEW ORDER: Pool Lookup first, then routes, then cards)
+// SHELL
 // ============================================
 
 function MiningWorkspaceShell({
-  onNavigateHome, onCall, nhClient, state, dispatch,
+  onCall, nhClient, state, dispatch,
   currentUser, isAdmin, forceCheckStatus, handleLogout, onNavigate,
 }) {
   const [telegramModalOpen, setTelegramModalOpen] = useState(false);
 
   return (
     <TelegramMineProvider onCall={onCall}>
-      <div className="app-shell mining-shell" style={{
-        padding: "0", width: "100%", maxWidth: "none", margin: "0 auto",
-        background: "radial-gradient(circle at top left, rgba(56,189,248,0.16), transparent 32%), radial-gradient(circle at top right, rgba(16,185,129,0.14), transparent 28%), linear-gradient(180deg, rgba(2,6,23,0.95), rgba(15,23,42,0.96))",
-        minHeight: "100vh",
-      }}>
-        <header style={{
-          padding: "clamp(8px, 1vw, 14px) 0 clamp(6px, 0.6vw, 10px)",
-          marginBottom: "clamp(6px, 0.6vw, 10px)",
-          borderBottom: "1px solid rgba(148,163,184,0.08)",
-          display: "flex", justifyContent: "space-between", alignItems: "flex-end",
-          gap: "clamp(8px, 1vw, 12px)", flexWrap: "wrap",
-        }}>
+      <div
+        className="app-shell mining-shell"
+        style={{
+          padding: "0",
+          width: "100%",
+          maxWidth: "none",
+          margin: "0 auto",
+          background: "radial-gradient(circle at top left, rgba(56,189,248,0.14), transparent 34%), radial-gradient(circle at top right, rgba(16,185,129,0.12), transparent 30%), linear-gradient(180deg, rgba(2,6,23,0.96), rgba(15,23,42,0.98))",
+          minHeight: "100vh",
+        }}
+      >
+        <header
+          style={{
+            padding: "14px 20px 12px",
+            marginBottom: "12px",
+            borderBottom: "1px solid rgba(148,163,184,0.08)",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-end",
+            gap: "12px",
+            flexWrap: "wrap",
+          }}
+        >
           <DashboardHeader
             state={state} currentUser={currentUser} isAdmin={isAdmin}
             onForceCheck={forceCheckStatus}
@@ -358,35 +488,54 @@ function MiningWorkspaceShell({
 
         <TelegramSendModal isOpen={telegramModalOpen} onClose={() => setTelegramModalOpen(false)} />
 
-        {/* POOL LOOKUP — ALL IN ONE ROW */}
-        <section style={{ width: "100%", marginBottom: "10px" }}>
-          <div style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))",
-            gap: "8px",
-            alignItems: "start",
-          }}>
+        {/* Pool Monitor */}
+        <section style={{ width: "100%", marginBottom: "14px", padding: "0 20px" }}>
+          <PoolMonitor />
+        </section>
+
+        {/* Pool statistics */}
+        <section style={{ width: "100%", marginBottom: "14px", padding: "0 20px" }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: "10px", marginBottom: "10px" }}>
+            <h2 style={{ margin: 0, color: C.text, fontSize: "10px", letterSpacing: "0.02em" }}>Pool Statistics</h2>
+            <span style={{ color: C.muted, fontSize: "10px" }}>market profitability by source</span>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: "12px", gridAutoRows: "1fr" }}>
             <MinerstatCard />
             <WhatToMineCard />
             <HashrateNoCard />
             <MiningDutchPoolCard />
-            <HeroMinersLookup onCall={onCall} coinPrices={state.coinPrices} />
-            <K1PoolCard onCall={onCall} coinPrices={state.coinPrices} />
-            <KryptexCard onCall={onCall} coinPrices={state.coinPrices} />
           </div>
         </section>
 
-        {/* ROUTE INTEL — MIDDLE */}
-        <MiningRouteHero onCall={onCall} />
+        {/* Wallet monitors */}
+        <section style={{ width: "100%", marginBottom: "14px", padding: "0 20px" }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: "10px", marginBottom: "10px" }}>
+            <h2 style={{ margin: 0, color: C.text, fontSize: "10px", letterSpacing: "0.02em" }}>Wallet Monitors</h2>
+            <span style={{ color: C.muted, fontSize: "10px" }}>live balances, hashrate, and profit checks</span>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: "12px", gridAutoRows: "1fr" }}>
+            <HeroMinersLookup onCall={onCall} coinPrices={state.coinPrices} />
+            <K1PoolCard onCall={onCall} coinPrices={state.coinPrices} />
+            <KryptexCard onCall={onCall} coinPrices={state.coinPrices} />
+            <ExternalPoolMonitor onCall={onCall} />
+          </div>
+        </section>
 
-        {/* MINING COIN ROUTER */}
-        <section style={{ width: "100%", marginTop: "clamp(8px, 0.8vw, 12px)" }}>
-          <div style={{
-            padding: "clamp(8px, 0.8vw, 12px)",
-            background: "rgba(15,23,42,0.68)",
-            border: "1px solid rgba(148,163,184,0.10)",
-            borderRadius: "10px",
-          }}>
+        {/* Route intel */}
+        <section style={{ width: "100%", padding: "0 20px" }}>
+          <MiningRouteHero onCall={onCall} />
+        </section>
+
+        {/* Mining coin router */}
+        <section style={{ width: "100%", marginTop: "14px", padding: "0 20px 24px" }}>
+          <div
+            style={{
+              padding: "14px",
+              background: C.panel,
+              border: `1px solid ${C.panelBorder}`,
+              borderRadius: "12px",
+            }}
+          >
             <MiningCoin onCall={onCall} nhClient={nhClient} />
           </div>
         </section>
@@ -401,10 +550,10 @@ export default function MiningPage({
 }) {
   return (
     <RentedRigProvider callApi={onCall}>
-      <MiningWorkspaceProvider onCall={onCall} nhClient={nhClient} mrrClient={state?.mrrClient || "BT"}>
+      <MiningWorkspaceProvider onCall={onCall} nhClient={nhClient} mrrClient={state?.mrrClient || "ALL"}>
         <CoinPriceProvider onCall={onCall}>
-          <NiceHashOrderProvider callApi={onCall} nhClient="VN">
-            <div className="page-full">
+          <NiceHashOrderProvider callApi={onCall} nhClient="ALL">
+            <div className="page-full" style={{ maxWidth: "none", width: "100%", padding: "0", margin: "0" }}>
               <MiningWorkspaceShell {...{ onNavigateHome, onCall, nhClient, state, dispatch, currentUser, isAdmin, forceCheckStatus, handleLogout, onNavigate }} />
             </div>
           </NiceHashOrderProvider>

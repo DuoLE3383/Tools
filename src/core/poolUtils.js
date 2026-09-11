@@ -8,7 +8,7 @@ import { getAlgoMapping, normalizeAlgo } from "./mapping.js";
 // CONSTANTS
 // ============================================
 const DEFAULT_VERIFICATION_LOCATION = "ANY";
-const KNOWN_NH_CLIENTS = new Set(["BT", "PH", "LN", "NHATLINH", "VN", "ALL"]);
+const KNOWN_NH_CLIENTS = new Set(["BT", "PH", "PH3", "LN", "NHATLINH", "XT", "HUDA", "ALL"]);
 
 // ============================================
 // ✅ EXPORT: Algorithm Display Helpers
@@ -309,10 +309,14 @@ export const poolHelpers = {
     return !(data.success === false || data.valid === false || data.error);
   },
 
-  exportToXlsx: (data, filename = "export.xlsx") => {
+  exportToXlsx: (data, filename = "export.xlsx", options = {}) => {
+    const { sheetName = "Results", columnWidths = null } = options || {};
     const worksheet = XLSX.utils.json_to_sheet(data);
+    if (Array.isArray(columnWidths) && columnWidths.length > 0) {
+      worksheet["!cols"] = columnWidths;
+    }
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Results");
+    XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
     XLSX.writeFile(workbook, filename);
   },
 

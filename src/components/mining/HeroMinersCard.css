@@ -108,8 +108,8 @@
 
 .error-message {
   color: #f87171;
-  font-size: 13px;
-  padding: 8px 12px;
+  font-size: 12px;
+  padding: 6px 10px;
   background: rgba(248, 113, 113, 0.1);
   border-radius: 6px;
   margin-bottom: 12px;
@@ -122,18 +122,18 @@
 .herominers-dashboard {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
 }
 
 .stats-section {
   background: rgba(0, 0, 0, 0.2);
-  padding: 14px;
+  padding: 10px;
   border-radius: 8px;
 }
 
 .stats-section h4 {
   color: #94a3b8;
-  font-size: 11px;
+  font-size: 10px;
   text-transform: uppercase;
   margin: 0 0 12px 0;
   letter-spacing: 0.5px;
@@ -142,7 +142,7 @@
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 8px 16px;
+  gap: 6px 12px;
 }
 
 .stat-item {

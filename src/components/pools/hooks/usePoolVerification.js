@@ -240,9 +240,9 @@ export function usePoolVerification({ onCall, nhClient, pools, filePools, extrac
       }
     } finally {
       setPlaying(false);
-      if (!keepRunning && stopRef.current) {
-        // Reset running state if needed
-      }
+      // Clear the progress bar once the loop is no longer running, whether it
+      // finished every pool or was stopped early.
+      setProgress({ current: 0, total: 0 });
     }
   }, [getActivePoolSource, nhClient, playing]);
 

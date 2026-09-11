@@ -2,6 +2,7 @@
 import MiningPoolCard from "./MiningPoolCard";
 import { useMiningWorkspace } from "../MiningWorkspaceProvider";
 import { normalizeMinerstatRows } from "../miningWorkspaceData";
+import { ActivityIcon } from "../Icons.jsx";
 
 export default function MinerstatCard() {
   const {
@@ -16,7 +17,7 @@ export default function MinerstatCard() {
   return (
     <MiningPoolCard
       title="Minerstat"
-      icon="📊"
+      icon={<ActivityIcon size={15} color="#f472b6" />}
       accent="#f472b6"
       rows={rows}
       loading={minerstatLoading}

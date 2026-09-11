@@ -5,14 +5,14 @@ import React, { useState, useEffect, useCallback } from "react";
  * Provides a client selector and the Balance check functionality.
  */
 export default function MrrAccount({ onCall }) {
-  const [mrrClient, setMrrClient] = useState("VN");
+  const [mrrClient, setMrrClient] = useState("ALL");
   const [mrrBalance, setMrrBalance] = useState(null);
   const [loading, setLoading] = useState(false);
-  const availableClients = ["BT", "SL", "LN", "LUCKY", "VN"];
+  const availableClients = ["BT", "SL", "LN", "HUDA", "LUCKY", "ALL"];
 
   const fetchBalance = useCallback(
     async (isSilent = true) => {
-      if (!mrrClient || mrrClient === "VN") {
+      if (!mrrClient || mrrClient === "ALL") {
         setMrrBalance(null);
         return;
       }

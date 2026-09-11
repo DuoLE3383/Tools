@@ -1,6 +1,8 @@
-// KryptexCard.jsx - Multi-wallet monitor (HeroMinersLookup pattern)
+// KryptexCard.jsx — Multi-wallet monitor rendered through the shared MiningPanel.
 import { useState, useCallback, useEffect, useRef } from "react";
 import KryptexProfitAlert from "./KryptexProfitAlert.jsx";
+import { ChipIcon, TrashIcon, AlertIcon } from "../Icons.jsx";
+import MiningPanel, { PanelActions, StatTile, StatGrid } from "../MiningPanel.jsx";
 
 const STORAGE_KEY = "kryptex_monitor_pairs";
 const AUTO_REFRESH_KEY = "kryptex_auto_refresh";
@@ -46,25 +48,6 @@ function formatUsd(value) {
 function parseAmount(str) {
   if (!str) return 0;
   return parseFloat(str.replace(/[^0-9.eE-]/g, "")) || 0;
-}
-
-function StatItem({ label, value, color }) {
-  return (
-    <div style={{ padding: "6px 8px", background: "rgba(0,0,0,0.15)", borderRadius: "6px" }}>
-      <div style={{ color: "#64748b", fontSize: "9px", textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</div>
-      <div style={{ color: color || "#e2e8f0", fontSize: "13px", fontWeight: 800, marginTop: "2px", overflow: "hidden", textOverflow: "ellipsis" }}>{value}</div>
-    </div>
-  );
-}
-
-function StatItemUSD({ label, value, usd, color }) {
-  return (
-    <div style={{ padding: "6px 8px", background: "rgba(0,0,0,0.15)", borderRadius: "6px" }}>
-      <div style={{ color: "#64748b", fontSize: "9px", textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</div>
-      <div style={{ color: color || "#e2e8f0", fontSize: "13px", fontWeight: 800, marginTop: "2px", overflow: "hidden", textOverflow: "ellipsis" }}>{value}</div>
-      {usd && <div style={{ color: "#94a3b8", fontSize: "clamp(9px, 0.7vw, 11px)", marginTop: "2px" }}>{usd}</div>}
-    </div>
-  );
 }
 
 export default function KryptexCard({ onCall }) {
@@ -164,69 +147,43 @@ export default function KryptexCard({ onCall }) {
   };
 
   return (
-    <div style={{
-      padding: "clamp(10px, 1vw, 14px)",
-      background: "rgba(15,23,42,0.72)",
-      border: "1px solid rgba(148,163,184,0.12)",
-      borderRadius: "12px",
-      boxShadow: "0 18px 40px rgba(0,0,0,0.20)",
-      display: "flex",
-      flexDirection: "column",
-      gap: "10px",
-    }}>
-      {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div>
-          <h4 style={{ margin: 0, color: "#34d399", fontSize: "clamp(12px, 1vw, 14px)" }}>
-            Kryptex Pool Monitor
-          </h4>
-          <div style={{ fontSize: "clamp(9px, 0.7vw, 11px)", color: "#94a3b8", marginTop: "2px" }}>
-            {pairs.length} wallet{pairs.length !== 1 ? "s" : ""}
-            {autoRefresh ? " · Auto 30s" : " · Manual"}
-            {lastFetched && ` · ${lastFetched.toLocaleTimeString()}`}
-          </div>
-        </div>
-        {pairs.length > 0 && (
-          <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
-            <label style={{ fontSize: "clamp(8px, 0.6vw, 10px)", display: "flex", alignItems: "center", gap: "3px", cursor: "pointer", color: autoRefresh ? "#34d399" : "#64748b" }}>
-              <input type="checkbox" checked={autoRefresh} onChange={toggleAutoRefresh} style={{ width: "12px", height: "12px" }} />
-              Auto
-            </label>
-            <button className="btn-sm" onClick={() => fetchAll(true)} disabled={loading.size > 0} style={{ fontSize: "clamp(9px, 0.7vw, 11px)", padding: "3px 10px" }}>
-              {loading.size > 0 ? "⏳" : "🔄"}
-            </button>
-            <button className="btn-sm" onClick={clearAll} style={{ fontSize: "clamp(9px, 0.7vw, 11px)", padding: "3px 10px", color: "#f87171" }}>
-              ✕ Clear
-            </button>
-          </div>
-        )}
-      </div>
-
+    <MiningPanel
+      icon={<ChipIcon size={16} color="#34d399" />}
+      accent="#34d399"
+      title="Kryptex"
+      subtitle={`${pairs.length} wallet${pairs.length !== 1 ? "s" : ""}${autoRefresh ? " · Auto 30s" : " · Manual"}${lastFetched ? ` · ${lastFetched.toLocaleTimeString()}` : ""}`}
+      actions={
+        <PanelActions
+          autoRefresh={autoRefresh}
+          onToggleAuto={toggleAutoRefresh}
+          onRefresh={() => fetchAll(true)}
+          loading={loading.size > 0}
+          onClear={clearAll}
+        />
+      }
+    >
       {/* Add new pair */}
       <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
         <input value={coinInput} onChange={(e) => setCoinInput(e.target.value.toLowerCase())}
           placeholder="Coin (e.g. etc)"
-          style={{ flex: "0 0 70px", padding: "6px 10px", background: "rgba(0,0,0,0.25)",
-            border: "1px solid rgba(148,163,184,0.15)", borderRadius: "6px", color: "#e2e8f0",
-            fontSize: "clamp(10px, 0.8vw, 12px)" }} />
+          style={{ flex: "0 0 80px", padding: "8px 10px", background: "rgba(0,0,0,0.25)",
+            border: "1px solid rgba(148,163,184,0.15)", borderRadius: "8px", color: "#e2e8f0",
+            fontSize: "12px" }} />
         <input value={addressInput} onChange={(e) => setAddressInput(e.target.value)}
           placeholder="Wallet address"
-          style={{ flex: "1", minWidth: "160px", padding: "6px 10px", background: "rgba(0,0,0,0.25)",
-            border: "1px solid rgba(148,163,184,0.15)", borderRadius: "6px", color: "#e2e8f0",
-            fontSize: "clamp(10px, 0.8vw, 12px)" }}
+          style={{ flex: "1", minWidth: "160px", padding: "8px 10px", background: "rgba(0,0,0,0.25)",
+            border: "1px solid rgba(148,163,184,0.15)", borderRadius: "8px", color: "#e2e8f0",
+            fontSize: "12px" }}
           onKeyDown={(e) => { if (e.key === "Enter") addPair(); }} />
-        <button className="btn-primary" onClick={addPair} disabled={!coinInput || !addressInput}
-          style={{ padding: "6px 14px", fontSize: "clamp(10px, 0.8vw, 12px)" }}>
+        <button className="btn-pro primary" onClick={addPair} disabled={!coinInput || !addressInput}
+          style={{ padding: "8px 14px", fontSize: "12px" }}>
           + Add
         </button>
       </div>
 
       {pairs.length === 0 && (
-        <div style={{ fontSize: "clamp(9px, 0.7vw, 11px)", color: "#64748b", padding: "8px", textAlign: "center", fontStyle: "italic" }}>
+        <div style={{ fontSize: "12px", color: "#64748b", padding: "12px", textAlign: "center", fontStyle: "italic" }}>
           Add coin + address pairs to monitor. E.g. <strong>etc</strong> + your wallet.
-          <div style={{ marginTop: "4px", color: "#34d399", fontSize: "8px" }}>
-            Supported coins: {SUPPORTED_COINS_DISPLAY}
-          </div>
         </div>
       )}
 
@@ -252,45 +209,49 @@ export default function KryptexCard({ onCall }) {
               <div key={pair.id} style={{
                 background: "rgba(0,0,0,0.25)",
                 borderRadius: "8px",
-                border: `1px solid ${accent}22`,
+                border: `1px solid ${accent}33`,
                 padding: "10px",
-                display: "flex", flexDirection: "column", gap: "6px",
+                display: "flex", flexDirection: "column", gap: "8px",
               }}>
                 {/* Header */}
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                    <span style={{ background: accent, color: "#000", fontWeight: 900, padding: "1px 8px", borderRadius: "4px", fontSize: "12px" }}>
+                    <span style={{ background: accent, color: "#000", fontWeight: 900, padding: "2px 8px", borderRadius: "4px", fontSize: "12px" }}>
                       {pair.coin.toUpperCase()}
                     </span>
-                    <span style={{ color: "#64748b", fontSize: "10px", maxWidth: "120px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <span style={{ color: "#64748b", fontSize: "11px", maxWidth: "120px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {pair.address.slice(0, 10)}...{pair.address.slice(-4)}
                     </span>
                   </div>
-                  <button onClick={() => removePair(pair.id)} style={{ background: "none", border: "none", color: "#f87171", cursor: "pointer", fontSize: "12px", padding: "0 4px" }}>
-                    ✕
+                  <button onClick={() => removePair(pair.id)} style={{ background: "none", border: "none", color: "#f87171", cursor: "pointer", padding: "2px", display: "flex" }} title="Remove" aria-label="Remove">
+                    <TrashIcon size={14} />
                   </button>
                 </div>
 
                 {isLoading && <div style={{ color: "#fbbf24", fontSize: "11px" }}>Loading...</div>}
-                {error && !isLoading && <div style={{ color: "#f87171", fontSize: "10px" }}>⚠ {error}</div>}
+                {error && !isLoading && (
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px", color: "#f87171", fontSize: "11px" }}>
+                    <AlertIcon size={13} /> {error}
+                  </div>
+                )}
 
                 {data && !isLoading && (
                   <>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "4px" }}>
-                      <StatItem label="Hash" value={hashrate.current || "0 H/s"} color={accent} />
-                      <StatItem label="24h" value={hashrate["24h"] || "0 H/s"} color="#60a5fa" />
-                      <StatItemUSD label="Confirmed" value={confirmed} color="#f59e0b" />
-                      <StatItemUSD label="30d Reward" value={reward30d} color="#a78bfa" />
-                    </div>
+                    <StatGrid cols={2}>
+                      <StatTile label="Hash" value={hashrate.current || "0 H/s"} color={accent} />
+                      <StatTile label="24h" value={hashrate["24h"] || "0 H/s"} color="#60a5fa" />
+                      <StatTile label="Confirmed" value={confirmed} color="#f59e0b" />
+                      <StatTile label="30d Reward" value={reward30d} color="#a78bfa" />
+                    </StatGrid>
                     <KryptexProfitAlert
                       pair={{ coin: pair.coin.toUpperCase(), address: pair.address }}
                       onCall={onCall}
-                      nhClient="VN"
+                      nhClient="ALL"
                     />
                   </>
                 )}
                 {!data && !isLoading && !error && (
-                  <div style={{ color: "#64748b", fontSize: "10px", fontStyle: "italic", textAlign: "center", padding: "8px" }}>
+                  <div style={{ color: "#64748b", fontSize: "11px", fontStyle: "italic", textAlign: "center", padding: "10px" }}>
                     Awaiting first fetch...
                   </div>
                 )}
@@ -299,6 +260,6 @@ export default function KryptexCard({ onCall }) {
           })}
         </div>
       )}
-    </div>
+    </MiningPanel>
   );
 }

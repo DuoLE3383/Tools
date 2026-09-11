@@ -2,9 +2,9 @@
 // Browser-safe Telegram templates - works in both Node.js and browser environments
 
 export const TELEGRAM_CONFIG = {
-  ALERT_COOLDOWN_MS: 10 * 60 * 1000,
+  ALERT_COOLDOWN_MS: 5 * 60 * 1000,
   WARNING_RIG_THRESHOLD: 3,
-  RENTED_HEARTBEAT_MS: 60 * 60 * 1000,
+  RENTED_HEARTBEAT_MS: 3 * 60 * 1000,
 };
 
 export function escapeHtml(text) {
@@ -56,18 +56,20 @@ export const TelegramTemplates = {
     client,
     info = { price: {} },
   ) => {
+    const paid = info?.price?.paid ?? "N/A";
+    const currency = info?.price?.currency ?? "BTC";
     return (
       `${perfEmoji} <b>${escapeHtml(algo)}</b> 🔀 <b>${escapeHtml(client)}</b> | ${escapeHtml(name)}\n` +
       `⏱ Remaining: ${remaining}\n` +
       `📡 Cur: <b>${cur}</b> | ` +
       `📊 Eff: <code>${typeof efficiency === "number" ? efficiency.toFixed(2) : efficiency}%</code>\n` +
       `📈 Avg: <code>${avg}</code> | Adv: <code>${ads}</code>\n` +
-      `💰 Paid: <code>${escapeHtml(info.price?.paid)} </code> <b> ${escapeHtml(info.price?.currency)}</b>\n` +
+      `💰 Paid: <code>${escapeHtml(paid)}</code> <b>${escapeHtml(currency)}</b>\n` +
       `${extra}${divider}\n`
     );
   },
 
-  rentedNotice: (type, r, info, acct, diff, rem, algo, ads) => {
+  rentedNotice: (type, r, info = {}, acct, diff, rem, algo, ads) => {
     return (
       `🚀 <b>[${type}]</b>\n` +
       `<b>Account:</b> <code>${formatAccount(acct)}</code>\n` +
@@ -75,24 +77,60 @@ export const TelegramTemplates = {
       `<b>Algo:</b> <code>${escapeHtml(algo)}</code>\n` +
       `<b>Time:</b> ${formatTimeRange(info.startTime, info.endTime)}\n` +
       `💰 Paid: <code>${escapeHtml(info.price?.paid)} </code> <b> ${escapeHtml(info.price?.currency)}</b>\n` +
-      `<b>Efficiency:</b> <b>${info.percent}%</b> (Diff: ${diff}%)\n` +
-      `Adv: <code>${ads}</code>\n` +
-      `<b>Remaining:</b> ${rem}\n` +
-      `<b>Target to 100%:</b> ${info.targetHashrate || "N/A"}\n` +
+      `<b>Efficiency:</b> <b>${info.percent ?? "N/A"}%</b> \n` +
+      `Adv: <code>${escapeHtml(ads || info.hashrate?.advertised?.nice || info.hashrate?.advertised || info.hashrate?.suffix || "N/A")}</code>\n` +
+      `<b>Remaining:</b> <code>${escapeHtml(rem)}</code>\n` +
+      // `<b>Target to 100%:</b> ${info.targetHashrate || "N/A"}\n` +
       `${divider}\n`
     );
   },
 
-  zeroHashrate: (acct, r, info, algo, ads) => {
+  newRental: (account, r, info = {}, startStr, endStr, algo = "N/A", ads = "N/A") => {
+    return (
+      `🚀 <b>[NEW RENTAL]</b>\n` +
+      `<b>Account:</b> <code>${formatAccount(account)}</code>\n` +
+      `${divider}\n` +
+      `<b>Rig:</b> ${formatRig(r)}\n` +
+      `<b>Algo:</b> <code>${escapeHtml(algo)}</code>\n` +
+      `<b>Time:</b> ${formatTimeRange(startStr, endStr)}\n` +
+      `💰 Paid: <code>${escapeHtml(info.price?.paid)} </code> <b> ${escapeHtml(info.price?.currency)}</b>\n` +
+      `Adv: <code>${escapeHtml(ads)}</code>\n` +
+      `${divider}\n`
+    );
+  },
+
+  zeroHashrate: (acct, r, info, algo) => {
     return (
       `⚠️ <b>[ZERO HASHRATE]</b>\n` +
       `<b>Account:</b> <code>${formatAccount(acct)}</code>\n` +
       `${divider}\n` +
       `<b>Rig:</b> ${formatRig(r)}\n` +
       `<b>Algo:</b> <code>${escapeHtml(algo)}</code>\n` +
-      `<b>Status:</b> 0 H/s (Target: ${info.targetHashrate})\n` +
-      `Adv: <code>${ads}</code>\n` +
-      `<b>Rental:</b> <code>${r.id}</code>`
+      `<b>Status:</b> 0 H/s (Target: ${info.targetHashrate || "N/A"})\n` +
+      `Adv: <code>${
+        info.niceAdvertisedHashrate || info.hashrate?.advertised?.nice || "N/A"
+      }</code>\n` +
+      `<b>Rental:</b> <code>${r.id || "N/A"}</code>`
+    );
+  },
+
+  nhOrderZeroHashrate: (account, order, algo) => {
+    const orderId = order?.id || order?.orderId || "N/A";
+    const limit = order?.limit ?? "N/A";
+    const price = order?.price ?? "N/A";
+    const paid = order?.payedAmount ?? "N/A";
+    const rigsCount = order?.rigsCount ?? "N/A";
+    return (
+      `⚠️ <b>[ZERO HASHRATE]</b>\n` +
+      `<b>Account:</b> <code>${formatAccount(account)}</code>\n` +
+      `${divider}\n` +
+      `<b>Order:</b> <code>${escapeHtml(String(orderId).length > 8 ? String(orderId).slice(0, 8) + "..." : String(orderId))}</code>\n` +      `<b>Algo:</b> <code>${escapeHtml(algo)}</code>\n` +
+      `<b>Status:</b> <code>ACTIVE but 0 H/s</code>\n` +
+      `<b>Rigs:</b> <code>${escapeHtml(String(rigsCount))}</code>\n` +
+      `<b>Limit:</b> <code>${escapeHtml(String(limit))}</code>\n` +
+      `<b>Price:</b> <code>${escapeHtml(String(price))}</code> BTC\n` +
+      `<b>Paid:</b> <code>${escapeHtml(String(paid))}</code> BTC\n` +
+      `${divider}`
     );
   },
 
@@ -104,13 +142,15 @@ export const TelegramTemplates = {
       `<b>Rig:</b> ${formatRig(r)}\n` +
       `<b>Algo:</b> <code>${escapeHtml(algo)}</code>\n` +
       `<b>Efficiency:</b> <b>${efficiency}%</b>\n` +
-      `<b>Average:</b> ${info.niceAverageHashrate}\n` +
-      `Adv: <code>${ads}</code>\n` +
-      `<b>Target to 100%:</b> ${target.toFixed(2)} ${info.hashrate.suffix || ""}`
+      `<b>Average:</b> ${info.niceAverageHashrate || "N/A"}\n` +
+      `Adv: <code>${
+        ads || info.niceAdvertisedHashrate || "N/A"
+      }</code>\n` +
+      `<b>Target to 100%:</b> ${target?.toFixed(2) || "N/A"} ${info.hashrate?.suffix || ""}`
     );
   },
 
-  startup: (acct, r, info, ads, efficiency, target, algo) => {
+  startup: (acct, r, info, efficiency, target, algo) => {
     return (
       `⏱ <b>[STARTUP ALERT]</b>\n` +
       `<b>Account:</b> <code>${formatAccount(acct)}</code>\n` +
@@ -118,14 +158,22 @@ export const TelegramTemplates = {
       `<b>Rig:</b> ${formatRig(r)}\n` +
       `<b>Algo:</b> <code>${escapeHtml(algo)}</code>\n` +
       `<b>Initial Eff:</b> ${efficiency}%\n` +
-      `Adv: <code>${ads}</code>\n` +
+      `Adv: <code>${
+        info.niceAdvertisedHashrate || info.hashrate?.advertised?.nice || "N/A"
+      }</code>\n` +
       `💰 Paid: <code>${escapeHtml(info.price?.paid)} </code> <b> ${escapeHtml(info.price?.currency)}</b>\n` +
-      `<b>Time:</b> ${formatTimeRange(info.startTime)}\n` +
-      `<b>Target:</b> ${target.toFixed(2)} ${info.hashrate.suffix || ""}`
+      `<b>Time:</b> ${formatTimeRange(info.startTime, info.endTime)}\n` +
+      `<b>Target:</b> ${target?.toFixed(2) || "N/A"} ${info.hashrate?.suffix || ""}`
     );
   },
 
-  completionAlert: (acct, r, info, efficiency, target, algo) => {
+  completionAlert: (
+    acct,
+    r,
+    info, 
+    efficiency, 
+    target, 
+    algo) => {
     return (
       `🏁 <b>[ALMOST COMPLETE]</b>\n` +
       `<b>Algo:</b> <code>${escapeHtml(algo)}</code>\n` +
@@ -133,16 +181,17 @@ export const TelegramTemplates = {
       `<b>Account:</b> <code>${formatAccount(acct)}</code>\n` +
       `${divider}\n` +
       `<b>Time:</b> ${formatTimeRange(info.startTime)}\n` +
-      `<b>Final Eff:</b> ${efficiency}%\n` +
-      `<b>Target:</b> ${target.toFixed(2)}`
+      `<b>Final Eff:</b> ${efficiency || 0}%\n` +
+      `<b>Target:</b> ${target?.toFixed(2) || "N/A"}`
     );
   },
 
-  completionSuccess: (
+  completionSuccess: (  
     acct,
     r,
     info = { price: {} },
     efficiency,
+    adv,
     avg,
     suffix,
     algo,
@@ -159,10 +208,16 @@ export const TelegramTemplates = {
     );
   },
 
-  perfectEfficiency: (acct, r, efficiency, info, remainingMs, algo) => {
+  perfectEfficiency: (
+    acct, 
+    r, 
+    efficiency, 
+    info, 
+    remainingMs, 
+    algo) => {
     const remH = Math.floor(remainingMs / 3600000);
     return (
-      `♻️ <b>[PERFECT 100%]</b>\n` +
+      `✅ <b>[PERFECT 100%]</b>\n` +
       `<b>Account:</b> <code>${formatAccount(acct)}</code>\n` +
       `${divider}\n` +
       `<b>Rig:</b> ${formatRig(r)}\n` +
@@ -170,6 +225,18 @@ export const TelegramTemplates = {
       `<b>Status:</b> Running perfectly at ${efficiency}%\n` +
       `<b>Remaining:</b> ~${remH}h\n` +
       `💰 Paid: <code>${escapeHtml(info.price?.paid)} </code> <b> ${escapeHtml(info.price?.currency)}</b>`
+    );
+  },
+
+  highRoiAlert: (acct, r, info = {}, roi) => {
+    return (
+      `💹 <b>[HIGH ROI]</b>\n` +
+      `<b>Account:</b> <code>${formatAccount(acct)}</code>\n` +
+      `${divider}\n` +
+      `<b>Rig:</b> ${formatRig(r)}\n` +
+      `<b>Algo:</b> <code>${escapeHtml(info.algo || r?.algo || r?.algorithm || "N/A")}</code>\n` +
+      `<b>ROI:</b> <b>${Number.isFinite(Number(roi)) ? Number(roi).toFixed(2) : "N/A"}%</b>\n` +
+      `💰 Paid: <code>${escapeHtml(info.price?.paid ?? "N/A")}</code> <b>${escapeHtml(info.price?.currency ?? "BTC")}</b>`
     );
   },
 
@@ -186,27 +253,62 @@ export const TelegramTemplates = {
     );
   },
 
-  heartbeatSummary: (
-    barChart,
-    online,
-    rented,
-    offline,
-    disabled,
-    total,
-    lines,
-    time,
-    rented24h,
-    algos,
-  ) => {
+  heartbeatSummary: (...args) => {
+    let barChart;
+    let online;
+    let rented;
+    let offline;
+    let disabled;
+    let total;
+    let lines;
+    let time;
+    let rented24h;
+    let algos;
+
+    if (args.length === 1 && typeof args[0] === "object" && !Array.isArray(args[0]) && args[0] !== null) {
+      const data = args[0];
+      online = data.onlineAll ?? data.online ?? 0;
+      rented = data.rentedAll ?? data.rented ?? 0;
+      offline = data.offlineAll ?? data.offline ?? 0;
+      disabled = data.disabledAll ?? data.disabled ?? 0;
+      total = data.totalAll ?? data.total ?? 0;
+      time = data.monitorTime ?? data.time ?? new Date().toLocaleTimeString();
+      rented24h = data.rented24h ?? 0;
+      algos = Array.isArray(data.onlineAlgoLines)
+        ? data.onlineAlgoLines
+        : Array.isArray(data.algos)
+        ? data.algos
+        : [];
+      if (Array.isArray(data.activeRentalLines)) {
+        lines = data.activeRentalLines;
+      } else if (Array.isArray(data.activeRentals) && data.activeRentals.every((item) => typeof item === 'string')) {
+        lines = data.activeRentals;
+      } else {
+        lines = [];
+      }
+    } else {
+      [
+        barChart,
+        online,
+        rented,
+        offline,
+        disabled,
+        total,
+        lines,
+        time,
+        rented24h,
+        algos,
+      ] = args;
+    }
+
     const rentedCount =
       typeof rented === "number" ? rented : parseInt(rented) || 0;
 
-    let summary = `📊 <b>SUMMARY Merg</b> [${time || new Date().toLocaleTimeString()}]\n`;
-    summary += `${divider}\n`;
-    summary += `🟢 Online: <b>${online || 0}</b> / Renting: <b>${rentedCount}</b>\n`;
-    summary += `🔴 Offline: <b>${offline || 0}</b> / Disabled: <b>${disabled || 0}</b>\n`;
+    let summary = `📊 <b>SUMMARY</b>\n`;
+    summary += `🆕 Renting: <b><code>${rentedCount}</code></b>\n`;
+    summary += `🟢 Online: <b>${online || 0}</b>\n`;
+    summary += `🔴 Offline: <b>${offline || 0}</b> | Disabled: <b>${disabled || 0}</b>\n`;
     summary += `📦 Total Rigs: <b>${total || 0}</b>\n`;
-    summary += `🆕 Rented (24h): <b>${rented24h || 0}</b>\n`;
     summary += `${divider}\n`;
 
     if (algos && algos.length > 0) {
@@ -224,28 +326,6 @@ export const TelegramTemplates = {
 
     return summary;
   },
-  
-   herominersSummary: (data) => {
-    if (!data || !data.liveStats) return 'No HeroMiners data available.';
-    return (
-      `⛏️ <b>HeroMiners Stats for ${escapeHtml(data.coin)}</b>\n` +
-      `${divider}\n` +
-      `<b>Address:</b> <code>${escapeHtml(data.address)}</code>\n` +
-      `<b>Hashrate:</b> ${data.liveStats.currentHashrate} (Avg 24h: ${data.liveStats.avg24h})\n` +
-      `<b>Workers:</b> ${data.liveStats.workersOnline} / ${data.liveStats.workersTotal}\n` +
-      `${divider}\n` +
-      `<b>Pending:</b> ${data.paymentStats.pendingBalance} (${data.paymentStats.pendingUSD})\n` +
-      `<b>Total Paid:</b> ${data.paymentStats.totalPaid} (${data.paymentStats.totalPaidUSD})\n` +
-      `<b>Paid (24h):</b> ${data.paymentStats.paid24h}\n` +
-      `${divider}\n` +
-      `<b>Shares (Valid/Total):</b> ${data.shareStats.total.valid} / ${data.shareStats.total.total}\n` +
-      `<b>Efficiency:</b> ${data.shareStats.total.efficiency}%\n` +
-      `<b>Blocks Found:</b> ${data.blockStats.totalBlocks}\n` +
-      `${divider}\n` +
-      `<i>Last Share: ${data.liveStats.lastShare}</i>`
-    );
-  },
-
 
   rigStatusWarning: (acct, rig, algo) =>
     `⚠️ <b>[RIG WARNING]</b>\n
@@ -257,7 +337,23 @@ export const TelegramTemplates = {
   highWarningCount: (acct, count) =>
     `⚠️ <b>[SYSTEM ALERT]</b>\n 
   ${formatAccount(acct)}\n
-  <b>High Warning Count:</b> <b>${count}</b> rigs in warning state.`,
+  <b>High Warning Count:</b> <b>${count}</b> rigs in warning state.`
+  ,
+
+  manualNotice: (r, account, avg, suffix, roi, remStr, progress, paid) => {
+    return (
+      `🔔 <b>[MANUAL NOTICE]</b>\n` +
+      `<b>Account:</b> <code>${formatAccount(account)}</code>\n` +
+      `${divider}\n` +
+      `<b>Rig:</b> ${formatRig(r)}\n` +
+      `<b>Avg:</b> ${avg} ${suffix}\n` +
+      `<b>ROI:</b> ${roi}%\n` +
+      `<b>Remaining:</b> ${remStr}\n` +
+      `<b>Progress:</b> ${progress}%\n` +
+      `💰 Paid: <code>${escapeHtml(paid)}</code>\n` +
+      `${divider}`
+    );
+  },
 };
 
 // ============================================================

@@ -6,7 +6,7 @@ import { useTelegramMine } from '../components/mrr/TelegramMineContext';
  * Every 10 minutes, if profit/hour <= 0 is NEGATIVE, re-sends the alert.
  * Also alerts on initial status change (positive ↔ negative).
  */
-const NEGATIVE_REALERT_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
+const NEGATIVE_REALERT_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
 
 export function useProfitAlert({
   profit,
@@ -45,7 +45,7 @@ export function useProfitAlert({
     const message = `
 ${emoji} <b>${alertTitle} - ${status}</b>
 
-📊 <b>${coin} Mining</b>
+📊 <b><code>${coin}</code> Mining</b>
 • Address: ${address?.slice(0, 12)}...${address?.slice(-6)}
 • Hashrate: ${profitData.hashrate}
 • Workers: ${profitData.workers}
@@ -94,6 +94,8 @@ ${orderInfo}
       return;
     }
 
+    if (profit.comparisonStatus !== 'comparable') return;
+
     const isNegative = profit.netProfitPerHour <= 0;
     const shouldAlert =
       lastAlertType === null ||
@@ -119,7 +121,7 @@ ${orderInfo}
     }
 
     // Only schedule the periodic timer when profit is NEGATIVE
-    const isNegative = profit && profit.netProfitPerHour <= 0;
+    const isNegative = profit?.comparisonStatus === 'comparable' && profit.netProfitPerHour <= 0;
 
     if (isNegative) {
       negativeTimerRef.current = setInterval(() => {

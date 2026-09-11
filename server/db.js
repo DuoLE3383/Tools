@@ -185,6 +185,44 @@ async function initTables(db) {
   `);
 }
 
+function isExpectedSavepointError(error) {
+  const message = String(error?.message || "");
+  return /no such savepoint|cannot rollback|cannot release savepoint|cannot commit|transaction is active|cannot start a transaction within a transaction/i.test(message);
+}
+
+export async function withSavepoint(db, prefix, operation) {
+  const suffix = `${Date.now()}${Math.random().toString(16).slice(2, 8)}`;
+  const savepointName = `${prefix}_${suffix}`.replace(/[^a-zA-Z0-9]/g, "");
+  let savepointCreated = false;
+
+  try {
+    await db.run(`SAVEPOINT ${savepointName}`);
+    savepointCreated = true;
+    const result = await operation();
+
+    try {
+      await db.run(`RELEASE SAVEPOINT ${savepointName}`);
+    } catch (releaseError) {
+      if (!isExpectedSavepointError(releaseError)) {
+        throw releaseError;
+      }
+    }
+
+    return result;
+  } catch (error) {
+    if (savepointCreated) {
+      try {
+        await db.run(`ROLLBACK TO SAVEPOINT ${savepointName}`);
+      } catch (rollbackError) {
+        if (!isExpectedSavepointError(rollbackError)) {
+          console.warn(`[db] Savepoint rollback warning for ${savepointName}: ${rollbackError.message}`);
+        }
+      }
+    }
+    throw error;
+  }
+}
+
 /**
  * Gets a singleton promise-based database instance.
  * @returns {Promise<import('sqlite').Database>}

@@ -19,8 +19,8 @@ const DATA_DIR = path.resolve(process.cwd(), "data");
 // ✅ Check both main and mining bot configurations
 const hasMainToken = !!process.env.TELEGRAM_BOT_TOKEN;
 const hasMainChatId = !!process.env.TELEGRAM_CHAT_ID;
-const hasMineToken = !!process.env.TELEGRAM_MINE_BOT_TOKEN;
-const hasMineChatId = !!process.env.TELEGRAM_GROUP_ID;
+const hasMineToken = !!(process.env.TELEGRAM_MINE_BOT_TOKEN || process.env.TELEGRAM_TOKEN);
+const hasMineChatId = !!(process.env.TELEGRAM_GROUP_ID || process.env.TELEGRAM_ID);
 const isMainConfigured = hasMainToken && hasMainChatId;
 const isMineConfigured = hasMineToken && hasMineChatId;
 

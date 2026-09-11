@@ -25,10 +25,10 @@ export default function MrrPage({
     if (refreshNhOrders) refreshNhOrders();
   }, [forceCheckStatus, refreshNhOrders]);
 
-  // On mount, force the NH client to 'VN' to get all orders for rig matching.
+  // On mount, force the NH client to 'ALL' to get all orders for rig matching.
   // On unmount, restore it to what it was before.
   useEffect(() => {
-    dispatch({ type: "SET_NH_ORDER_CLIENT", payload: "VN" });
+    dispatch({ type: "SET_NH_ORDER_CLIENT", payload: "ALL" });
 
     return () => {
       dispatch({ type: "SET_NH_ORDER_CLIENT", payload: originalNhClient.current });

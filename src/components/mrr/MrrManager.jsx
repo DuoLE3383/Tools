@@ -214,10 +214,10 @@ export default function MrrPoolManager({
     setLoading(true);
     setError(null);
 
-    // Resolve the specific sub-account client (BT/SL/PH) from rig metadata if the global context is 'VN' (aggregate).
+    // Resolve the specific sub-account client (BT/SL/PH) from rig metadata if the global context is 'ALL' (aggregate).
     // This ensures we use valid API credentials for the account owning the rig when fetching pool configurations.
     const targetClient =
-      mrrClient === "VN" && rig.mrrClient ? rig.mrrClient : mrrClient;
+      mrrClient === "ALL" && rig.mrrClient ? rig.mrrClient : mrrClient;
 
     try {
       const data = await fetchMiningStats(

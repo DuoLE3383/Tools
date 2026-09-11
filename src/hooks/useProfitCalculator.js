@@ -13,14 +13,14 @@ const BTC_PRICE_UPDATE_INTERVAL = 300000;
 export function useProfitCalculator({ 
   pair,
   onCall,
-  nhClient = 'VN',
+  nhClient = 'ALL',
   manualNiceHashOrderId = null,
 }) {
   const [stats, setStats] = useState(null);
   const [orderData, setOrderData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [btcPrice, setBtcPrice] = useState(60000);
+  const [btcPrice, setBtcPrice] = useState(0);
   const [profitHistory, setProfitHistory] = useState([]);
   const [isProfitable, setIsProfitable] = useState(null);
   const [lastCheck, setLastCheck] = useState(null);
@@ -32,7 +32,7 @@ export function useProfitCalculator({
   const [orderUnit, setOrderUnit] = useState('GH');
   const [orderIsActive, setOrderIsActive] = useState(false);
 
-  const { coin, address } = pair || {};
+  const { coin, address, pool, source } = pair || {};
 
   // Fetch BTC price
   const fetchBtcPrice = useCallback(async () => {
@@ -59,14 +59,45 @@ export function useProfitCalculator({
     }
   }, [onCall]);
 
-  // Fetch HeroMiners stats
+  // Fetch pool stats (K1Pool or HeroMiners based on the pair source)
   const fetchStats = useCallback(async () => {
     if (!address || !coin) return null;
-    
+
     setLoading(true);
     setError(null);
-    
+
     try {
+      if (source === 'k1pool') {
+        const result = await onCall('/api/v2/mining-stats/k1pool', {
+          query: { pool, address },
+          silent: true,
+        });
+
+        if (result?.success && result.data) {
+          const miner = result.data?.miner || {};
+          const poolData = result.data?.pool || {};
+          const mapped = {
+            paymentStats: {
+              paid24h: String(miner.coinsPerDay ?? miner['24hReward'] ?? 0),
+              pendingBalance: String(miner.pendingBalance ?? 0),
+              totalPaid: String(miner.paidBalance ?? 0),
+            },
+            liveStats: {
+              currentHashrate: miner.curHashrateStr || '0 H/s',
+              workersOnline: miner.workersOnline || 0,
+            },
+            coinPrice: parseFloat(poolData.coinPriceUsd) || 0,
+            algo: poolData.coinAlgorithm,
+            coinSymbol: poolData.coinSymbol,
+          };
+          setStats(mapped);
+          setLastCheck(new Date());
+          return mapped;
+        } else {
+          throw new Error(result?.error || 'Failed to fetch K1Pool stats');
+        }
+      }
+
       const result = await onCall('/api/v2/mining-stats/herominers/address', {
         query: { address, coin },
         silent: true
@@ -85,7 +116,7 @@ export function useProfitCalculator({
     } finally {
       setLoading(false);
     }
-  }, [address, coin, onCall]);
+  }, [address, coin, pool, source, onCall]);
 
   // Get algorithm for a coin
   const getCoinAlgorithm = useCallback((coinName) => {
@@ -113,6 +144,7 @@ export function useProfitCalculator({
       'NEXA': 'NEXAPOW',
       'CLORE': 'KAWPOW',
       'AIPG': 'KAWPOW',
+      'QUAI': 'KAWPOW',
     };
     return algoMap[coinUpper] || coinUpper;
   }, []);
@@ -272,11 +304,15 @@ export function useProfitCalculator({
         const orders = ordersResult?.list || ordersResult?.myOrders || [];
         const algo = getCoinAlgorithm(coin);
         
-        orderToUse = orders.find(o => {
+        const matchingActiveOrders = orders.filter(o => {
           const orderAlgo = typeof o.algorithm === 'object' ? o.algorithm.algorithm : o.algorithm;
           const isActive = (o.status?.code || o.status) === 'ACTIVE';
           return orderAlgo?.toUpperCase() === algo?.toUpperCase() && isActive;
         });
+        orderToUse = matchingActiveOrders.reduce((highest, current) =>
+          parseFloat(current.price || 0) > parseFloat(highest?.price || 0) ? current : highest,
+          null,
+        );
       }
 
       if (orderToUse) {
@@ -284,6 +320,29 @@ export function useProfitCalculator({
         console.log(`[ProfitCalc] Found order: ${orderToUse.id}, speed: ${speedInfo.speed} ${speedInfo.unit}/s (field: ${speedInfo.field}), active: ${speedInfo.isActive}`);
         return { order: orderToUse, speedInfo };
       }
+
+      // Fallback: when there is no active order to select (e.g. all ETCHASH /
+      // KAWPOW orders are cancelled/expired), fetch the NiceHash market price
+      // so a rate still shows and the profit comparison is not blank.
+      try {
+        const fallbackAlgo = getCoinAlgorithm(coin);
+        const priceData = await onCall('/api/v2/hashpower/order/price', {
+          query: { algorithm: fallbackAlgo, market: 'USA', client: nhClient },
+          silent: true,
+        });
+        const marketPrice = parseFloat(priceData?.price ?? priceData?.fixedPrice ?? 0);
+        if (marketPrice > 0) {
+          const fallbackUnit = priceData?.unit || 'GH';
+          console.log(`[ProfitCalc] No active ${fallbackAlgo} order — using market price ${marketPrice} BTC/${fallbackUnit}/day`);
+          return {
+            order: { id: null, price: marketPrice, limit: 0, isMarketRate: true },
+            speedInfo: { speed: 0, unit: fallbackUnit, isActive: false },
+          };
+        }
+      } catch (e) {
+        console.warn('[ProfitCalc] Market price fallback failed:', e.message);
+      }
+
       return null;
     } catch (err) {
       console.warn('Failed to sync NiceHash order:', err.message);
@@ -294,6 +353,7 @@ export function useProfitCalculator({
   // Calculate profit
   const calculateProfit = useCallback((statsData, btcPriceUsd, orderInfo) => {
     if (!statsData) return null;
+    if (!Number.isFinite(btcPriceUsd) || btcPriceUsd <= 0) return null;
 
     const paymentStats = statsData.paymentStats || {};
     const liveStats = statsData.liveStats || {};
@@ -307,7 +367,15 @@ export function useProfitCalculator({
     const paid24hCoin = parseAmount(paymentStats.paid24h || '0');
     const hourlyIncomeCoin = paid24hCoin / 24;
     
-    const coinPrice = statsData.coinPrice || 0;
+    const coinPrice = Number(statsData.coinPrice || 0);
+    if (!Number.isFinite(coinPrice) || coinPrice <= 0) return null;
+    console.debug('[ProfitCalc] Coin price:', {
+      coin,
+      coinPrice,
+      paid24h: paymentStats.paid24h,
+      orderPrice: orderInfo?.order?.price,
+      orderLimit: orderInfo?.order?.limit,
+    });
     const hourlyIncomeUSD = hourlyIncomeCoin * coinPrice;
     const grossBtcPerDay = paid24hCoin * coinPrice / btcPriceUsd;
     
@@ -322,6 +390,7 @@ export function useProfitCalculator({
     const orderUnit = getOrderUnit(order);
     const orderSpeedGH = convertToGH(speedInfo.speed, speedInfo.unit); // This is current hashrate for display
     const isActive = speedInfo.isActive || false;
+    const canCompareProfit = isActive && orderedSpeed > 0 && orderPrice > 0;
     
     // If order is not active or speed is 0, cost is 0
     let costPerDay = 0;
@@ -331,7 +400,7 @@ export function useProfitCalculator({
     
     // The price from NH is in BTC per [speed unit] per day. The speed is in [speed unit]/s.
     // So, cost per day = price * speed.
-    if (isActive && orderedSpeed > 0) {
+    if (canCompareProfit) {
       costPerDay = orderPrice * orderedSpeed;
       costPerHour = costPerDay / 24;
       costPerDayUSD = costPerDay * btcPriceUsd;
@@ -345,9 +414,9 @@ export function useProfitCalculator({
     const netProfitPerDay = netProfitPerHour * 24;
     const netProfitBTC = grossBtcPerDay - costPerDay;
     
-    const roi = costPerHourUSD > 0 
-      ? ((hourlyIncomeUSD - costPerHourUSD) / costPerHourUSD) * 100 
-      : (hourlyIncomeUSD > 0 ? 100 : 0);
+    const roi = costPerHourUSD > 0
+      ? ((hourlyIncomeUSD - costPerHourUSD) / costPerHourUSD) * 100
+      : null;
 
     return {
       hourlyIncomeCoin,
@@ -382,7 +451,8 @@ export function useProfitCalculator({
       coinPrice,
       btcPrice: btcPriceUsd,
       timestamp: new Date().toISOString(),
-      isProfitable: netProfitPerHour > 0,
+      isProfitable: canCompareProfit ? netProfitPerHour > 0 : null,
+      comparisonStatus: canCompareProfit ? 'comparable' : 'awaiting-active-order',
     };
   }, [convertToGH, getOrderUnit]);
 

@@ -437,7 +437,7 @@ function AppContent({ authToken, onLoginSuccess, onLogout, callApi, setAuthToken
             minWidth="800px"
           >
             {state.lastCall && (
-              <div className="response-meta" style={{ marginBottom: "15px", opacity: 0.8, fontSize: "12px" }}>
+              <div className="response-meta" style={{ marginBottom: "15px", opacity: 0.8, fontSize: "10px" }}>
                 <span>{state.lastCall.method} {state.lastCall.path} — {state.lastCall.status} ({state.lastCall.durationMs}ms)</span>
               </div>
             )}

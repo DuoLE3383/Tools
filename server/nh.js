@@ -3,7 +3,7 @@ import { NICEHASH_ALGO_MAP, normalizeAlgoForNiceHash } from '../src/core/mapping
 import { normalizeCredential } from './utils.js';
 import { getDb } from './db.js';
 
-export const AGGREGATE_CLIENT = 'VN';
+export const AGGREGATE_CLIENT = 'ALL';
 const poolCache = new Map();
 const publicCache = new Map();
 const POOL_CACHE_TTL = 60000; // 1 minute cache
@@ -69,10 +69,10 @@ export const isAggregate = (c) => {
 };
 
 export function resolveNhClient(clientNameRaw) {
-  // Determine the target client name. Default to 'VN' (aggregate) if not provided.
+  // Determine the target client name. Default to 'ALL' (aggregate) if not provided.
   const targetClientName = String(clientNameRaw || AGGREGATE_CLIENT).trim().toUpperCase();
 
-  // 1. Handle Aggregate (VN) resolution
+  // 1. Handle Aggregate (ALL) resolution
   if (isAggregate(targetClientName)) {
     // Return a special marker object for aggregation.
     // The 'client' property is a dummy object that getNiceHashApp will recognize.
@@ -363,6 +363,34 @@ export const getNiceHashApp = (client) => {
           // one of ours or it's an old/inactive order. Throw a 404 to prevent
           // the fallback client from trying and getting a misleading 403.
           const error = new Error(`Order ${orderId} not found among active orders for any configured client.`);
+          error.statusCode = 404;
+          throw error;
+        },
+        getOrderPrice: async (query) => {
+          // Aggregate the order price across ALL configured NiceHash clients so
+          // client=ALL behaves the same as the MarketPrice endpoint. Previously
+          // this fell through to the BT fallback app, so "All Clients" only ever
+          // saw BT's quote.
+          const allClientNames = Object.keys(nhConfigs)
+            .filter(c => nhConfigs[c].apiKey && nhConfigs[c].apiSecret && nhConfigs[c].orgId && !isAggregate(c));
+          let bestPrice = null;
+          let bestResult = null;
+          for (const name of allClientNames) {
+            try {
+              const { client: singleClient } = resolveNhClient(name);
+              if (!singleClient || singleClient.isAggregate) continue;
+              const result = await getNiceHashApp(singleClient).hashpower.getOrderPrice(query);
+              const price = parseFloat(result?.price ?? result?.fixedPrice ?? 0);
+              if (Number.isFinite(price) && price > 0 && (bestPrice === null || price > bestPrice)) {
+                bestPrice = price;
+                bestResult = { ...result, nhClient: name };
+              }
+            } catch (e) {
+              // Try the next client.
+            }
+          }
+          if (bestResult) return bestResult;
+          const error = new Error('No NiceHash client returned a price for the order calculation.');
           error.statusCode = 404;
           throw error;
         },

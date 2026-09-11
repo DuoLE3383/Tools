@@ -19,6 +19,15 @@ let lastNotifiedOpportunities = new Map();
 let opportunityDb = null;
 let dbInitPromise = null;
 
+async function getStoredBtcPrice() {
+  try {
+    const prices = await getCoinPricesFromDb(["bitcoin"]);
+    return Number(prices?.bitcoin?.usd) || 0;
+  } catch {
+    return 0;
+  }
+}
+
 // =========================
 //  DB
 // =========================
@@ -90,10 +99,10 @@ async function sendMineTelegram(message) {
     return { ok: true, description: "Notifications disabled" };
   }
 
-  const botToken = process.env.TELEGRAM_MINE_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_GROUP_ID;
+  const botToken = process.env.TELEGRAM_MINE_BOT_TOKEN || process.env.TELEGRAM_TOKEN;
+  const chatId = process.env.TELEGRAM_GROUP_ID || process.env.TELEGRAM_ID;
   if (!botToken || !chatId) {
-    console.warn("[mine:tg] TELEGRAM_MINE_BOT_TOKEN or TELEGRAM_GROUP_ID not configured");
+    console.warn("[mine:tg] TELEGRAM_MINE_BOT_TOKEN/TELEGRAM_TOKEN or TELEGRAM_GROUP_ID/TELEGRAM_ID not configured");
     return null;
   }
   const text = String(message || "").trim();
@@ -122,7 +131,7 @@ async function sendMineTelegram(message) {
 // =========================
 //  Scrape HeroMiners
 // =========================
-export async function scrapeHeroMinersGlobal(force = true) {
+export async function scrapeHeroMinersGlobal(force = true, btcPrice = 0) {
   try {
     const res = await fetch("https://herominers.com/sitemap.xml", {
       headers: COMMON_HEADERS, signal: AbortSignal.timeout(10000),
@@ -159,6 +168,7 @@ export async function scrapeHeroMinersGlobal(force = true) {
         host, algorithm: algo,
         normalizedAlgo: normalizeAlgo(algo),
         miners, btcPerDay: priceBtc,
+        usdPerDay: priceBtc * Number(btcPrice || 0),
       });
     }
     return { success: true, coinStats };
@@ -255,11 +265,9 @@ function extractCoinNames(heroRows, dutchRows) {
   for (const row of heroRows || []) {
     if (row.coin) coinNames.add(row.coin.toUpperCase());
     if (row.subdomain) coinNames.add(row.subdomain.toUpperCase());
-    if (row.algorithm) coinNames.add(row.algorithm.toUpperCase());
   }
   for (const row of dutchRows || []) {
     if (row.coin) coinNames.add(row.coin.toUpperCase());
-    if (row.algorithm) coinNames.add(row.algorithm.toUpperCase());
   }
   return Array.from(coinNames);
 }
@@ -295,7 +303,7 @@ export async function scanMiningOpportunities(force = false) {
   await getBtcPrice(); // warm cache
 
   const [heroRes, dutchRes] = await Promise.all([
-    scrapeHeroMinersGlobal(),
+    scrapeHeroMinersGlobal(force, await getStoredBtcPrice()),
     scrapeMiningDutchGlobal(),
   ]);
 
@@ -408,9 +416,9 @@ export async function scanMiningOpportunities(force = false) {
   }
 
   const profitable = opportunities.filter((o) => o.profitStatus === "profitable");
-  if (profitable.length > 0) {
-    await sendMiningSummary(profitable.slice(0, 10));
-  }
+  // if (profitable.length > 0) {
+  //   await sendMiningSummary(profitable.slice(0, 10));
+  // }
 
   const positiveCount = opportunities.filter(o => (o.spreadPct ?? 0) > 0).length;
 
@@ -503,7 +511,7 @@ export function startMiningOpportunityScanner() {
     console.log("[mine:scan] Scanner already running");
     return;
   }
-  console.log("[mine:scan] Starting scanner (every 15 min)");
+  console.log("[mine:scan] Starting scanner (every hour)");
 
   // Initial scan
   scanMiningOpportunities(true).catch((err) => {
@@ -514,7 +522,7 @@ export function startMiningOpportunityScanner() {
     scanMiningOpportunities(false).catch((err) => {
       console.error("[mine:scan] Scheduled scan failed:", err.message);
     });
-  }, 600 * 60 * 1000);
+  }, 60 * 60 * 1000);
 }
 
 export function stopMiningOpportunityScanner() {

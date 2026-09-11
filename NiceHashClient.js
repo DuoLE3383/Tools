@@ -24,7 +24,7 @@ export class NiceHashClient {
    * Fetches server time to ensure synchronization.
    */
   async getServerTime() {
-    await this._delayFirstTime("getServerTime");
+    // await this._delayFirstTime("getServerTime");
     const response = await fetch(`${this.baseUrl}/api/v2/time`, {
       headers: { "User-Agent": "MiningTool/2.0" },
     });
@@ -80,7 +80,7 @@ export class NiceHashClient {
   }
 
   async call({ method, path, query = {}, body = null }) {
-    await this._delayFirstTime(path);
+    // await this._delayFirstTime(path);
 
     // Ensure path and query string are separated (in case query was included in the path string)
     const [cleanPath, pathQueryString] = path.split("?");
@@ -149,6 +149,7 @@ export class NiceHashClient {
       const error = new Error(errorMessage);
       error.statusCode = response.status;
       error.headers = response.headers;
+      error.upstream = "nicehash";
       throw error;
     }
     return response.json();

@@ -5,7 +5,7 @@ import { btcValue, compactNumber, percentValue } from "./miningWorkspaceData.js"
 import { useMiningWorkspace } from "./MiningWorkspaceProvider";
 import { useCoinPrice } from "./CoinPriceContext.jsx";
 import { getAlgoDisplayName } from "../../core/mapping.js";
-export default function MiningCoin({ onCall, nhClient = "VN" }) {
+export default function MiningCoin({ onCall, nhClient = "ALL" }) {
   const {
     opportunities: combinedRows,
     loading,
@@ -68,12 +68,12 @@ export default function MiningCoin({ onCall, nhClient = "VN" }) {
   const visibleRows = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return combinedRows.filter((row) => {
+      const hasReliableSpread =
+        Number.isFinite(row.bestSpreadPercent) && (row.bestSpreadPercent ?? 0) > 0;
+
       if (
         onlyProfitable &&
-        !(
-          row.spread > 0 ||
-          (row.miningDutchBtcPerDay > 0 && !row.niceHashPrice)
-        )
+        !(hasReliableSpread || (row.miningDutchBtcPerDay > 0 && !row.niceHashPrice))
       ) {
         return false;
       }
@@ -111,7 +111,7 @@ export default function MiningCoin({ onCall, nhClient = "VN" }) {
   }, [heroCoinStats, query]);
 
   const bestRow = visibleRows[0] || null;
-  const profitableCount = combinedRows.filter((row) => row.spread > 0).length;
+  const profitableCount = combinedRows.filter((row) => (row.bestSpreadPercent ?? 0) > 0).length;
 
   // Check which coins are available in the local DB
   const checkAvailableCoins = useCallback(async () => {
@@ -148,12 +148,12 @@ export default function MiningCoin({ onCall, nhClient = "VN" }) {
           <h3 style={{ margin: 0, color: "#e2e8f0" }}>
             Mining Coin Router {showHeroMiners && "with HeroMiners"}
           </h3>
-          <p style={{ margin: "4px 0 0", color: "#94a3b8", fontSize: "12px" }}>
+          <p style={{ margin: "4px 0 0", color: "#94a3b8", fontSize: "10px" }}>
             Match pool profitability to NiceHash and MRR algorithm names.
           </p>
         </div>
         <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
-          <label style={{ display: "flex", gap: "6px", alignItems: "center", color: "#94a3b8", fontSize: "11px" }}>
+          <label style={{ display: "flex", gap: "6px", alignItems: "center", color: "#94a3b8", fontSize: "10px" }}>
             <input
               type="checkbox"
               checked={showHeroMiners}
@@ -161,7 +161,7 @@ export default function MiningCoin({ onCall, nhClient = "VN" }) {
             />
             Show HeroMiners
           </label>
-          <label style={{ display: "flex", gap: "6px", alignItems: "center", color: "#94a3b8", fontSize: "11px" }}>
+          <label style={{ display: "flex", gap: "6px", alignItems: "center", color: "#94a3b8", fontSize: "10px" }}>
             <input
               type="checkbox"
               checked={onlyProfitable}
@@ -203,18 +203,18 @@ export default function MiningCoin({ onCall, nhClient = "VN" }) {
             borderRadius: "8px",
             color: "#e2e8f0",
             padding: "10px 12px",
-            fontSize: "12px",
+            fontSize: "10px",
           }}
         />
-        {error && <span style={{ color: "#f87171", fontSize: "12px" }}>{error}</span>}
-        {heroError && <span style={{ color: "#f87171", fontSize: "12px" }}>Hero: {heroError}</span>}
+        {error && <span style={{ color: "#f87171", fontSize: "10px" }}>{error}</span>}
+        {heroError && <span style={{ color: "#f87171", fontSize: "10px" }}>Hero: {heroError}</span>}
       </div>
 
       {/* Main Table or HeroMiners Table */}
       {showHeroMiners ? (
         // HeroMiners Table
         <div style={{ overflowX: "auto", border: "1px solid rgba(148,163,184,0.12)", borderRadius: "8px", background: "rgba(2,6,23,0.35)" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11px", minWidth: "780px" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "10px", minWidth: "780px" }}>
             <thead>
               <tr style={{ color: "#94a3b8", borderBottom: "1px solid rgba(148,163,184,0.12)" }}>
                 <HeaderCell align="left">Algorithm</HeaderCell>
@@ -301,7 +301,7 @@ export default function MiningCoin({ onCall, nhClient = "VN" }) {
       ) : (
         // Original Mining Routes Table
         <div style={{ overflowX: "auto", border: "1px solid rgba(148,163,184,0.12)", borderRadius: "8px", background: "rgba(2,6,23,0.35)" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11px", minWidth: "980px" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "10px", minWidth: "980px" }}>
             <thead>
               <tr style={{ color: "#94a3b8", borderBottom: "1px solid rgba(148,163,184,0.12)" }}>
                 <HeaderCell align="left">Algorithm</HeaderCell>
@@ -346,8 +346,8 @@ export default function MiningCoin({ onCall, nhClient = "VN" }) {
                     </BodyCell>
                     <BodyCell align="left" alt="nicehash-price">{btcValue(row.niceHashPrice)}</BodyCell>
                     <BodyCell align="left">
-                      <span style={{ color: row.spread > 0 ? "#34d399" : row.spread < 0 ? "#f87171" : "#94a3b8", fontWeight: 700 }}>
-                        {row.spread === null ? "N/A" : percentValue(row.spread)}
+                      <span style={{ color: (row.bestSpreadPercent ?? 0) > 0 ? "#34d399" : (row.bestSpreadPercent ?? 0) < 0 ? "#f87171" : "#94a3b8", fontWeight: 700 }}>
+                        {row.bestSpreadPercent === null ? "N/A" : percentValue(row.bestSpreadPercent)}
                       </span>
                     </BodyCell>
                     <BodyCell align="left">

@@ -38,6 +38,7 @@ const MrrPoolsManager = ({ defaultClient = 'ALL', onCall }) => {
           { name: 'BT', isDefault: true },
           { name: 'SL', isDefault: false },
           { name: 'LN', isDefault: false },
+          { name: 'HUDA', isDefault: false },
           { name: 'LUCKY', isDefault: false },
         ]);
       }
@@ -47,6 +48,7 @@ const MrrPoolsManager = ({ defaultClient = 'ALL', onCall }) => {
         { name: 'BT', isDefault: true },
         { name: 'SL', isDefault: false },
         { name: 'LN', isDefault: false },
+        { name: 'HUDA', isDefault: false },
         { name: 'LUCKY', isDefault: false },
       ]);
     } finally {
@@ -153,8 +155,9 @@ const MrrPoolsManager = ({ defaultClient = 'ALL', onCall }) => {
     BT: '#36d472b0',
     SL: '#d97706',
     LN: '#4708f3',
-    LUCKY: '#c0ec48',
-    VN: '#f31890',
+    HUDA: '#ff4141',
+    LUCKY: '#7e9e25',
+    ALL: '#f31890',
   };
 
   const getClientColor = (name) => {
@@ -228,7 +231,7 @@ const MrrPoolsManager = ({ defaultClient = 'ALL', onCall }) => {
                   {rig.name}
                   <br />
                   <span style={{
-                    fontSize: '11px',
+                    fontSize: '10px',
                     display: 'inline-block',
                     padding: '1px 6px',
                     borderRadius: '3px',

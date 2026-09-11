@@ -8,7 +8,10 @@ import {
   getAlgoMapping,
 } from "../../src/core/mapping.js";
 import { getBtcPriceData } from "../../src/core/priceUtils.js";
-import { sendTelegramInternal, getMonitorNhActiveOrders } from "../monitor.js";
+import { sendTelegramInternal } from "../monitor.js"; // sendTelegramInternal is now exported from rental-monitor
+
+// Import the aggregator from rental-monitor
+import { getAllNhActiveOrders } from "./rental-monitor.js";
 
 import { extractRentalInfo } from "../utils.js";
 import { getNiceHashPriceValue } from "../../src/core/mrrUtils.js";
@@ -54,10 +57,9 @@ export function isRealRental(rental, info, now = Date.now()) {
     }
 
     // Check for any sign of activity
-    // BUGFIX: Use separate variables per source. Do NOT let || chain hide zero values.
     const currentHashRaw = info.hashrate?.current;
     const averageHashRaw = info.hashrate?.average;
-    const currentHash = (currentHashRaw !== undefined && currentHashRaw !== null) ? parseFloat(currentHashRaw) : 0; // eslint-disable-line
+    const currentHash = (currentHashRaw !== undefined && currentHashRaw !== null) ? parseFloat(currentHashRaw) : 0;
     const averageHash = (averageHashRaw !== undefined && averageHashRaw !== null) ? parseFloat(averageHashRaw) : 0;
     const paidAmount = parseFloat(info.price?.paid || null);
     
@@ -99,31 +101,6 @@ export function isRealRental(rental, info, now = Date.now()) {
     return false;
 }
 
-/**
- * Fetches the price of an active NiceHash order that matches the rental's algorithm.
- * @param {object} rental - The MRR rental object.
- * @param {string} acct - The account name (e.g., 'BT', 'PH').
- * @returns {Promise<number|null>} The price of the matched order, or null if not found.
- */
-async function getNiceHashOrderPriceForRental(rental, acct) {
-        const nhAlgo = normalizeAlgoForNiceHash(rental.algo);
-        if (!nhAlgo || nhAlgo === "UNKNOWN" || nhAlgo === "N/A") {
-            return null;
-        }
-
-        const activeOrders = await getMonitorNhActiveOrders(acct);
-        const matchedOrder = activeOrders.find(
-            (order) => normalizeAlgoForNiceHash(order?.algorithm?.enumName || order?.algorithm || order?.algo) === nhAlgo
-        );
-
-        if (matchedOrder) {
-            const price = parseFloat(matchedOrder.price || 0);
-            return price > 0 ? price : null;
-        }
-
-    return null;
-}
-
 async function sendTelegramNotification(message, options = {}) {
     const text = String(message || "").trim();
     if (!text) return;
@@ -140,16 +117,18 @@ async function getPriceRoi(info, acct, now) {
         const nhAlgo = normalizeAlgoForNiceHash(info.algo);
         if (!nhAlgo || nhAlgo === "UNKNOWN" || nhAlgo === "N/A") throw new Error("Unsupported algorithm");
 
-        const cacheKey = `${nhAlgo}:${acct}`;
+        // Use global cache (no account in key)
+        const cacheKey = nhAlgo;
         const cachedError = monitorNhPriceErrorCache.get(cacheKey);
-        if (cachedError && now - cachedError.ts < 10 * 60 * 1000) {
+        if (cachedError && now - cachedError.ts < 5 * 60 * 1000) {
             throw new Error(cachedError.message);
         }
 
         let nhP = monitorNhPriceCache.get(cacheKey);
 
         if (!nhP) {
-            const activeOrders = await getMonitorNhActiveOrders(acct);
+            // Fetch from ALL providers using the aggregator
+            const activeOrders = await getAllNhActiveOrders();
             const matchedOrder = activeOrders.find(
                 (order) => normalizeAlgoForNiceHash(order?.algorithm || order?.algo || order?.type) === nhAlgo
             );
@@ -208,22 +187,13 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
     const average = parseFloat(info.hashrate?.average || 0);
     const suffix = info.hashrate?.suffix || "H/s";
 
-    // BUGFIX: Get current hashrate DIRECTLY from extractRentalInfo output.
-    // Do NOT fall back to rental?.hashrate?.current -- that bypasses the
-    // extraction logic and can hide a true 0 value (stalled rig).
-    // extractRentalInfo already merges liveRig data and tries all sources.
     const current = parseFloat(info.hashrate?.current || 0);
 
-    // Log raw values for debugging
     console.debug(`[monitor] ${rental.id} - Raw: current=${current}, avg=${average}, adv=${advertised}`);
 
     // ============================================================
     // FORMAT HASHRATE VALUES FOR DISPLAY
     // ============================================================
-    // BUGFIX: If current is 0 but average is non-zero, the rig IS hashing.
-    // The current value is just stale (e.g. empty 15-min window).
-    // Show the average as the "current" for display, and only show
-    // the warning when BOTH current AND average are 0 (truly stalled).
     let currentDisplay;
     if (current > 0) {
       currentDisplay = formatHashrate(current, suffix);
@@ -238,7 +208,6 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
         ? formatHashrate(advertised, suffix)
         : "0 H/s";
 
-    // Log formatted values for debugging
     console.debug(`[monitor] ${rental.id} - Formatted: cur=${currentDisplay}, avg=${avgDisplay}, adv=${advDisplay}`);
 
     const totalExpectedHashes = advertised * (totalDurationMs / 1000);
@@ -262,7 +231,7 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET 
            name=excluded.name, client=excluded.client, algo=excluded.algo, order_diff=excluded.order_diff, start_time=excluded.start_time, end_time=excluded.end_time, target_100=excluded.target_100, last_updated=excluded.last_updated, low_hashrate_start=excluded.low_hashrate_start, zero_hashrate_start=excluded.zero_hashrate_start, current_hashrate=excluded.current_hashrate, average_hashrate=excluded.average_hashrate, advertised_hashrate=excluded.advertised_hashrate, price_paid=excluded.price_paid`,
-        [String(rental.id), liveRig?.name || rental.name || rental.id, acct, startT, endT, info.algo, displayTarget, orderDiff, now, lowHashStart, zeroHashStart, current, average, advertised, info.price.paid, lastNotified] // eslint-disable-line
+        [String(rental.id), liveRig?.name || rental.name || rental.id, acct, startT, endT, info.algo, displayTarget, orderDiff, now, lowHashStart, zeroHashStart, current, average, advertised, info.price.paid, lastNotified]
     ).catch(err => console.error(`[monitor:db] Upsert error for ${rental.id}: ${err.message}`));
 
     if (startT > 0) {
@@ -275,7 +244,7 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
         if (now - lowHashStart >= 900000) {
             const alertKey = `${rental.id}_low_50`;
             if (now - (lastAlertTimes.get(alertKey) || 0) > ALERT_COOLDOWN_MS) {
-                const msg = TelegramTemplates.efficiency(acct, rental, info, efficiency, displayTarget, info.algo);
+                const msg = TelegramTemplates.efficiency(acct, rental, info, efficiency, displayTarget, info.algo, advDisplay);
                 sendTelegramNotification(msg, { type: "LOW EFFICIENCY", label: `Low efficiency ${acct} ${rental.id}` });
                 lastAlertTimes.set(alertKey, now);
             }
@@ -290,7 +259,7 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
         if (now - zeroHashStart >= 600000 && isTrulyStalled) {
             const alertKey = `${rental.id}_zero_10m`;
             if (now - (lastAlertTimes.get(alertKey) || 0) > ALERT_COOLDOWN_MS) {
-                const msg = TelegramTemplates.zeroHashrate(acct, rental, info, info.algo, advDisplay);
+                const msg = TelegramTemplates.zeroHashrate(acct, rental, info, info.algo);
                 sendTelegramNotification(msg, { type: "ZERO HASHRATE", label: `Zero hashrate ${acct} ${rental.id}` });
                 lastAlertTimes.set(alertKey, now);
             }
@@ -301,7 +270,7 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
 
     // --- New Rental Notification ---
     const isNewToMonitor = lastNotified === 0;
-    const withinReasonableStart = startT > 0 && elapsedMs < 10 * 60 * 1000;
+    const withinReasonableStart = startT > 0 && elapsedMs < 5 * 60 * 1000;
     const alreadyNotifiedThisRun = notifiedRentalIdsThisRun.has(String(rental.id));
     if (!alreadyNotifiedThisRun && (forceNotify || (isNewToMonitor && withinReasonableStart))) {
         notifiedRentalIdsThisRun.add(String(rental.id));
@@ -311,7 +280,16 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
         const remM = Math.floor((remainingMs % 3600000) / 60000);
         const remStr = remainingMs <= 0 ? "Finished" : remD > 0 ? `${remD}d ${remH}h` : `${remH}h ${remM}m`;
         const rentalForNotice = { ...rental, name: liveRig?.name || rental.name || rental.id };
-        const msg = TelegramTemplates.rentedNotice(hbType, rentalForNotice, info, acct, remStr, info.algo, advDisplay);
+        const msg = TelegramTemplates.rentedNotice(
+            hbType,
+            rentalForNotice,
+            info,
+            acct,
+            orderDiff,
+            remStr,
+            info.algo,
+            advDisplay,
+        );
 
         sendTelegramNotification(msg, {
             type: hbType,
@@ -336,31 +314,27 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
     const remM_s = Math.floor((remainingMs % 3600000) / 60000);
 
     const remStr_s = isFinished_s ? "Finished" : hasEndTime ? (remD_s > 0 ? `${remD_s}d ${remH_s}h` : `${remH_s}h ${remM_s}m`) : "Active";
-    const perfEmoji = efficiency >= 100 ? "✅" : efficiency >= 90 ? "🟢" : efficiency >= 70 ? "🔵" : efficiency >= 50 ? "🟡" : "🔴"; // eslint-disable-line no-nested-ternary
+    const perfEmoji = efficiency >= 100 ? "✅" : efficiency >= 90 ? "🟢" : efficiency >= 70 ? "🔵" : efficiency >= 50 ? "🟡" : "🔴";
 
-    const nhOrderPrice = await getNiceHashOrderPriceForRental(rental, acct);
-    info.nicehashPrice = nhOrderPrice;
     // ============================================================
     // BUILD ACTIVE RENTAL LINE
     // ============================================================
     console.debug(`[monitor] ${rental.id} - Display: cur=${currentDisplay}, avg=${avgDisplay}, adv=${advDisplay}`);
 
-    // ============================================================
-    // BUILD ACTIVE RENTAL LINE WITH CORRECT PARAMETER ORDER with core/telegram.js
-    // ============================================================
     const activeRentalLine = TelegramTemplates.activeRentalLine(
-        perfEmoji,                    // 1: perfEmoji
-        getAlgoMapping(info.algo).displayName, // 2: algo
-        liveRig?.name || rental.name || rental.id, // 3: name
-        remStr_s,                     // 4: remaining
-        efficiency,                   // 5: efficiency (Correct)
-        orderDiff,                    // 6: roi (Correct)
-        avgDisplay,                   // 7: avg
-        advDisplay,                   // 8: ads
-        currentDisplay,               // 9: cur (now with fallback)
-        displayTarget,                // 10: target
-        acct,                         // 12: client
-        info                          // 13: info
+        perfEmoji,
+        getAlgoMapping(info.algo).displayName,
+        liveRig?.name || rental.name || rental.id,
+        remStr_s,
+        efficiency,
+        orderDiff,
+        avgDisplay,
+        advDisplay,
+        currentDisplay,
+        displayTarget,
+        '',
+        acct,
+        info
     );
 
     return {

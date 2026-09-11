@@ -81,20 +81,19 @@ export const RigPriceSection = ({
         >
           {paidLabel || "N/A"}
         </div>
-        {paidBtcAmount > 0 &&
-          String(paidCurrency || "").toUpperCase() !== "BTC" && (
-            <div
-              style={{
-                color: "#86efac",
-                fontWeight: 700,
-                fontSize: "9px",
-                marginTop: "3px",
-              }}
-            >
-              ~ {paidBtcAmount.toFixed(8)} BTC
-            </div>
-          )}
-        {usdValue > 0 &&
+        {paidBtcAmount > 0 && String(paidCurrency || "").toUpperCase() !== "BTC" && (
+          <div
+            style={{
+              color: "#86efac",
+              fontWeight: 700,
+              fontSize: "9px",
+              marginTop: "3px",
+            }}
+          >
+            ~ {paidBtcAmount.toFixed(8)} BTC
+          </div>
+        )}
+        {usdValue > 0 && (
           String(paidCurrency || "").toUpperCase() !== "USD" && (
             <div
               style={{
@@ -106,7 +105,8 @@ export const RigPriceSection = ({
             >
               ~ ${usdValue.toFixed(2)} USD
             </div>
-          )}
+          )
+        )}
       </div>
 
       {/* MRR & NiceHash Rates */}

@@ -1,12 +1,11 @@
-// MiningRigRental.jsx - RESPONSIVE FULL-WIDTH REDESIGN
+// MiningRigRental.jsx - FIXED VERSION (Correct client separation)
 
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import MrrRigs from "./MrrRigs";
 import Modal from "../Modal";
 import TelegramManager, { useTelegram } from "../TelegramManager";
 import { calculateRemainingTime, toUtcTimestamp } from "../../core/time";
-import ErrorBoundary from "../ErrorBoundary"; 
-import CryptoRatePage from "../../../CryptoRatePage.jsx"; 
+import ErrorBoundary from "../ErrorBoundary";
 
 // ============================================
 // UTILITY FUNCTIONS
@@ -265,13 +264,15 @@ export function MrrPoolsTable({ data }) {
 }
 
 // ============================================
-// MAIN COMPONENT
+// MAIN COMPONENT (FIXED: added nhClient props)
 // ============================================
 
 export default function MiningRigRental({
   onCall,
   mrrClient,
   setMrrClient,
+  nhClient,           // ✅ New prop
+  setNhClient,        // ✅ New prop
   algorithm,
   onOpenMrrPools,
   onOpenCompletionCalculator,
@@ -281,15 +282,17 @@ export default function MiningRigRental({
   const [modalData, setModalData] = useState(null);
   const [modalLoading, setModalLoading] = useState(false);
 
-  const tg = useTelegram(onCall, mrrClient);
+  const tg = useTelegram(onCall, mrrClient); // MRR notifications – correct
 
   const [rentals, setRentals] = useState([]);
   const [loadingRentals, setLoadingRentals] = useState(false);
+  const [exportingRentals, setExportingRentals] = useState(false);
 
   const [mrrSummaryData, setMrrSummaryData] = useState(null);
   const lastSummarySentTime = useRef(0);
   const [newRentalFound, setNewRentalFound] = useState(null);
   const knownRentalIds = useRef(new Set());
+  const completedRentalIds = useRef(new Set());
   const notifiedAlerts = useRef(new Set());
   const conditionTimers = useRef(new Map());
   const fetchInFlightRef = useRef(false);
@@ -316,6 +319,15 @@ export default function MiningRigRental({
           return endTs > now;
         });
 
+        const currentActiveIds = new Set(newList.map(r => String(r.id)));
+        const completedIds = [];
+        for (const knownId of knownRentalIds.current) {
+          if (!currentActiveIds.has(knownId) && !completedRentalIds.current.has(knownId)) {
+            completedIds.push(knownId);
+            completedRentalIds.current.add(knownId);
+          }
+        }
+
         const fresh = newList.find((r) => {
           const isKnown = knownRentalIds.current.has(String(r.id));
           const startTime = toUtcTimestamp(r.start);
@@ -324,11 +336,31 @@ export default function MiningRigRental({
 
         if (fresh) {
           setNewRentalFound(fresh);
+          tg.notifyNewRental(fresh).catch(() => {});
           if (Notification.permission === "granted") {
             new Notification(`Rig Rented: ${fresh.name || fresh.id}`, {
               body: `New rental active for ${fresh.hours}h`,
             });
           }
+        }
+
+        if (completedIds.length > 0) {
+          const completedRentalIdsList = completedIds;
+          onCall(`/api/v2/mrr/rentals?client=${mrrClient}`, { silent: true, query: { limit: 200 } }).then(fullResult => {
+            if (fullResult?.success) {
+              const fullList = extractArray(fullResult);
+              const completedRentals = fullList.filter(r => completedRentalIdsList.includes(String(r.id)));
+              if (completedRentals.length > 0) {
+                const comp = completedRentals[0];
+                if (Notification.permission === "granted") {
+                  new Notification(`✅ Rental Completed: ${comp.name || comp.id}`, {
+                    body: `Rig finished mining. Efficiency: ${comp.percent || 'N/A'}%`,
+                  });
+                }
+              }
+            }
+          }).catch(() => {});
+          tg.notifyRentalCompleted(completedRentalIdsList).catch(() => {});
         }
 
         newList.forEach((r) => {
@@ -419,7 +451,7 @@ export default function MiningRigRental({
         tg.notifyHeartbeatSummary({ ...mrrSummaryData, rentedAll: currentRentals.length, rented24h });
         lastSummarySentTime.current = Date.now();
       }
-    }, 900000);
+    }, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, [mrrSummaryData, rentals, tg]);
 
@@ -471,11 +503,72 @@ export default function MiningRigRental({
       return { success: false, message: err.message };
     }
   };
-  const [isCryptoRateModalOpen, setIsCryptoRateModalOpen] = useState(false);
+
+  const handleExportRentals = useCallback(async () => {
+    setExportingRentals(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('/api/v2/mrr/rentals/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ client: mrrClient || 'ALL' }),
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        let message = `Export failed (${response.status})`;
+        try { message = (await response.json()).error || message; } catch { /* Non-JSON error response */ }
+        throw new Error(message);
+      }
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'rentals.xlsx';
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Rental XLSX export failed:', error);
+      window.alert(error.message || 'Unable to export rental data.');
+    } finally {
+      setExportingRentals(false);
+    }
+  }, [mrrClient]);
+
+  // ============================================
+  // NiceHash price update modal (FIXED: uses nhClient)
+  // ============================================
+  const [updateRatesModal, setUpdateRatesModal] = useState({
+    open: false,
+    loading: false,
+    result: null,
+    premium: 0,
+    selectedNhClient: nhClient || 'ALL', // local state for the dropdown inside modal
+  });
+
+  const handleUpdateNiceHashRates = useCallback(async () => {
+    setUpdateRatesModal(prev => ({ ...prev, loading: true, result: null }));
+    try {
+      const clientToUse = updateRatesModal.selectedNhClient || 'ALL';
+      const result = await onCall('/api/v2/hashpower/orders/update-prices', {
+        method: 'POST',
+        body: { client: clientToUse, premium: updateRatesModal.premium },
+        silent: true,
+      });
+      setUpdateRatesModal(prev => ({ ...prev, loading: false, result }));
+    } catch (err) {
+      setUpdateRatesModal(prev => ({ ...prev, loading: false, result: { success: false, error: err.message } }));
+    }
+  }, [onCall, updateRatesModal.selectedNhClient, updateRatesModal.premium]);
+
+  // When the modal opens, sync its selected client with the current nhClient prop
+  useEffect(() => {
+    if (updateRatesModal.open && nhClient) {
+      setUpdateRatesModal(prev => ({ ...prev, selectedNhClient: nhClient }));
+    }
+  }, [updateRatesModal.open, nhClient]);
 
   return (
-    <div className="rig-section" style={{ 
-      padding: "0 clamp(12px, 1.5vw, 24px)", 
+    <div className="rig-section" style={{
+      padding: "0 clamp(12px, 1.5vw, 24px)",
       width: "100%",
       maxWidth: "none",
       margin: "0 auto",
@@ -484,85 +577,68 @@ export default function MiningRigRental({
     }}>
       {/* Header */}
       <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: "16px", marginBottom: "20px", paddingBottom: "16px", borderBottom: '1px solid rgba(148, 163, 184, 0.15)' }}>
-        {/* Left side of header */}
         <h2 className="section-title" style={{ margin: 0, fontSize: "clamp(1rem, 2vw, 1.25rem)" }}>
           ⛏️ Mining Rig Rentals
         </h2>
-        <button className="btn-pro secondary" onClick={() => openManagementModal("list")} style={{ fontSize: "clamp(10px, 1vw, 12px)", padding: "4px 12px" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center" }}>
+          <button className="btn-pro secondary" onClick={() => openManagementModal("list")} style={{ fontSize: "clamp(10px, 1vw, 12px)", padding: "4px 12px" }}>
             📋 Rigs
           </button>
-          <button className="btn-pro secondary" onClick={() => setIsCryptoRateModalOpen(true)} style={{ fontSize: "clamp(10px, 1vw, 12px)", padding: "4px 12px" }}>
-            🚦Update Nicehash Rates
+          <button className="btn-pro primary" onClick={() => setUpdateRatesModal(prev => ({ ...prev, open: true, loading: false, result: null, premium: 0 }))} style={{ fontSize: "clamp(10px, 1vw, 12px)", padding: "4px 12px" }}>
+            🚦 Update Nicehash Rates
           </button>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center" }}>
-          {/* Right side of header */}
-          
+          <button
+            className="btn-pro secondary"
+            onClick={handleExportRentals}
+            disabled={exportingRentals}
+            title="Downloads the latest rental workbook. The server also refreshes it once each day."
+            style={{ fontSize: "clamp(10px, 1vw, 12px)", padding: "4px 12px" }}
+          >
+            {exportingRentals ? "Exporting..." : "Export Rental Data"}
+          </button>
           <select
             className="select-pro"
-            value={mrrClient || "VN"}
+            value={mrrClient || "ALL"}
             onChange={(e) => setMrrClient(e.target.value)}
             style={{ fontSize: "clamp(10px, 1vw, 12px)", padding: "4px 8px", minWidth: "120px" }}
           >
-            <option value="VN">🌐 All Clients</option>
+            <option value="ALL">🌐 MRR: All Clients</option>
             <option value="BT">BT</option>
             <option value="SL">SL</option>
             <option value="LN">LN</option>
+            <option value="HUDA">HUDA</option>
             <option value="LUCKY">LUCKY</option>
           </select>
-          
-
-          
-          {/* <button className="btn-pro secondary" onClick={() => onCall("/api/v2/mrr/balance", { query: { client: mrrClient }, showModal: true })} style={{ fontSize: "clamp(10px, 1vw, 12px)", padding: "4px 12px" }}>
-            💰 Balance
-          </button> */}
-          {/* <TelegramManager onCall={onCall} mrrClient={mrrClient} /> */}
         </div>
       </div>
 
-      {/* Quick Stats */}
-      {/* <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))", gap: "8px", marginBottom: "12px" }}>
-        <div style={{ background: "rgba(255,255,255,0.03)", padding: "8px 12px", borderRadius: "6px", textAlign: "center" }}>
-          <div style={{ fontSize: "10px", opacity: 0.5 }}>Active</div>
-          <div style={{ fontSize: "clamp(16px, 2vw, 20px)", fontWeight: "bold", color: "#a78bfa" }}>{rentals.length}</div>
-        </div>
-        <div style={{ background: "rgba(255,255,255,0.03)", padding: "8px 12px", borderRadius: "6px", textAlign: "center" }}>
-          <div style={{ fontSize: "10px", opacity: 0.5 }}>Available</div>
-          <div style={{ fontSize: "clamp(16px, 2vw, 20px)", fontWeight: "bold", color: "#10b981" }}>0</div>
-        </div>
-        <div style={{ background: "rgba(255,255,255,0.03)", padding: "8px 12px", borderRadius: "6px", textAlign: "center" }}>
-          <div style={{ fontSize: "10px", opacity: 0.5 }}>Offline</div>
-          <div style={{ fontSize: "clamp(16px, 2vw, 20px)", fontWeight: "bold", color: "#f87171" }}>0</div>
-        </div>
-        <div style={{ background: "rgba(255,255,255,0.03)", padding: "8px 12px", borderRadius: "6px", textAlign: "center" }}>
-          <div style={{ fontSize: "10px", opacity: 0.5 }}>Workers</div>
-          <div style={{ fontSize: "clamp(16px, 2vw, 20px)", fontWeight: "bold", color: "#60a5fa" }}>0</div>
-        </div>
-      </div> */}
-
-      {/* New Rental Notification Modal */}
-      <Modal isOpen={!!newRentalFound} onClose={() => setNewRentalFound(null)} title="🚀 New Rig Rented!" maxWidth="500px">
-        <div style={{ textAlign: "center", padding: "20px" }}>
-          <div style={{ width: "60px", height: "60px", background: "rgba(16,185,129,0.2)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px", color: "#10b981", fontSize: "24px" }}>✔</div>
-          <h3 style={{ margin: "0 0 10px 0" }}>{newRentalFound?.name || `Rental #${newRentalFound?.id}`}</h3>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "15px", marginBottom: "20px" }}>
-            <div style={{ background: "rgba(255,255,255,0.05)", padding: "10px", borderRadius: "6px" }}>
-              <div style={{ fontSize: "10px", opacity: 0.5 }}>ALGORITHM</div>
-              <div style={{ fontWeight: "bold", color: "#60a5fa" }}>{newRentalFound?.algo || "N/A"}</div>
-            </div>
-            <div style={{ background: "rgba(255,255,255,0.05)", padding: "10px", borderRadius: "6px" }}>
-              <div style={{ fontSize: "10px", opacity: 0.5 }}>DURATION</div>
-              <div style={{ fontWeight: "bold", color: "#fbbf24" }}>{newRentalFound?.hours} Hours</div>
+      {/* New Rental Notification Banner */}
+      {newRentalFound && (
+        <div style={{
+          marginBottom: "16px",
+          padding: "12px 14px",
+          borderRadius: "10px",
+          background: "linear-gradient(90deg, rgba(16,185,129,0.18), rgba(37,99,235,0.14))",
+          border: "1px solid rgba(16,185,129,0.28)",
+          color: "#d1fae5",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: "12px",
+          flexWrap: "wrap",
+        }}>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: "13px" }}>🚀 New rental detected</div>
+            <div style={{ fontSize: "12px", opacity: 0.9 }}>
+              {newRentalFound?.name || `Rental #${newRentalFound?.id}`} • {newRentalFound?.algo || "N/A"} • {newRentalFound?.hours}h
             </div>
           </div>
-          <div style={{ background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.3)", padding: "12px", borderRadius: "6px", color: "#34d399", fontSize: "13px", marginBottom: "20px" }}>
-            This rig has been successfully added to your active rentals.
-          </div>
-          <div className="modal-actions" style={{ justifyContent: "center" }}>
-            <button className="btn-pro primary" onClick={() => { setNewRentalFound(null); openManagementModal("rental"); }}>View All Rentals</button>
-            <button className="btn-pro secondary" onClick={() => setNewRentalFound(null)}>Dismiss</button>
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+            <button className="btn-pro primary" onClick={() => { setNewRentalFound(null); openManagementModal("rental"); }} style={{ fontSize: "10px", padding: "4px 10px" }}>View Rentals</button>
+            <button className="btn-pro secondary" onClick={() => setNewRentalFound(null)} style={{ fontSize: "10px", padding: "4px 10px" }}>Dismiss</button>
           </div>
         </div>
-      </Modal>
+      )}
 
       {/* Inline Quick View */}
       <div style={{ marginTop: "16px" }}>
@@ -659,6 +735,126 @@ export default function MiningRigRental({
           <button className="btn-pro secondary" onClick={() => setActiveModal(null)}>Close</button>
         </div>
       </Modal>
+
+      {/* NiceHash Update Rates Modal (FIXED) */}
+      <Modal isOpen={updateRatesModal.open} onClose={() => setUpdateRatesModal(prev => ({ ...prev, open: false }))} title="🚦 Update NiceHash Order Prices" maxWidth="700px">
+        <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          {!updateRatesModal.loading && !updateRatesModal.result && (
+            <>
+              <div style={{ color: '#94a3b8', fontSize: '12px' }}>
+                This will update all <strong>ACTIVE</strong> NiceHash orders to current market prices.
+                Orders already within 1% of market price will be skipped.
+              </div>
+              {/* NiceHash client selector */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <label style={{ color: '#94a3b8', fontSize: '11px', whiteSpace: 'nowrap' }}>NH Client:</label>
+                <select
+                  className="select-pro"
+                  value={updateRatesModal.selectedNhClient}
+                  onChange={(e) => setUpdateRatesModal(prev => ({ ...prev, selectedNhClient: e.target.value }))}
+                  style={{ fontSize: '11px', padding: '4px 8px', flex: 1 }}
+                >
+                  <option value="ALL">🌐 All Clients</option>
+                  <option value="BT">BT</option>
+                  <option value="PH">PH</option>
+                  <option value="PH3">PH3</option>
+                  <option value="HUDA">HUDA</option>
+                  <option value="LN">LN</option>
+                  <option value="XT">XT</option>
+                  <option value="NHATLINH">NhatLinh</option>
+                </select>
+              </div>
+              {/* Premium slider */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <label style={{ color: '#94a3b8', fontSize: '11px', whiteSpace: 'nowrap' }}>Premium %:</label>
+                <input
+                  type="range"
+                  min="0"
+                  max="20"
+                  step="1"
+                  value={updateRatesModal.premium * 100}
+                  onChange={(e) => setUpdateRatesModal(prev => ({ ...prev, premium: parseFloat(e.target.value) / 100 }))}
+                  style={{ flex: 1 }}
+                />
+                <span style={{ color: '#fbbf24', fontWeight: 700, fontSize: '13px', minWidth: '50px', textAlign: 'right' }}>
+                  {(updateRatesModal.premium * 100).toFixed(0)}%
+                </span>
+              </div>
+              <div style={{ color: '#64748b', fontSize: '10px', textAlign: 'center' }}>
+                Prices will be set to market rate {updateRatesModal.premium > 0 ? `+ ${(updateRatesModal.premium * 100).toFixed(0)}%` : ''}
+              </div>
+              <button className="btn-pro primary" onClick={handleUpdateNiceHashRates} style={{ padding: '8px', fontSize: '13px', fontWeight: 900 }}>
+                🚀 Update All Orders
+              </button>
+            </>
+          )}
+          {updateRatesModal.loading && (
+            <div style={{ textAlign: 'center', padding: '30px', color: '#94a3b8' }}>
+              ⏳ Fetching market prices and updating orders...
+            </div>
+          )}
+          {updateRatesModal.result && !updateRatesModal.loading && (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '8px' }}>
+                <SummaryBox label="Updated" value={updateRatesModal.result.summary?.updated || 0} color="#34d399" />
+                <SummaryBox label="Skipped" value={updateRatesModal.result.summary?.skipped || 0} color="#94a3b8" />
+                <SummaryBox label="Errors" value={updateRatesModal.result.summary?.errors || 0} color="#f87171" />
+              </div>
+              {updateRatesModal.result.error && (
+                <div style={{ color: '#f87171', fontSize: '12px', padding: '8px', background: 'rgba(248,113,113,0.1)', borderRadius: '6px' }}>
+                  ⚠ {updateRatesModal.result.error}
+                </div>
+              )}
+              {updateRatesModal.result.results?.length > 0 && (
+                <div style={{ maxHeight: '250px', overflowY: 'auto', background: 'rgba(0,0,0,0.15)', borderRadius: '6px' }}>
+                  <table style={{ width: '100%', fontSize: '10px', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid rgba(148,163,184,0.1)', color: '#94a3b8' }}>
+                        <th style={{ padding: '4px', textAlign: 'left' }}>Client</th>
+                        <th style={{ padding: '4px', textAlign: 'left' }}>Algo</th>
+                        <th style={{ padding: '4px', textAlign: 'right' }}>Old</th>
+                        <th style={{ padding: '4px', textAlign: 'right' }}>New</th>
+                        <th style={{ padding: '4px', textAlign: 'center' }}>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {updateRatesModal.result.results.map((clientResult, ci) => (
+                        (clientResult.orders || []).map((o, oi) => (
+                          <tr key={`${ci}-${oi}`} style={{ borderBottom: '1px solid rgba(148,163,184,0.04)' }}>
+                            <td style={{ padding: '3px 4px', color: '#60a5fa' }}>{clientResult.client}</td>
+                            <td style={{ padding: '3px 4px' }}>{o.algorithm || '-'}</td>
+                            <td style={{ padding: '3px 4px', textAlign: 'right', color: '#64748b' }}>{o.oldPrice?.toFixed(8) || '-'}</td>
+                            <td style={{ padding: '3px 4px', textAlign: 'right', color: o.status === 'updated' ? '#34d399' : '#64748b' }}>
+                              {o.newPrice?.toFixed(8) || '-'}
+                            </td>
+                            <td style={{ padding: '3px 4px', textAlign: 'center' }}>
+                              {o.status === 'updated' ? <span style={{ color: '#34d399' }}>✅</span> :
+                               o.status === 'skipped' ? <span style={{ color: '#94a3b8' }}>➖</span> :
+                               <span style={{ color: '#f87171' }}>❌</span>}
+                            </td>
+                          </tr>
+                        ))
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <button className="btn-pro secondary" onClick={() => setUpdateRatesModal(prev => ({ ...prev, open: false }))} style={{ padding: '6px' }}>
+                Close
+              </button>
+            </>
+          )}
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
+function SummaryBox({ label, value, color }) {
+  return (
+    <div style={{ background: 'rgba(0,0,0,0.15)', borderRadius: '6px', padding: '10px', textAlign: 'center' }}>
+      <div style={{ color: '#64748b', fontSize: '9px', textTransform: 'uppercase', marginBottom: '2px' }}>{label}</div>
+      <div style={{ color, fontSize: '20px', fontWeight: 900 }}>{value}</div>
     </div>
   );
 }

@@ -7,7 +7,7 @@
   "RANDOMXMONERO": { "displayName": "RandomX", "niceHash": "RANDOMXMONERO", "unit": "MH", "niceHashUnit": "GH", "mrrUnit": "MH" },
   "KAWPOW": { "displayName": "KawPow", "niceHash": "KAWPOW", "unit": "GH", "niceHashUnit": "TH", "mrrUnit": "GH" },
   "DAGGERHASHIMOTO": { "displayName": "DaggerHashimoto", "niceHash": "DAGGERHASHIMOTO", "unit": "MH", "niceHashUnit": "TH", "mrrUnit": "MH" },
-  "ETCHASH": { "displayName": "ETCHash", "niceHash": "ETCHASH", "unit": "MH", "niceHashUnit": "TH", "mrrUnit": "MH" },
+  "ETCHASH": { "displayName": "ETCHash", "niceHash": "ETCHASH", "unit": "GH", "niceHashUnit": "TH", "mrrUnit": "GH" },
   "EQUIHASH": { "displayName": "Equihash", "niceHash": "EQUIHASH", "unit": "Gsol", "niceHashUnit": "GSol", "mrrUnit": "Gsol" },
   "CRYPTONIGHT": { "displayName": "CryptoNight", "niceHash": "CRYPTONIGHT", "unit": "MH", "niceHashUnit": "TH", "mrrUnit": "MH" },
   "CRYPTONIGHTV7": { "displayName": "CryptoNightV7", "niceHash": "CRYPTONIGHTV7", "unit": "MH", "niceHashUnit": "TH", "mrrUnit": "MH" },
@@ -63,7 +63,7 @@
   "SCRYPTJANENX16": { "displayName": "ScryptJaneN16", "niceHash": "SCRYPTJANENX16", "unit": "kH", "niceHashUnit": "TH", "mrrUnit": "kH" },
   "BLAKE256R8VNL": { "displayName": "Blake (256r8vnl)", "niceHash": "BLAKE256R8VNL", "unit": "MH", "niceHashUnit": "TH", "mrrUnit": "MH" },
   "SHA256AB": { "displayName": "SHA256AsicBoost", "niceHash": "SHA256ASICBOOST", "unit": "EH" },
-  "HASHIMOTOS": { "displayName": "DaggerHashimoto", "niceHash": "DAGGERHASHIMOTO", "unit": "MH" },
+  "HASHIMOTOS": { "displayName": "DaggerHashimoto", "niceHash": "DAGGERHASHIMOTO", "unit": "TH" },
   "ETHASH": { "displayName": "DaggerHashimoto", "niceHash": "DAGGERHASHIMOTO", "unit": "MH" },
   "RANDOMX": { "displayName": "RandomX", "niceHash": "RANDOMXMONERO", "unit": "kH" },
   "KASPA": { "displayName": "kHeavyHash", "niceHash": "KHEAVYHASH", "unit": "EH" }

@@ -91,8 +91,9 @@ export function setupWebSocket(server) {
     });
     
     // Handle close
-    ws.on('close', () => {
-      console.log(`[WS] Connection closed for session: ${sessionId}`);
+    ws.on('close', (code, reason) => {
+      const closeReason = reason?.toString() || 'no reason';
+      console.log(`[WS] Connection closed for client: ${clientId} (${code}; ${closeReason})`);
     });
     
     // Handle errors

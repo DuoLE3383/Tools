@@ -9,6 +9,7 @@ import { logRequestMiddleware } from './utils.js';
 import { runRentalMonitor } from './monitor.js';
 import { startMiningOpportunityScanner } from './miningOpportunityNotifier.js'; 
 import authRoutes, { validateAuthConfig } from './auth.js';
+import { startDailyMrrRentalExport } from './mrr/rental-xlsx-export.js';
 
 export function createApp({ distPath }) {
   const app = express();
@@ -20,6 +21,7 @@ export function createApp({ distPath }) {
     'https://huyenbao.com',
     'https://www.huyenbao.com',
     'https://api.huyenbao.com',
+    'https://*.huyenbao.com',
     'http://localhost:1757', // Vite dev server from vite.config.js
     'http://localhost:3003', // Backend itself for self-requests
   ];
@@ -70,19 +72,20 @@ export async function initializeApp(env) {
   }
 
   const db = await getDb();
+  startDailyMrrRentalExport();
   const syncManager = new SyncManager({ db, nhConfigs, mrrConfigs, mrrApiCall, resolveNhClient, getNiceHashApp });
   syncManager.run();
 
   // Start the monitor: first a force heartbeat after 15s (once DB/API are warm),
-  // then recurse every 60s for routine scans (non-force)
+  // then recurse every 10 min for routine scans (non-force)
   const startMonitor = async () => {
     try {
       await runRentalMonitor();
     } catch (err) {
       console.error('[Monitor] Loop error:', err.message);
     } finally {
-      // Schedule next run in 60s
-      setTimeout(startMonitor, 60000);
+      // Schedule next run in 10 min
+      setTimeout(startMonitor, 600000);
     }
   };
 

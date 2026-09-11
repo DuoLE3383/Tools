@@ -6,14 +6,24 @@ import {
   getAlgorithmUnit,
   mapNiceHashToMRR,
   normalizeAlgoForNiceHash,
-  normalizeAlgo,
   NICEHASH_ALGO_MAP,  // ✅ Added for fallback
-} from "../../core/mapping";
-import { getBtcPriceData, parsePriceValue } from "../../core/priceUtils";
+} from "../../core/mapping.js";
+import { getBtcPriceData, parsePriceValue } from "../../core/priceUtils.js";
+import { convertPriceBetweenUnits } from "../../core/mrrUtils.js";
 
 // ============================================
 // UTILITY FUNCTIONS
 // ============================================
+// Any hashrate arbitrage beyond this multiple of the benchmark is a data
+// artifact (unit mismatch or a bad quote), not a real opportunity. A >5x
+// markup on a commodity market simply does not exist.
+const MAX_SPREAD_PCT = 500;
+
+export const clampSpreadPct = (value) => {
+  if (value === null || value === undefined || !Number.isFinite(value)) return value;
+  return Math.max(-MAX_SPREAD_PCT, Math.min(MAX_SPREAD_PCT, value));
+};
+
 export const numberValue = (value) => {
   if (value === null || value === undefined || value === "") return 0;
   const parsed =
@@ -45,15 +55,6 @@ export const percentValue = (value) => {
 
 const normalizeKey = (algo) =>
   normalizeAlgoForNiceHash(algo || "").toUpperCase();
-
-const isCoinLikeLabel = (value) => {
-  const text = String(value || "").trim();
-  if (!text) return false;
-  const normalized = normalizeAlgoForNiceHash(text);
-  if (normalized && normalized !== "UNKNOWN") return false;
-  const compact = text.replace(/[^a-z0-9]/gi, "");
-  return compact.length > 1;
-};
 
 // ============================================
 // COLLECT COINS FROM ROW
@@ -301,18 +302,16 @@ export function mergeMiningRoutes(
       const hnBtc = hashrateNoRows.find(r => r.nicehashAlgo === nicehashAlgo)?.btcPerDay || 0;
       const heroBtc = hero?.btcPerDay || 0;
       
-      const spread =
-        poolBtc > 0 && nhPrice > 0
+      const spread = clampSpreadPct(
+        poolBtc > 0 && nhPrice > 0 && nhPrice < poolBtc * 1000
           ? ((poolBtc - nhPrice) / nhPrice) * 100
-          : null;
-      
-      const heroSpread =
-        heroBtc > 0 && nhPrice > 0
-          ? ((heroBtc - nhPrice) / nhPrice) * 100
-          : null;
-      
+          : null,
+      );
+
       const activityScore = (hero?.miners || 0) + (hero?.workers || 0) * 0.25 + (dutch?.miners || 0);
-      const profitScore = Math.max(poolBtc, heroBtc) * 100000000;
+      // HeroMiners' btcPerDay is a coin BTC price, not per-hashrate revenue —
+      // never fold it into the score alongside Mining-Dutch pool revenue.
+      const profitScore = poolBtc * 100000000;
 
       // Get all coins from hero data
       let heroCoins = hero?.coins || [];
@@ -331,10 +330,11 @@ export function mergeMiningRoutes(
       const displayName = getAlgoDisplayName(nicehashAlgo);
       const unit = getAlgorithmUnit(nicehashAlgo);
 
-      // Determine best source
-      const sources = [ // Now includes all providers
+      // Determine best pool revenue source. HeroMiners is intentionally
+      // excluded: its btcPerDay is a coin BTC price, not per-hashrate revenue,
+      // so comparing it to Mining-Dutch/Minerstat/WTM/HN would mix units.
+      const sources = [
         { key: "Mining-Dutch", value: poolBtc },
-        { key: "HeroMiners", value: heroBtc },
         { key: "Minerstat", value: msBtc },
         { key: "WhatToMine", value: wtmBtc },
         { key: "Hashrate.no", value: hnBtc },
@@ -362,7 +362,6 @@ export function mergeMiningRoutes(
         heroPoolHashrates: hero?.poolHashrates || [],
         niceHashPrice: nhPrice,
         spread,
-        heroSpread,
         rankScore: profitScore + activityScore,
         bestSource: bestSource?.key || "N/A",
         dutchRows: dutch?.rows || [],
@@ -381,12 +380,19 @@ export function mergeMiningRoutes(
 // MRR MARKET ROWS
 // ============================================
 export function normalizeMrrMarketRows(payload) {
-  // The payload is now from /info/algos, which is an object where keys are algo names.
-  const algos = typeof payload === 'object' && payload !== null && !Array.isArray(payload) 
-    ? Object.values(payload) 
-    : Array.isArray(payload) 
-      ? payload 
-      : [];
+  // Accept several shapes:
+  //  - raw array of rentals
+  //  - FULL /api/v2/mrr/rentals response: { data: { data: { rentals: [...] } } }
+  //  - /info/algos object where keys are algo names
+  const unwrap = (node) => {
+    if (Array.isArray(node)) return node;
+    if (!node || typeof node !== 'object') return [];
+    if (Array.isArray(node.rentals)) return node.rentals;
+    if (Array.isArray(node.data)) return node.data;
+    if (node.data && typeof node.data === 'object') return unwrap(node.data);
+    return Object.values(node);
+  };
+  const algos = unwrap(payload);
 
   return algos
     .map((rental) => {
@@ -428,10 +434,21 @@ export function normalizeMrrMarketRows(payload) {
           rental?.currency ||
           getAlgorithmUnit(nicehashAlgo),
       ).toUpperCase();
+      // Rental rate in the rental's own unit (e.g. BTC/GH/day), then converted
+      // onto the SAME per-algo-natural-unit baseline used by the Mining-Dutch
+      // pool revenue and the NiceHash prices in this table (e.g. per GH for
+      // KAWPOW, per EH for SHA256). Mixing unit spaces is what previously
+      // turned real values into "spreads" of +40 billion %.
       const perUnitPerDay =
         paidValue > 0 && durationHours > 0 && advertised > 0
           ? paidValue / (durationHours / 24) / advertised
           : 0;
+      const naturalUnit = getAlgorithmUnit(nicehashAlgo);
+      const pricePerNaturalUnitDayBtc = convertPriceBetweenUnits(
+        perUnitPerDay,
+        unit,
+        naturalUnit,
+      );
 
       return {
         id: String(rental?.id || rental?.rentalid || rental?.rental_id || ""),
@@ -440,7 +457,10 @@ export function normalizeMrrMarketRows(payload) {
         mrrAlgo: mapNiceHashToMRR(nicehashAlgo) || NICEHASH_ALGO_MAP?.[nicehashAlgo] || nicehashAlgo,
         unit,
         priceBtc: paidValue,
-        pricePerUnitDayBtc: perUnitPerDay,
+        // Per-day unit price rebased onto the algo's natural unit (e.g.
+        // BTC/GH/day for KAWPOW) — same baseline as pool revenue + NH prices.
+        pricePerUnitDayBtc: pricePerNaturalUnitDayBtc,
+        rawPerUnitDayBtc: perUnitPerDay,
         durationHours,
         advertised,
         currency: String(
@@ -513,27 +533,44 @@ export function buildOpportunityRows(
       const heroValue = heroData?.btcPerDay || 0;
       const heroCoins = heroData?.coins ? Array.from(heroData.coins) : [];
       
-      // ✅ Include all sources in best cost calculation
+      // Benchmark candidates = actual hashrate MARKET costs only (NiceHash +
+      // MRR). Mining-Dutch pool revenue is the "producer" side we compare
+      // against — including it here made the spread self-referential: whenever
+      // the pool revenue was the cheapest "candidate", the spread clamped to 0
+      // and hid real negative spreads (when pool revenue sits BELOW market
+      // cost) as well as real arbitrage gaps.
       const candidates = [
-        { key: "Mining-Dutch", value: pool },
         { key: "NiceHash", value: nhPrice },
         { key: "MRR", value: mrrMarket },
-        { key: "HeroMiners", value: heroValue },
       ];
-      
-      const bestCost = Math.min(
-        ...candidates.map(c => c.value > 0 ? c.value : Number.POSITIVE_INFINITY)
+
+      const positiveCandidates = candidates.filter((c) => c.value > 0);
+      const benchmark = positiveCandidates
+        .slice()
+        .sort((a, b) => a.value - b.value)[0] || null;
+      const bestCost = benchmark?.value ?? Number.POSITIVE_INFINITY;
+      const benchmarkSource = benchmark?.key || "N/A";
+      const benchmarkValue = benchmark?.value || 0;
+      const profitBtc = pool > 0 && bestCost !== Number.POSITIVE_INFINITY ? pool - bestCost : 0;
+      const bestSpreadPercent = clampSpreadPct(
+        pool > 0 && benchmarkValue > 0 ? ((pool - benchmarkValue) / benchmarkValue) * 100 : null,
+      );
+      const dataCoverage = positiveCandidates.length;
+      // Confidence is now bounded by the 2 real market benchmark sources (NH, MRR).
+      const confidenceScore = Math.min(1, dataCoverage / 2) + (bestSpreadPercent && bestSpreadPercent > 0 ? 0.25 : 0);
+
+      const spreadVsNh = clampSpreadPct(
+        nhPrice > 0 ? ((pool - nhPrice) / nhPrice) * 100 : null,
+      );
+      const spreadVsMrr = clampSpreadPct(
+        mrrMarket > 0 ? ((pool - mrrMarket) / mrrMarket) * 100 : null,
+      );
+      const spreadVsHero = clampSpreadPct(
+        heroValue > 0 ? ((pool - heroValue) / heroValue) * 100 : null,
       );
       
-      const spreadVsNh =
-        nhPrice > 0 ? ((pool - nhPrice) / nhPrice) * 100 : null;
-      const spreadVsMrr =
-        mrrMarket > 0 ? ((pool - mrrMarket) / mrrMarket) * 100 : null;
-      const spreadVsHero =
-        heroValue > 0 ? ((pool - heroValue) / heroValue) * 100 : null;
-      
-      // ✅ Determine winner including HeroMiners
-      const winner = candidates.sort((a, b) => b.value - a.value)[0];
+      // ✅ Determine the benchmark source that is most economically relevant
+      const winner = benchmarkSource;
 
       // ✅ Merge coins from route and hero data
       const allCoins = new Set([
@@ -553,37 +590,52 @@ export function buildOpportunityRows(
         spreadVsNh,
         spreadVsMrr,
         spreadVsHero,
+        benchmarkValue,
         bestCost,
-        winner: winner?.key || "N/A",
-        opportunityScore:
-          pool - (bestCost === Number.POSITIVE_INFINITY ? 0 : bestCost),
+        benchmarkSource,
+        profitBtc,
+        bestSpreadPercent,
+        confidenceScore,
+        winner,
+        opportunityScore: profitBtc,
         mrrMarketRows: mrrByAlgo.get(route.nicehashAlgo)?.rows || [],
         heroRows: heroData?.rows || [],
-        allSources: candidates.filter(c => c.value > 0).map(c => c.key),
+        allSources: positiveCandidates.map(c => c.key),
       };
     })
-    .sort(
-      (a, b) =>
-        b.opportunityScore - a.opportunityScore ||
-        b.poolRevenue - a.poolRevenue ||
-        (b.heroMinersPrice || 0) - (a.heroMinersPrice || 0),
-    );
+    .sort((a, b) => {
+      const spreadA = a.bestSpreadPercent ?? -Infinity;
+      const spreadB = b.bestSpreadPercent ?? -Infinity;
+      if (spreadB !== spreadA) return spreadB - spreadA;
+
+      const profitA = a.profitBtc || 0;
+      const profitB = b.profitBtc || 0;
+      if (profitB !== profitA) return profitB - profitA;
+
+      const confidenceA = a.confidenceScore || 0;
+      const confidenceB = b.confidenceScore || 0;
+      if (confidenceB !== confidenceA) return confidenceB - confidenceA;
+
+      return (b.poolRevenue || 0) - (a.poolRevenue || 0);
+    });
 }
 
 // ============================================
 // HELPER: Get best source for an algorithm
 // ============================================
-export function getBestSource(route, includeHero = true) {
+export function getBestSource(route, includeHero = false) {
+  // HeroMiners' btcPerDay is a coin BTC price, not a hashrate cost — never
+  // use it as a "cost" in spread calculations. Default includeHero=false.
   const sources = [
     { key: "Mining-Dutch", value: route.miningDutchBtcPerDay || 0 },
     { key: "NiceHash", value: route.niceHashPrice || 0 },
     { key: "MRR", value: route.mrrMarketPrice || 0 },
   ];
-  
+
   if (includeHero) {
     sources.push({ key: "HeroMiners", value: route.heroMinersPrice || 0 });
   }
-  
+
   return sources
     .filter(s => s.value > 0)
     .sort((a, b) => b.value - a.value)[0] || null;
@@ -592,10 +644,10 @@ export function getBestSource(route, includeHero = true) {
 // ============================================
 // HELPER: Get spread between pool and best source
 // ============================================
-export function getBestSpread(route, includeHero = true) {
+export function getBestSpread(route, includeHero = false) {
   const best = getBestSource(route, includeHero);
   if (!best) return null;
   const pool = route.miningDutchBtcPerDay || 0;
   if (pool <= 0 || best.value <= 0) return null;
-  return ((pool - best.value) / best.value) * 100;
+  return clampSpreadPct(((pool - best.value) / best.value) * 100);
 }

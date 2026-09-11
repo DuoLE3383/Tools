@@ -1,15 +1,41 @@
 // server/routes/miningStats.js
 import { asyncHandler } from "../utils.js";
+import { getCoinPricesFromDb } from "../coinGecko/coinGeckoClient.js";
+import { addProjectionPrice, fetchMiningMadnessAccount, fetchTwoMinersAccount } from "../miners/externalPoolMonitor.js";
+import { getCoinGeckoId } from "../coinGecko/coinMapping.js";
+
+async function getStoredBtcPrice() {
+  try {
+    const prices = await getCoinPricesFromDb(["bitcoin"]);
+    return Number(prices?.bitcoin?.usd) || 0;
+  } catch {
+    return 0;
+  }
+}
 
 let cachedDutchData = null;
 let cachedDutchTime = 0;
 const DUTCH_CACHE_TTL = 30000;
 
 export function registerMiningStatsRoutes(app) {
+  app.get("/api/v2/mining-stats/2miners", asyncHandler(async (req, res) => {
+    const data = await fetchTwoMinersAccount(req.query.url);
+    const prices = await getCoinPricesFromDb([getCoinGeckoId(data.coin)]);
+    const btcPrices = await getCoinPricesFromDb(["bitcoin"]);
+    res.json({ success: true, data: addProjectionPrice(data, prices?.[getCoinGeckoId(data.coin)]?.usd, btcPrices?.bitcoin?.usd) });
+  }));
+
+  app.get("/api/v2/mining-stats/miningmadness", asyncHandler(async (req, res) => {
+    const data = await fetchMiningMadnessAccount(req.query.address);
+    const prices = await getCoinPricesFromDb([getCoinGeckoId(data.coin)]);
+    const btcPrices = await getCoinPricesFromDb(["bitcoin"]);
+    res.json({ success: true, data: addProjectionPrice(data, prices?.[getCoinGeckoId(data.coin)]?.usd, btcPrices?.bitcoin?.usd) });
+  }));
+
   app.get("/api/v2/mining-stats/herominers", asyncHandler(async (req, res) => {
     const { scrapeHeroMinersGlobal } = await import("../miningOpportunityNotifier.js");
     const force = req.query.force === "true";
-    const result = await scrapeHeroMinersGlobal(force);
+    const result = await scrapeHeroMinersGlobal(force, await getStoredBtcPrice());
     res.json(result);
   }));
 
@@ -27,11 +53,12 @@ export function registerMiningStatsRoutes(app) {
       if (apiRes.ok) {
         const json = await apiRes.json();
         if (json?.success && json?.result) {
+          const btcPrice = await getStoredBtcPrice();
           const coinStats = Object.entries(json.result).map(([algorithm, data]) => ({
             algorithm,
             coin: "",
             btcPerDay: Number.isFinite(parseFloat(data.expected || data.average || 0)) ? parseFloat(data.expected || data.average || 0) : 0,
-            usdPerDay: 0,
+            usdPerDay: Number.isFinite(parseFloat(data.expected || data.average || 0)) ? parseFloat(data.expected || data.average || 0) * btcPrice : 0,
             miners: 0,
             hashrate: "N/A",
           }));
@@ -171,7 +198,7 @@ export function registerMiningStatsRoutes(app) {
   app.get("/api/v2/mining-stats/minerstat", asyncHandler(async (req, res) => {
     const { scrapeMinerstat } = await import("../miners/minerstat.js");
     try {
-      const data = await scrapeMinerstat();
+      const data = await scrapeMinerstat(await getStoredBtcPrice());
       res.json(data);
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -181,7 +208,7 @@ export function registerMiningStatsRoutes(app) {
   app.get("/api/v2/mining-stats/whattomine", asyncHandler(async (req, res) => {
     const { scrapeWhatToMine } = await import("../miners/whatToMine.js");
     try {
-      const data = await scrapeWhatToMine();
+      const data = await scrapeWhatToMine(await getStoredBtcPrice());
       res.json(data);
     } catch (err) {
       res.status(500).json({ error: err.message });

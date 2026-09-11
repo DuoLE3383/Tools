@@ -1,6 +1,7 @@
 // src/components/mining/SelectNiceHashOrderModal.jsx
 import { useState, useEffect, useCallback } from 'react';
 import Modal from '../Modal';
+import { getNiceHashUnit, convertUnit } from '../../core/mapping';
 
 export default function SelectNiceHashOrderModal({
   isOpen,
@@ -24,12 +25,16 @@ export default function SelectNiceHashOrderModal({
         silent: true,
       });
       const allOrders = result?.list || result?.myOrders || [];
+      // Match the algorithm regardless of active status so the user can still
+      // select a recent order even when none are currently ACTIVE.
       const matchingOrders = allOrders.filter(o => {
         const orderAlgo = typeof o.algorithm === 'object' ? o.algorithm.algorithm : o.algorithm;
-        const isActive = (o.status?.code || o.status) === 'ACTIVE';
-        return orderAlgo?.toUpperCase() === algorithm?.toUpperCase() && isActive;
+        return orderAlgo?.toUpperCase() === algorithm?.toUpperCase();
       });
-      setOrders(matchingOrders);
+      // Active first, then recently-inactive, capped so the list stays usable.
+      const active = matchingOrders.filter(o => (o.status?.code || o.status) === 'ACTIVE');
+      const inactive = matchingOrders.filter(o => (o.status?.code || o.status) !== 'ACTIVE');
+      setOrders([...active, ...inactive].slice(0, 60));
     } catch (err) {
       setError(err.message || 'Failed to fetch orders.');
     } finally {
@@ -61,14 +66,21 @@ export default function SelectNiceHashOrderModal({
             <tbody>
               {orders.map(order => {
                 const poolName = order.pool?.name || order.pool?.stratumHostname || 'N/A';
+                const orderAlgo = typeof order.algorithm === 'object' ? order.algorithm.algorithm : order.algorithm;
+                const speedUnit = getNiceHashUnit(orderAlgo);
+                const speedInDisplayUnit = convertUnit(parseFloat(order.acceptedCurrentSpeed || 0), 'H', speedUnit);
+                const statusCode = String(order.status?.code || order.status || '').toUpperCase();
+                const isActive = statusCode === 'ACTIVE';
+                const statusColor = isActive ? '#34d399' : statusCode === 'CANCELLED' ? '#f87171' : statusCode === 'EXPIRED' ? '#f59e0b' : '#94a3b8';
                 return (
-                  <tr key={order.id} style={{ borderBottom: '1px solid rgba(148,163,184,0.1)' }}>
+                  <tr key={order.id} style={{ borderBottom: '1px solid rgba(148,163,184,0.1)', opacity: isActive ? 1 : 0.6 }}>
                     <td style={{ padding: '8px', fontFamily: 'monospace' }}>{order.id.slice(0, 8)}...</td>
                     <td style={{ padding: '8px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '150px' }}>{poolName}</td>
                     <td style={{ padding: '8px', textAlign: 'right', color: '#fbbf24' }}>{parseFloat(order.price || 0).toFixed(8)}</td>
-                    <td style={{ padding: '8px', textAlign: 'right' }}>{parseFloat(order.acceptedCurrentSpeed || 0).toFixed(2)} GH/s</td>
+                    <td style={{ padding: '8px', textAlign: 'right' }}>{speedInDisplayUnit.toFixed(4)} {speedUnit}/s</td>
                     <td style={{ padding: '8px', color: '#60a5fa' }}>{order.nhClient || 'N/A'}</td>
                     <td style={{ padding: '8px', textAlign: 'right' }}>
+                      <span style={{ fontSize: '9px', color: statusColor, marginRight: '6px', fontWeight: 700 }}>{statusCode}</span>
                       <button className="btn-pro primary" onClick={() => onSelect(order)} style={{ fontSize: '11px', padding: '4px 12px' }}>Select</button>
                     </td>
                   </tr>
@@ -77,7 +89,7 @@ export default function SelectNiceHashOrderModal({
               {orders.length === 0 && (
                 <tr>
                   <td colSpan="6" style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>
-                    No active orders found for {algorithm}.
+                    No orders found for {algorithm}.
                   </td>
                 </tr>
               )}

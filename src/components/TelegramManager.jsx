@@ -31,6 +31,21 @@ function getPaidAmount(r) {
   return `${val} ${currency}`;
 }
 
+function toTemplateInfo(r) {
+  const currency = r?.price?.currency || r?.currency || "BTC";
+  const paid = r?.price && typeof r.price === "object"
+    ? r.price.paid || r.price.price || r.price.advertised || "0.00"
+    : r?.price || "0.00";
+  const hashrate = r?.hashrate && typeof r.hashrate === "object" ? r.hashrate : {};
+  return {
+    startTime: r?.start || r?.start_time || r?.startTime || "N/A",
+    endTime: r?.end || r?.end_time || r?.endTime || "N/A",
+    percent: hashrate?.average?.percent || r?.percent || 0,
+    price: { paid, currency },
+    hashrate,
+  };
+}
+
 export function useTelegram(onCall, mrrClient) {
   const sendTelegram = useCallback(
     (message, options = {}) => {
@@ -49,7 +64,6 @@ export function useTelegram(onCall, mrrClient) {
   const notifyNewRental = useCallback(
     (r) => {
       const account = getTelegramAccount(r, mrrClient);
-      const paid = getPaidAmount(r);
       const algo = r?.rig?.type || r?.algorithm || r?.algo || r?.type || "N/A";
       const ads =
         r?.hashrate?.advertised?.nice ||
@@ -62,17 +76,18 @@ export function useTelegram(onCall, mrrClient) {
       const endStr = String(r.end || "")
         .replace(/:\d{2} UTC/i, "")
         .replace(/^\d{4}-/, "");
-      const msg = TelegramTemplates.newRental(account, r, paid, startStr, endStr, algo, ads);
+      const msg = TelegramTemplates.newRental(account, r, toTemplateInfo(r), startStr, endStr, algo, ads);
       return sendTelegram(msg, { silent: true });
     },
     [sendTelegram, mrrClient],
   );
 
   const notifyZeroHashrate = useCallback(
-    (r, elapsedMs) => {
+    (r) => {
       const account = getTelegramAccount(r, mrrClient);
-      const paid = getPaidAmount(r);
-      const msg = TelegramTemplates.zeroHashrate(account, r, elapsedMs, paid);
+      const info = toTemplateInfo(r);
+      const algo = r?.rig?.type || r?.algorithm || r?.algo || r?.type || "N/A";
+      const msg = TelegramTemplates.zeroHashrate(account, r, info, algo);
       return sendTelegram(msg, { silent: true });
     },
     [sendTelegram, mrrClient],
@@ -86,15 +101,16 @@ export function useTelegram(onCall, mrrClient) {
         ? parseFloat(rawAvg).toFixed(2)
         : "0.00";
       const suffix = r.hashrate?.suffix || r.hashrate?.advertised?.type || "";
-      const paid = getPaidAmount(r);
-      const msg = TelegramTemplates.lowEfficiency(
+      const info = toTemplateInfo(r);
+      const algo = r?.rig?.type || r?.algorithm || r?.algo || r?.type || "N/A";
+      const msg = TelegramTemplates.efficiency(
         account,
         r,
-        avg,
-        suffix,
+        info,
         efficiency,
-        remainingMs,
-        paid,
+        0,
+        algo,
+        `${avg} ${suffix}`.trim(),
       );
       return sendTelegram(msg, { silent: true });
     },
@@ -108,7 +124,6 @@ export function useTelegram(onCall, mrrClient) {
       const efficiencyVal = Number.isFinite(parseFloat(rawEfficiency))
         ? parseFloat(rawEfficiency)
         : 0;
-      const paid = getPaidAmount(r);
       const remainingMs = r.end
         ? new Date(
             r.end + (String(r.end).endsWith("UTC") ? "" : " UTC"),
@@ -118,8 +133,9 @@ export function useTelegram(onCall, mrrClient) {
         account,
         r,
         efficiencyVal,
-        paid,
+        toTemplateInfo(r),
         remainingMs,
+        r?.rig?.type || r?.algorithm || r?.algo || r?.type || "N/A",
       );
       return sendTelegram(msg, { silent: true });
     },
@@ -129,19 +145,13 @@ export function useTelegram(onCall, mrrClient) {
   const notifyStartupEfficiencyAlert = useCallback(
     (r, efficiency) => {
       const account = getTelegramAccount(r, mrrClient);
-      const rawAvg = r.hashrate?.average?.hash || r.hashrate?.average || 0;
-      const avg = Number.isFinite(parseFloat(rawAvg))
-        ? parseFloat(rawAvg).toFixed(2)
-        : "0.00";
-      const suffix = r.hashrate?.suffix || r.hashrate?.advertised?.type || "";
-      const paid = getPaidAmount(r);
       const msg = TelegramTemplates.startup(
         account,
         r,
-        avg,
-        suffix,
+        toTemplateInfo(r),
         efficiency,
-        paid,
+        0,
+        r?.rig?.type || r?.algorithm || r?.algo || r?.type || "N/A",
       );
       return sendTelegram(msg, { silent: true });
     },
@@ -151,19 +161,13 @@ export function useTelegram(onCall, mrrClient) {
   const notifyCompletionEfficiencyAlert = useCallback(
     (r, efficiency) => {
       const account = getTelegramAccount(r, mrrClient);
-      const rawAvg = r.hashrate?.average?.hash || r.hashrate?.average || 0;
-      const avg = Number.isFinite(parseFloat(rawAvg))
-        ? parseFloat(rawAvg).toFixed(2)
-        : "0.00";
-      const suffix = r.hashrate?.suffix || r.hashrate?.advertised?.type || "";
-      const paid = getPaidAmount(r);
-      const msg = TelegramTemplates.completion(
+      const msg = TelegramTemplates.completionAlert(
         account,
         r,
-        avg,
-        suffix,
+        toTemplateInfo(r),
         efficiency,
-        paid,
+        0,
+        r?.rig?.type || r?.algorithm || r?.algo || r?.type || "N/A",
       );
       return sendTelegram(msg, { silent: true });
     },

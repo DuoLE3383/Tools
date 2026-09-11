@@ -68,6 +68,15 @@ export default defineConfig(({ command }) => ({
         target: 'ws://localhost:3003',
         ws: true,
         changeOrigin: true,
+        configure: (proxy) => {
+          proxy.on('error', (error, _req, socket) => {
+            // A browser can legitimately abort a WS connection while Vite is
+            // hot-reloading or navigating. Do not leave its proxy socket open.
+            if (error.code === 'ECONNABORTED' || error.code === 'ECONNRESET') {
+              socket?.destroy();
+            }
+          });
+        },
       },
       // ✅ Main API proxy
       '/api': {

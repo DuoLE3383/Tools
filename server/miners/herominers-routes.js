@@ -4,7 +4,7 @@ import { scrapeHeroMinersGlobal, scrapeHeroMinersAddress, COIN_TO_ALGO_MAP } fro
 import { HeroMinersAPI } from './herominers-api.js';
 import { parseHeroMinersResponse, buildDashboardData } from './herominers-parser.js';
 import { getCoinPricesFromDb } from '../coinGecko/coinGeckoClient.js';
-import { getDb } from '../db.js';
+import { getCoinGeckoId } from '../coinGecko/coinMapping.js';
 
 const router = express.Router();
 
@@ -54,28 +54,12 @@ router.get('/herominers', async (req, res) => {
     }
 
     // Get price data for the coin
-    let prices = await getCoinPricesFromDb([coinUpper].filter(Boolean));
-    let priceData = prices && prices[coinUpper] ? prices[coinUpper] : {};
-
-    // If price is 0 or missing, try a live fetch from coingecko as a fallback
-    if (!priceData?.usd || priceData.usd === 0) {
-      try {
-        const db = await getDb();
-        const meta = await db.get('SELECT coin_id FROM coin_metadata WHERE symbol = ?', [coinUpper]);
-        const coinId = meta?.coin_id;
-        if (coinId) {
-          const cgRes = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${coinId}&vs_currencies=usd`, {
-            signal: AbortSignal.timeout(5000)
-          });
-          if (cgRes.ok) {
-            const cgData = await cgRes.json();
-            if (cgData[coinId]?.usd > 0) {
-              priceData = { ...priceData, usd: cgData[coinId].usd, symbol: coinUpper };
-            }
-          }
-        }
-      } catch (e) { console.warn(`[herominers-route] Live price fallback failed for ${coinUpper}: ${e.message}`); }
-    }
+    const coinGeckoId = getCoinGeckoId(coinUpper);
+    const coinGeckoIds = [...new Set([coinGeckoId, coinGeckoId === 'conflux' ? 'conflux-token' : null].filter(Boolean))];
+    let prices = await getCoinPricesFromDb(coinGeckoIds);
+    const resolvedPriceId = coinGeckoIds.find((id) => prices?.[id]?.usd > 0);
+    let priceData = resolvedPriceId ? prices[resolvedPriceId] : {};
+    console.log(`[HeroMiners price] ${coinUpper} -> ${coinGeckoIds.join(', ')} -> $${priceData?.usd || 0}`);
 
     // Build dashboard data
     const dashboard = buildDashboardData(parsed, priceData);
@@ -331,12 +315,17 @@ router.get('/herominers/address', async (req, res) => {
       return res.status(500).json({ success: false, error: 'Failed to parse API response.' });
     }
 
-    const prices = await getCoinPricesFromDb([coin.toUpperCase()]);
-    const dashboardData = buildDashboardData(parsed, prices[coin.toUpperCase()] || {});
+    const coinUpper = coin.toUpperCase();
+    const coinGeckoId = getCoinGeckoId(coinUpper);
+    const coinGeckoIds = [...new Set([coinGeckoId, coinGeckoId === 'conflux' ? 'conflux-token' : null].filter(Boolean))];
+    const prices = await getCoinPricesFromDb(coinGeckoIds);
+    const resolvedPriceId = coinGeckoIds.find((id) => Number(prices?.[id]?.usd) > 0);
+    console.log(`[HeroMiners price] ${coinUpper} -> ${coinGeckoIds.join(', ')} -> $${resolvedPriceId ? prices[resolvedPriceId].usd : 0}`);
+    const dashboardData = buildDashboardData(parsed, (resolvedPriceId && prices[resolvedPriceId]) || {});
 
     return res.json({
       success: true,
-      data: { ...dashboardData, raw: parsed },
+      data: { ...dashboardData, coinPrice: Number(prices?.[resolvedPriceId]?.usd) || 0, raw: parsed },
       timestamp: new Date().toISOString(),
     });
 

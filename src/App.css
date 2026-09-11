@@ -364,9 +364,9 @@ body {
 
 .select-pro-lg {
   font-size: 1.1rem;
-  padding: 14px 40px 14px 18px;
+  padding: 8px 20px 8px 12px;
   min-height: 48px;
-  border-radius: 14px;
+  border-radius: 8px;
 }
 
 /* ──────────────────────────────────────────────
@@ -375,7 +375,7 @@ body {
 
 .code-block-wrapper {
   background: rgba(0, 0, 0, 0.18);
-  border-radius: 14px;
+  border-radius: 8px;
   overflow: hidden;
   margin-top: 1rem;
   border: 1px solid var(--border-color);

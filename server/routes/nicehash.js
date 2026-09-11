@@ -1,6 +1,6 @@
 // routes/nicehash.js
 import { asyncHandler, extractAlgorithmItems } from "../utils.js";
-import { resolveNhClient, getNiceHashApp, nhConfigs, isAggregate, normalizeAlgoForNiceHash, NICEHASH_ALGO_MAP, getCachedNhPools } from "../nh.js";
+import { resolveNhClient, getNiceHashApp, nhConfigs, isAggregate, normalizeAlgoForNiceHash, normalizeMarket, NICEHASH_ALGO_MAP, getCachedNhPools } from "../nh.js";
 import { mrrApiCall } from "../mrr.js";
 import fs from "fs/promises";
 import path from "path";
@@ -19,54 +19,7 @@ function unitToTarget(value, fromUnit, toUnit) {
   return (value * fromMult) / toMult;
 }
 
-// Estimated power draw per algorithm (watts per PH of hashrate)
-const ESTIMATED_WATTS_PER_UNIT = {
-  SHA256: 300,       // 0.3 W/GH → 300 W/PH
-  SHA256ASICBOOST: 300,
-  SCRYPT: 800,
-  SCRYPTN: 600,
-  NEOSCRYPT: 600,
-  RANDOMXMONERO: 500,
-  RANDOMX: 500,
-  KAWPOW: 400,
-  DAGGERHASHIMOTO: 200,
-  ETCHASH: 250,
-  EQUIHASH: 200,
-  X11: 600,
-  X13: 600,
-  X15: 600,
-  X16R: 350,
-  X16RV2: 350,
-  LYRA2RE: 400,
-  LYRA2REV2: 400,
-  LYRA2REV3: 400,
-  KECCAK: 500,
-  NIST5: 500,
-  QUBIT: 600,
-  QUARK: 600,
-  ZHASH: 400,
-  BEAM: 200,
-  BEAMV2: 200,
-  BEAMV3: 100,
-  HANDSHAKE: 300,
-  AUTOLYKOS: 300,
-  OCTOPUS: 400,
-  VERUSHASH: 300,
-  KHEAVYHASH: 200,
-  NEXAPOW: 300,
-  ALEPHIUM: 400,
-  FISHHASH: 300,
-  IRONFISH: 300,
-  KARLSENHASH: 150,
-  PYRINHASH: 150,
-  EAGLESONG: 300,
-  GRINCUCKAROO29: 250,
-  GRINCUCKATOO31: 250,
-  BLAKE256R8: 400,
-  BLAKE256R14: 400,
-  BLAKE2S: 400,
-  DEFAULT: 300,
-};
+const ESTIMATED_WATTS_PER_UNIT = { SHA256: 300, SHA256ASICBOOST: 300, SCRYPT: 800, SCRYPTN: 600, NEOSCRYPT: 600, RANDOMXMONERO: 500, RANDOMX: 500, KAWPOW: 400, DAGGERHASHIMOTO: 200, ETCHASH: 250, EQUIHASH: 200, X11: 600, X13: 600, X15: 600, X16R: 350, X16RV2: 350, LYRA2RE: 400, LYRA2REV2: 400, LYRA2REV3: 400, KECCAK: 500, NIST5: 500, QUBIT: 600, QUARK: 600, ZHASH: 400, BEAM: 200, BEAMV2: 200, BEAMV3: 100, HANDSHAKE: 300, AUTOLYKOS: 300, AUTOLYKOS2: 300, OCTOPUS: 400, VERUSHASH: 300, KHEAVYHASH: 200, NEXAPOW: 300, ALEPHIUM: 400, FISHHASH: 300, IRONFISH: 300, KARLSENHASH: 150, PYRINHASH: 150, EAGLESONG: 300, GRINCUCKAROO29: 250, GRINCUCKATOO31: 250, BLAKE256R8: 400, BLAKE256R14: 400, BLAKE2S: 400, DEFAULT: 300 };
 
 const ELECTRICITY_RATE_PER_KWH = 0.08; // $0.08/kWh
 
@@ -376,195 +329,161 @@ export function registerNiceHashRoutes(app) {
     const algorithm = normalizeAlgoForNiceHash(query.algorithm);
     const market = query.market || "USA";
 
-    // --- Caching Layer ---
     const db = await getDb();
     const cacheKey = `nh:price:${algorithm}:${market}`;
     const CACHE_TTL_MS = 60 * 1000; // 1 minute cache
 
     try {
-      const cached = await db.get('SELECT value FROM key_value_cache WHERE key = ? AND expires_at > ?', [cacheKey, Date.now()]);
+      const cached = await db.get('SELECT value FROM key_value_cache WHERE key = ? AND expires_at > ?', [cacheKey, Math.floor(Date.now() / 1000)]);
       if (cached?.value) {
         const cachedData = JSON.parse(cached.value);
         res.set("X-Cache-Hit", "true");
         return res.json(cachedData);
       }
-    } catch (e) {
-      // This can happen if the table doesn't exist yet. It's safe to ignore and proceed.
-      console.warn(`[Cache] DB read error for ${cacheKey}: ${e.message}. This may be expected if the cache table is new.`);
-    }
+    } catch (e) { console.warn(`[Cache] DB read error for ${cacheKey}: ${e.message}.`); }
 
     const setCache = async (data) => {
       try {
-        await db.run('INSERT OR REPLACE INTO key_value_cache (key, value, expires_at) VALUES (?, ?, ?)', [cacheKey, JSON.stringify(data), Date.now() + CACHE_TTL_MS]);
-      } catch (e) {
-        console.error(`[Cache] DB write error for ${cacheKey}: ${e.message}`);
-      }
+        await db.run('INSERT OR REPLACE INTO key_value_cache (key, value, expires_at) VALUES (?, ?, ?)', [cacheKey, JSON.stringify(data), Math.floor(Date.now() / 1000) + (CACHE_TTL_MS / 1000)]);
+      } catch (e) { console.error(`[Cache] DB write error for ${cacheKey}: ${e.message}`); }
     };
 
     const matchActiveOrder = async (clientName, client) => {
       try {
         const data = await getNiceHashApp(client).hashpower.getMyOrders({ op: "LE", limit: 100 });
         const rawList = data?.list || data?.myOrders || (Array.isArray(data) ? data : []);
-        const activeOrders = rawList.filter(o => String(o?.status?.code || o?.status || "").toUpperCase() === "ACTIVE");
+        const targetMarket = String(normalizeMarket(market));
+        const activeOrders = rawList.filter(o => {
+          const status = String(o?.status?.code || o?.status || "").toUpperCase() === "ACTIVE";
+          if (!status) return false;
+          const orderMarket = typeof o.market === "object" ? (o.market.id ?? o.market.market ?? o.market.name) : o.market;
+          return String(normalizeMarket(orderMarket)) === targetMarket;
+        });
         const found = activeOrders.find(o => normalizeAlgoForNiceHash(o?.algorithm || o?.algo || o?.type) === algorithm);
         if (!found) return null;
         const price = Number.parseFloat(found.price ?? found.marketPrice ?? found.fixedPrice ?? 0);
         if (!Number.isFinite(price) || price <= 0) return null;
-        return { fixedPrice: price.toFixed(8), speedUnit: ALGO_MAPPING(algorithm), price, marketPrice: price, marketUnit: ALGO_MAPPING(algorithm), source: "active-order", nhClient: clientName, orderId: found.id };
-      } catch { return null; }
+        const unit = getNiceHashUnit(algorithm);
+        return { fixedPrice: price.toFixed(8), speedUnit: unit, price, marketPrice: price, marketUnit: unit, source: "active-order", nhClient: clientName, orderId: found.id };
+      } catch (e) {
+        console.warn(`[NH Price] Active order match failed for ${clientName}:`, e.message);
+        return null;
+      }
     };
 
     const matchMarketPrice = async (clientName, client) => {
       try {
         const orderBook = await getNiceHashApp(client).hashpower.getOrderBook({ algorithm, market });
-        const buyOrders = orderBook?.buy || [];
+        const buyOrders = orderBook?.buy || orderBook?.data?.buy || [];
         if (Array.isArray(buyOrders) && buyOrders.length > 0) {
-          const prices = buyOrders
-            .map(o => parseFloat(o.price ?? o.fixedPrice ?? o.rate ?? 0))
-            .filter(p => p > 0);
+          const prices = buyOrders.map(o => parseFloat(o.price ?? o.fixedPrice ?? o.rate ?? 0)).filter(p => p > 0);
           if (prices.length > 0) {
             const price = Math.max(...prices);
-            return {
-              fixedPrice: price.toFixed(8),
-              speedUnit: ALGO_MAPPING(algorithm),
-              price,
-              marketPrice: price,
-              marketUnit: ALGO_MAPPING(algorithm),
-              source: "order-book",
-              nhClient: clientName
-            };
+            const unit = getNiceHashUnit(algorithm);
+            return { fixedPrice: price.toFixed(8), speedUnit: unit, price, marketPrice: price, marketUnit: unit, source: "order-book", nhClient: clientName };
           }
         }
-      } catch {}
+      } catch (e) { console.warn(`[NH Price] Order book failed for ${algorithm}:`, e.message); }
       return null;
     };
 
     const matchCalculatePrice = async (clientName, client) => {
       try {
         const result = await getNiceHashApp(client).hashpower.getOrderPrice({ algorithm, market, amount: "0.01" });
-        if (result) {
-          const price = parseFloat(result?.price ?? result?.fixedPrice ?? result?.marketPrice ?? 0);
-          if (Number.isFinite(price) && price > 0) {
-            return {
-              fixedPrice: price.toFixed(8),
-              speedUnit: ALGO_MAPPING(algorithm),
-              price,
-              marketPrice: price,
-              marketUnit: ALGO_MAPPING(algorithm),
-              source: "calculate",
-              nhClient: clientName
-            };
-          }
+        const price = parseFloat(result?.price ?? result?.fixedPrice ?? result?.marketPrice ?? 0);
+        if (Number.isFinite(price) && price > 0) {
+          const unit = getNiceHashUnit(algorithm);
+          return { fixedPrice: price.toFixed(8), speedUnit: unit, price, marketPrice: price, marketUnit: unit, source: "calculate", nhClient: clientName };
         }
-      } catch {}
+      } catch (e) { console.warn(`[NH Price] Calculate endpoint failed for ${algorithm}:`, e.message); }
       return null;
     };
 
-    // Build a list of clients to try
     const clientsToTry = [];
     if (isAggregate(clientParam)) {
       const nhAccounts = Object.keys(nhConfigs).filter(k => nhConfigs[k].apiKey && nhConfigs[k].apiSecret && nhConfigs[k].orgId && !isAggregate(k));
       const seen = new Set();
       for (const acct of nhAccounts) {
         const { client, clientName } = resolveNhClient(acct);
-        if (client && !seen.has(clientName)) {
-          seen.add(clientName);
-          clientsToTry.push({ clientName, client });
-        }
+        if (client && !seen.has(clientName)) { seen.add(clientName); clientsToTry.push({ clientName, client }); }
       }
     } else if (clientParam !== "ALL") {
       const { client, clientName } = resolveNhClient(clientParam);
       if (client) clientsToTry.push({ clientName, client });
     }
 
-    // Try methods in order across all clients
-    for (const { clientName, client } of clientsToTry) {
-      const result = await matchActiveOrder(clientName, client);
-      if (result) {
-        res.set("X-NH-Client", clientName);
+    const activeOrderResults = (await Promise.all(
+      clientsToTry.map(({ clientName, client }) => matchActiveOrder(clientName, client)),
+    )).filter(Boolean);
+    if (activeOrderResults.length > 0) {
+      const result = activeOrderResults.reduce((highest, current) =>
+        current.price > highest.price ? current : highest,
+      );
+      res.set("X-NH-Client", result.nhClient);
+      await setCache(result);
+      return res.json(result);
+    }
+
+    const marketPriceResults = (await Promise.all(
+      clientsToTry.map(({ clientName, client }) => matchMarketPrice(clientName, client)),
+    )).filter(Boolean);
+    if (marketPriceResults.length > 0) {
+      const result = marketPriceResults.reduce((highest, current) =>
+        current.price > highest.price ? current : highest,
+      );
+      res.set("X-NH-Client", result.nhClient);
+      await setCache(result);
+      return res.json(result);
+    }
+
+    // Global 24h stats are a reliable fallback for algorithms with a thin or empty
+    // order book. Their `a` field is the algorithm's `order` value, not its array index.
+    try {
+      const fallbackClient = clientsToTry[0]?.client || resolveNhClient("BT").client;
+      const stats24h = await getNiceHashApp(fallbackClient).hashpower.getGlobalStats24h();
+      const algoList = await getNiceHashApp(fallbackClient).public.getAlgorithms();
+      const algorithms = algoList?.miningAlgorithms || [];
+      const algoMetaMap = new Map(algorithms.flatMap((item, index) => [
+        [item.order, item],
+        // Retain the index fallback for older NiceHash responses that used it.
+        [index, item],
+      ]).filter(([key]) => Number.isFinite(Number(key))));
+      const match = (stats24h?.algos || []).find(stat => {
+        const meta = algoMetaMap.get(Number(stat.a));
+        return meta && normalizeAlgoForNiceHash(meta.algorithm) === algorithm;
+      });
+      const price = parseFloat(match?.p || 0);
+      if (price > 0) {
+        const unit = getNiceHashUnit(algorithm);
+        const result = { fixedPrice: price.toFixed(8), speedUnit: unit, price, marketPrice: price, marketUnit: unit, source: "global-stats-24h", nhClient: clientsToTry[0]?.clientName || "BT" };
         await setCache(result);
         return res.json(result);
       }
-    }
-    for (const { clientName, client } of clientsToTry) {
-      const result = await matchMarketPrice(clientName, client);
-      if (result) {
-        res.set("X-NH-Client", clientName);
-        await setCache(result);
-        return res.json(result);
-      }
-    }
+    } catch (e) { console.warn(`[NH Price] Global stats fallback failed for ${algorithm}:`, e.message); }
+
     for (const { clientName, client } of clientsToTry) {
       const result = await matchCalculatePrice(clientName, client);
-      if (result) {
-        res.set("X-NH-Client", clientName);
-        await setCache(result);
-        return res.json(result);
-      }
+      if (result) { res.set("X-NH-Client", clientName); await setCache(result); return res.json(result); }
     }
 
-    // Last resort: try the global 24h stats to get a market price estimate
-    try {
-      const stats24h = await getNiceHashApp(clientsToTry[0]?.client || resolveNhClient("BT").client).hashpower.getGlobalStats24h();
-      if (stats24h?.algorithms) {
-        const algoStats = Array.isArray(stats24h.algorithms) ? stats24h.algorithms : Object.values(stats24h.algorithms);
-        const match = algoStats.find(a => normalizeAlgoForNiceHash(a.algorithm || a.algo || a.name) === algorithm);
-        if (match) {
-          const price = parseFloat(match?.price ?? match?.marketPrice ?? match?.averagePrice ?? 0);
-          if (Number.isFinite(price) && price > 0) {
-            const result = {
-              fixedPrice: price.toFixed(8),
-              speedUnit: ALGO_MAPPING(algorithm),
-              price,
-              marketPrice: price,
-              marketUnit: ALGO_MAPPING(algorithm),
-              source: "global-stats-24h",
-              nhClient: clientsToTry[0]?.clientName || "BT"
-            };
-            await setCache(result);
-            return res.json(result);
-          }
-        }
-      }
-    } catch {}
-
-    // Absolute fallback: return a nominal price based on common estimates
-    const fallbackPrices = {
-      SHA256: 0.15, SCRYPT: 0.003, X11: 0.0008, KAWPOW: 0.000004,
-      BEAMV3: 0.000005, KHEAVYHASH: 0.000009, OCTOPUS: 0.0000035,
-      FISHHASH: 0.0000025, RANDOMX: 0.000006, ETCHASH: 0.000005,
-      AUTOLYKOS2: 0.0000035, ZELHASH: 0.0000025, BLAKE3: 0.0000035,
-      DYNEXSOLVE: 0.0000025, KARLSENHASH: 0.0000015, NEXA: 0.000002,
-    };
-    const fallbackPrice = fallbackPrices[algorithm] || 0.000001;
-    console.log(`[NH Price] Using fallback estimate for ${algorithm}: ${fallbackPrice}`);
-    const result = {
-      fixedPrice: fallbackPrice.toFixed(8),
-      speedUnit: ALGO_MAPPING(algorithm),
-      price: fallbackPrice,
-      marketPrice: fallbackPrice,
-      marketUnit: ALGO_MAPPING(algorithm),
-      source: "fallback-estimate",
-      nhClient: "BT"
-    };
-    await setCache(result);
-    return res.json(result);
+    console.error(`[NH Price] Failed to get price for ${algorithm} after all attempts.`);
+    res.status(404).json({ success: false, error: `No price available for ${algorithm}` });
   }));
   app.get("/api/v2/hashpower/orderBook/:algo/:market", asyncHandler(async (req, res) => {
     const { algo, market } = req.params;
-    const clientParam = String(req.query.client || "BT").toUpperCase();
+    const clientParam = String(req.query.client || "ALL").toUpperCase();
     const { client } = resolveNhClient(clientParam);
     const app = getNiceHashApp(client);
     res.json(await app.hashpower.getOrderBook({ algorithm: algo, market }));
   }));
   app.get("/api/v2/hashpower/order/:orderId", asyncHandler(async (req, res) => {
-    const clientParam = String(req.query.client || "BT").toUpperCase();
+    const clientParam = String(req.query.client || "ALL").toUpperCase();
     if (isAggregate(clientParam)) {
       const nhAccounts = Object.keys(nhConfigs).filter(k => nhConfigs[k].apiKey && nhConfigs[k].apiSecret && nhConfigs[k].orgId && !isAggregate(k));
       const processedClients = new Set();
       for (const acct of nhAccounts) {
         const { client, clientName } = resolveNhClient(acct);
-        if (!client || (acct !== "BT" && clientName === "BT") || processedClients.has(clientName)) continue;
+        if (!client || (acct !== "BT" && clientName === "ALL") || processedClients.has(clientName)) continue;
         processedClients.add(clientName);
         try {
           const data = await getNiceHashApp(client).hashpower.getOrderDetail(req.params.orderId);
@@ -639,7 +558,7 @@ export function registerNiceHashRoutes(app) {
   app.get("/api/v2/pools", asyncHandler(async (req, res) => {
     const data = await req.nhApp.pools.getPools();
     const pools = data?.list || [];
-    const clientName = res.get("X-NH-Client") || "BT";
+    const clientName = res.get("X-NH-Client") || "ALL";
 
     // For single-client calls, persist the fetched pools to the database.
     // Aggregate calls handle this internally via getCachedNhPools.
@@ -662,11 +581,11 @@ export function registerNiceHashRoutes(app) {
     res.json(data);
   }));
   app.get("/api/v2/pool/:poolId", asyncHandler(async (req, res) => {
-    const clientParam = String(req.query.client || "BT").toUpperCase();
+    const clientParam = String(req.query.client || "ALL").toUpperCase();
 
     // If an aggregate client is requested OR no client is specified, search across all accounts.
     if (isAggregate(clientParam) || !req.query.client) {
-      res.set("X-NH-Client", "VN"); // Indicate an aggregate search
+      res.set("X-NH-Client", "ALL"); // Indicate an aggregate search
       const nhAccounts = Object.keys(nhConfigs).filter(k => nhConfigs[k].apiKey && !isAggregate(k));
       for (const acct of nhAccounts) {
         try {

@@ -92,7 +92,7 @@ function StatsTable({ rows }) {
 
   return (
     <table
-      style={{ width: "100%", borderCollapse: "collapse", fontSize: "11px" }}
+      style={{ width: "100%", borderCollapse: "collapse", fontSize: "10px" }}
     >
       <thead>
         <tr style={{ color: "#64748b", borderBottom: "1px solid #334155" }}>
@@ -145,7 +145,7 @@ export default function MiningDutch({ onCall }) {
         // Use REST mining-stats route which fetches from the public API
         const response = await fetchMiningStats(
           "miningdutch",
-          "VN",
+          "ALL",
           null,
           null,
           20000,
@@ -204,7 +204,7 @@ export default function MiningDutch({ onCall }) {
       >
         <div>
           <h4 style={{ margin: 0, color: "#fbbf24" }}>Mining-Dutch</h4>
-          <div style={{ fontSize: "11px", opacity: 0.6 }}>
+          <div style={{ fontSize: "10px", opacity: 0.6 }}>
             Global pool profitability snapshot
           </div>
         </div>
@@ -213,7 +213,7 @@ export default function MiningDutch({ onCall }) {
           onClick={() => void loadData(true)}
           disabled={loading}
           style={{
-            fontSize: "11px",
+            fontSize: "10px",
             background: "transparent",
             border: "none",
             color: "#94a3b8",

@@ -24,7 +24,7 @@ const COIN_TO_ALGO = {
 export function useKryptexProfitCalculator({
   pair,
   onCall,
-  nhClient = 'VN',
+  nhClient = 'ALL',
   manualNiceHashOrderId = null,
 }) {
   const [stats, setStats] = useState(null);
@@ -172,10 +172,14 @@ export function useKryptexProfitCalculator({
         }
         const orders = ordersResult?.list || ordersResult?.myOrders || [];
         const algo = getCoinAlgorithm(coin);
-        orderToUse = orders.find(o => {
+        const matchingActiveOrders = orders.filter(o => {
           const orderAlgo = typeof o.algorithm === 'object' ? o.algorithm.algorithm : o.algorithm;
           return orderAlgo?.toUpperCase() === algo?.toUpperCase() && (o.status?.code || o.status) === 'ACTIVE';
         });
+        orderToUse = matchingActiveOrders.reduce((highest, current) =>
+          parseFloat(current.price || 0) > parseFloat(highest?.price || 0) ? current : highest,
+          null,
+        );
       }
       if (orderToUse) {
         const speedInfo = getOrderSpeed(orderToUse);

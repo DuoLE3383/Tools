@@ -216,7 +216,7 @@ ${emoji} <b>Mining Heartbeat - ${forceLabel}</b>
         () => {
           sendHeartbeat(false);
         },
-        15 * 60 * 1000,
+        5 * 60 * 1000,
       );
 
       heartbeatIntervalRef.current = interval;

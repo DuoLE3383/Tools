@@ -3,6 +3,15 @@ import fetch from 'node-fetch';
 
 const DEFAULT_TIMEOUT = 30000;
 
+const HERO_MINERS_HOST_ALIASES = {
+  cfx: 'conflux',
+};
+
+export function normalizeHeroMinersHost(coin) {
+  const normalizedCoin = String(coin || '').trim().toLowerCase();
+  return HERO_MINERS_HOST_ALIASES[normalizedCoin] || normalizedCoin;
+}
+
 /**
  * HeroMiners API Client
  */
@@ -18,7 +27,8 @@ export class HeroMinersAPI {
   async request(coin, endpoint, params = {}) {
     if (!coin) throw new Error('A coin must be provided for the API request.');
 
-    const url = new URL(`https://${coin.toLowerCase()}.herominers.com${endpoint}`);
+    const hostCoin = normalizeHeroMinersHost(coin);
+    const url = new URL(`https://${hostCoin}.herominers.com${endpoint}`);
     Object.entries(params).forEach(([key, value]) => {
       if (value !== undefined && value !== null && value !== '') {
         url.searchParams.append(key, String(value));

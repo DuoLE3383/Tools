@@ -35,6 +35,8 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  --page-max: 1600px;
+  --page-gutter: clamp(14px, 2vw, 28px);
 }
 
 * {

@@ -36,7 +36,7 @@ function saveOrderId(pairId, orderId) {
 export default function KryptexProfitAlert({
   pair,
   onCall,
-  nhClient = 'VN',
+  nhClient = 'ALL',
 }) {
   const [manualOrderId, setManualOrderId] = useState(() => pair?.id ? loadSavedOrderId(pair.id) : null);
   const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);

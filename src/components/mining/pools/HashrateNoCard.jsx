@@ -2,6 +2,7 @@
 import MiningPoolCard from "./MiningPoolCard";
 import { useMiningWorkspace } from "../MiningWorkspaceProvider";
 import { normalizeHashrateNoRows } from "../miningWorkspaceData";
+import { BoxIcon } from "../Icons.jsx";
 
 export default function HashrateNoCard() {
   const {
@@ -16,7 +17,7 @@ export default function HashrateNoCard() {
   return (
     <MiningPoolCard
       title="Hashrate.no"
-      icon="🔷"
+      icon={<BoxIcon size={15} color="#818cf8" />}
       accent="#818cf8"
       rows={rows}
       loading={hashrateNoLoading}

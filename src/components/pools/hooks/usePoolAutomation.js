@@ -12,10 +12,9 @@ export function usePoolAutomation({
   verifyAllOnce,
   setVerifyResults,
   setResponse,
+  isVerifying = false,
 }) {
   const [running, setRunning] = useState(false);
-  const [playing, setPlaying] = useState(false);
-  const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [runCount, setRunCount] = useState(0);
   const [currentRunStartTime, setCurrentRunStartTime] = useState(null);
   const [currentRunElapsed, setCurrentRunElapsed] = useState(0);
@@ -31,9 +30,16 @@ export function usePoolAutomation({
   const countdownTimerRef = useRef(null);
   const activeRequestRef = useRef(null);
   const didAutoStartRef = useRef(false);
+  // Live "a verification loop is already in flight" flag. Read through a ref so
+  // the long-running cycle closure never acts on a stale render value.
+  const isVerifyingRef = useRef(Boolean(isVerifying));
+
+  useEffect(() => {
+    isVerifyingRef.current = Boolean(isVerifying);
+  }, [isVerifying]);
 
   const startRun = useCallback(async () => {
-    if (running || playing) return;
+    if (running || isVerifyingRef.current) return;
     setRunning(true);
     setRunCount(0);
     setCurrentRunStartTime(Date.now());
@@ -47,7 +53,7 @@ export function usePoolAutomation({
         return;
       }
 
-      if (playing) {
+      if (isVerifyingRef.current) {
         runTimerRef.current = setTimeout(scheduleNextCycle, 1000);
         return;
       }
@@ -56,7 +62,9 @@ export function usePoolAutomation({
       setNextRunCountdown(null);
       if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
 
-      await verifyAllOnce({ resetStop: false, keepRunning: true });
+      // resetStop must stay true: the verification loop owns its own stop flag,
+      // so leaving it set after a Stop would abort every following cycle.
+      await verifyAllOnce({ resetStop: true, keepRunning: true });
 
       const finishedAt = new Date();
       setLastRunTime(finishedAt.toLocaleTimeString());
@@ -80,7 +88,7 @@ export function usePoolAutomation({
     };
 
     scheduleNextCycle();
-  }, [running, playing, automationInterval, verifyAllOnce]);
+  }, [running, automationInterval, verifyAllOnce]);
 
   const stopAutomation = useCallback(() => {
     stopRef.current = true;
@@ -124,7 +132,7 @@ export function usePoolAutomation({
     if (
       params.get("start") === "true" &&
       !didAutoStartRef.current &&
-      !playing &&
+      !isVerifying &&
       !running
     ) {
       didAutoStartRef.current = true;
@@ -133,13 +141,10 @@ export function usePoolAutomation({
       }, 5000);
       return () => clearTimeout(timer);
     }
-  }, [playing, running, startRun]);
+  }, [isVerifying, running, startRun]);
 
   return {
     running,
-    playing,
-    progress,
-    setProgress,
     runCount,
     currentRunElapsed,
     lastRunTime,

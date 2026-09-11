@@ -2,6 +2,7 @@
 import MiningPoolCard from "./MiningPoolCard";
 import { useMiningWorkspace } from "../MiningWorkspaceProvider";
 import { normalizeWtmRows } from "../miningWorkspaceData";
+import { NetworkIcon } from "../Icons.jsx";
 
 export default function WhatToMineCard() {
   const {
@@ -16,7 +17,7 @@ export default function WhatToMineCard() {
   return (
     <MiningPoolCard
       title="WhatToMine"
-      icon="⛏"
+      icon={<NetworkIcon size={15} color="#38bdf8" />}
       accent="#38bdf8"
       rows={rows}
       loading={wtmLoading}

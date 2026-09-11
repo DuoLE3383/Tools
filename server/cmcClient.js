@@ -47,7 +47,7 @@ export async function getCmcPrices(symbols) {
     throw new Error(`CMC API error: ${data.status?.error_message || 'Unknown error'}`);
   }
 
-  const btcUsd = data.data?.BTC?.quote?.USD?.price;
+  const btcUsd = data.data?.BTC?.quote?.USD?.price || cachedPrices.get('BTC')?.data?.usd;
   if (!btcUsd) {
     throw new Error('Could not retrieve BTC price from CMC');
   }

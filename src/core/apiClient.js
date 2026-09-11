@@ -4,6 +4,18 @@
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 const WS_URL = import.meta.env.VITE_WS_URL || '/api/v2/prices/ws';
 
+function isSessionAuthenticationFailure(path, data) {
+  if (path.includes('/api/auth/')) return true;
+
+  const message = typeof data === 'string'
+    ? data
+    : [data?.error, data?.message, data?.errors?.[0]?.message]
+      .filter(Boolean)
+      .join(' ');
+
+  return /(?:no token provided|invalid or expired token|jwt (?:expired|malformed)|session (?:expired|invalid))/i.test(message);
+}
+
 export function createApiClient({ onAuthError, onState, token }) {
   return async function callApi(path, options = {}) {
     const startedAt = performance.now();
@@ -106,7 +118,7 @@ export function createApiClient({ onAuthError, onState, token }) {
       }
 
       // ✅ Handle authentication errors
-      if (response.status === 401 || response.status === 403) {
+      if ((response.status === 401 || response.status === 403) && isSessionAuthenticationFailure(apiPath, data)) {
         // Clear invalid token
         localStorage.removeItem('token');
         localStorage.removeItem('refreshToken');
@@ -115,11 +127,35 @@ export function createApiClient({ onAuthError, onState, token }) {
       }
 
       // ✅ Handle response
-      const isError = !response.ok || (data && (data.success === false || data.error || data.errors));
+      // An aggregate endpoint (e.g. NiceHash client=ALL) can return an `errors`
+      // array that reports per-client failures while still carrying usable data
+      // from the clients that succeeded. Treat that as a partial success, not a
+      // fatal error. Only treat `errors` as fatal when there is no usable payload.
+      // The payload check uses the *presence* of aggregate shape fields (not just
+      // non-empty arrays) so an empty-but-valid collection (e.g. 0 rigs) is still
+      // a legitimate partial success.
+      const isObjectLike = data !== null && typeof data === 'object' && !Array.isArray(data);
+      const isHtmlLike = typeof data === 'string' && /^\s*</.test(data);
+      const hasUsablePayload = Boolean(
+        data &&
+        (
+          data.success === true ||
+          (isObjectLike && (
+            'list' in data ||
+            'miningRigs' in data ||
+            'currencies' in data ||
+            'total' in data
+          ))
+        )
+      );
+
+      const isError = !response.ok || isHtmlLike || (data && (data.success === false || data.error || (data.errors && !hasUsablePayload)));
 
       if (isError) {
-        const errorMsg = typeof data === 'string' ? data :
-          data?.errors?.[0]?.message || data?.error || data?.message || response.statusText;
+        const errorMsg = isHtmlLike
+          ? 'Received HTML instead of JSON — the API returned the SPA page. Check the backend/tunnel URL and redeploy the Worker.'
+          : typeof data === 'string' ? data :
+            data?.errors?.[0]?.message || data?.error || data?.message || response.statusText;
         throw new Error(errorMsg);
       }
 

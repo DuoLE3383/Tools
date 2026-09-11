@@ -74,19 +74,24 @@ export const cleanUnit = (u) => {
 };
 
 /**
- * Converts a price between different units
+ * Converts a per-unit price between different hashrate price units.
+ * Example: 0.000133 BTC/EH/day -> BTC/TH/day = 0.000133 / 1e6 = 1.33e-10
+ * A per-unit price scales DOWN when the unit gets BIGGER (1 TH = 1e6 MH).
  * @param {number} price - The price value to convert
- * @param {string} fromUnit - The source unit (e.g., 'PH', 'TH')
- * @param {string} toUnit - The target unit (e.g., 'PH', 'TH')
+ * @param {string} fromUnit - The source unit (e.g., 'PH', 'TH', 'GH')
+ * @param {string} toUnit - The target unit (e.g., 'PH', 'TH', 'GH')
  * @returns {number} The converted price
  */
 export const convertPriceBetweenUnits = (price, fromUnit, toUnit) => {
   if (!price || price <= 0) return 0;
   if (!fromUnit || !toUnit) return price;
-  
+
   const fromPower = UNIT_TO_POWER[cleanUnit(fromUnit)] ?? -6;
   const toPower = UNIT_TO_POWER[cleanUnit(toUnit)] ?? -6;
-  return price * Math.pow(10, fromPower - toPower);
+  // FIXED: exponent was `fromPower - toPower`, which inflated prices by
+  // 10^(toPower*2). Example: BTC/EH/day -> BTC/TH/day must DIVIDE by 1e6
+  // (10^(toPower - fromPower) = 10^(-6 - 0)), not multiply by 1e6.
+  return price * Math.pow(10, toPower - fromPower);
 };
 
 /**
@@ -102,7 +107,7 @@ export function calculatePriceComparison(mrrPrice, mrrUnit, nhPrice, nhUnit) {
   const mrrPriceNum = Number.parseFloat(mrrPrice || 0);
 
   if (nhPriceNum <= 0 || mrrPriceNum <= 0) return null;
-  
+
   const mrrUnitClean = cleanUnit(mrrUnit);
   const nhUnitClean = cleanUnit(nhUnit);
 
@@ -121,13 +126,15 @@ export function calculatePriceComparison(mrrPrice, mrrUnit, nhPrice, nhUnit) {
 // ============================================
 
 /**
- * Extracts NiceHash price and normalizes it to TH/s for consistent comparison
+ * Extracts NiceHash price and normalizes it to TH/s for consistent comparison.
+ * NOTE: relies on the corrected convertPriceBetweenUnits, so prices are now
+ * genuinely per-TH values (e.g. SHA256 ~1.3e-10 BTC/TH/day instead of 130).
  * @param {object|number|string} rawNhData - Raw NiceHash price data
  * @returns {number} Price normalized to TH/s
  */
 export function getNiceHashPriceValue(rawNhData) {
   if (rawNhData === undefined || rawNhData === null) return 0;
-  
+
   // If it's already a number, return it
   if (typeof rawNhData === "number") return rawNhData;
   if (typeof rawNhData === "string") return parsePriceValueUtils(rawNhData);
@@ -164,7 +171,7 @@ export function getNiceHashPriceValue(rawNhData) {
       return convertPriceBetweenUnits(price, unit, "TH");
     }
   }
-  
+
   return 0;
 }
 
@@ -177,7 +184,7 @@ export function getNiceHashPriceWithUnit(rawNhData) {
   if (rawNhData === undefined || rawNhData === null) {
     return { price: 0, unit: "TH" };
   }
-  
+
   if (typeof rawNhData === "number") {
     return { price: rawNhData, unit: "TH" };
   }
@@ -188,7 +195,7 @@ export function getNiceHashPriceWithUnit(rawNhData) {
   const nhData = rawNhData?.price || rawNhData;
   let price = 0;
   let unit = "TH";
-  
+
   if (nhData) {
     price = parseFloat(
       nhData.fixedPrice ??
@@ -201,7 +208,7 @@ export function getNiceHashPriceWithUnit(rawNhData) {
     );
     unit = nhData.speedUnit || nhData.unit || nhData.price_unit || "TH";
   }
-  
+
   if (price === 0) {
     price = parseFloat(
       rawNhData.fixedPrice ??
@@ -414,7 +421,8 @@ export const getClientBadgeStyle = (client) => {
     BT: { background: "#36d472b0", color: "#fff" },
     SL: { background: "#d97706", color: "#fff" },
     LN: { background: "#4708f3", color: "#fff" },
-    VN: { background: "#f31890", color: "#fff" },
+    HUDA: { background: "#ff4141", color: "#fff" },
+    ALL: { background: "#f31890", color: "#fff" },
     LUCKY: { background: "#c0ec48", color: "#fff" },
   };
   return styles[c] || { background: "rgba(255,255,255,0.1)", color: "#94a3b8" };

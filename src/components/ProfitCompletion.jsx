@@ -259,7 +259,7 @@ export default function HashCompletionCalculator({
       </h2>
       {algo && (
         <div
-          style={{ marginBottom: "16px", color: "#94a3b8", fontSize: "13px" }}
+          style={{ marginBottom: "16px", color: "#94a3b8", fontSize: "10px" }}
         >
           Rented algorithm: <strong>{algo}</strong>
         </div>

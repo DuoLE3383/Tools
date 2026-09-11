@@ -1,10 +1,11 @@
-// index.js – COMPLETE FIXED VERSION
+// index.js – COMPLETE FIXED VERSION (with CORS & PORT fallback)
 
 import "dotenv/config";
 import express from "express";
 import http from "http";
 import path from "path";
 import fs from "fs";
+import cors from "cors";                // ✅ ADDED
 import { fileURLToPath } from "url";
 
 import { setupWebSocket } from "./server/ws.js";
@@ -67,34 +68,75 @@ const VALID_NH_CLIENT_TAGS = new Set([
   "PH3",
   "HUDA",
   "LN",
+  "XT",
   "NHATLINH",
-  "VN",
   "ALL",
 ]);
-const VALID_MRR_CLIENT_TAGS = new Set(["BT", "SL", "LN", "LUCKY", "VN", "ALL"]);
+const VALID_MRR_CLIENT_TAGS = new Set(["BT", "SL", "LN", "LUCKY", "HUDA", "ALL"]);
 
 // ============================================================
 // CREATE APP
 // ============================================================
 const app = createApp({ distPath });
-const PORT = process.env.PORT;
+const PORT = process.env.PORT || 3000;   // ✅ FALLBACK PORT ADDED
 
 // ============================================================
 // MIDDLEWARE
 // ============================================================
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// ✅ CORS CONFIGURATION (add this block)
+const allowedOrigins = [
+  'http://localhost:1757',
+  'http://localhost:3003',
+  'http://localhost:3000',
+  // Add your production frontend URL here when deployed
+];
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow requests with no origin (e.g., mobile apps, curl, Postman, server-to-server)
+      if (!origin) return callback(null, true);
+
+      const isDevelopment = process.env.NODE_ENV !== 'production';
+      const isAllowed = allowedOrigins.includes(origin) || isDevelopment;
+
+      if (isAllowed) {
+        callback(null, true);
+      } else {
+        console.warn(`❌ CORS blocked origin: ${origin}`);
+        callback(new Error(`Origin ${origin} not allowed by CORS`));
+      }
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Session-Id', 'X-Requested-With'],
+    exposedHeaders: ['X-Session-Id'],
+  })
+);
+
+// Content Security Policy
 app.use((req, res, next) => {
   res.setHeader(
     'Content-Security-Policy',
-    // This policy allows scripts and connections for the app, Cloudflare, and API subdomains.
     "default-src 'self'; " +
     "script-src 'self' 'unsafe-inline' https://huyenbao.com https://www.huyenbao.com https://static.cloudflareinsights.com; " +
     "style-src 'self' 'unsafe-inline'; " +
     "connect-src 'self' https://huyenbao.com https://www.huyenbao.com https://api.huyenbao.com http://localhost:3003 ws: wss:; " +
     "img-src 'self' data:; object-src 'none'; frame-ancestors 'none';"
   );
+  next();
+});
+
+// ✅ Optional request logger (helps debug API calls)
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    console.log(`📡 ${req.method} ${req.originalUrl} - ${res.statusCode} - ${duration}ms`);
+  });
   next();
 });
 
@@ -175,10 +217,10 @@ async function cleanupStoredClientTags() {
     ...VALID_MRR_CLIENT_TAGS,
     ...Object.keys(mrrConfigs || {}).map((key) => String(key).toUpperCase()),
   ]);
-  const fallbackMrrClient = normalizeStoredClientTag(defaultMrrClient, "VN", configuredMrrClients);
+  const fallbackMrrClient = normalizeStoredClientTag(defaultMrrClient, "ALL", configuredMrrClients);
 
   const tablePlans = [
-    { table: "nh_pools", column: "nhClient", fallback: "VN", allowed: configuredNhClients },
+    { table: "nh_pools", column: "nhClient", fallback: "ALL", allowed: configuredNhClients },
     { table: "mrr_pools", column: "mrrClient", fallback: fallbackMrrClient, allowed: configuredMrrClients },
     { table: "mrr_rigs", column: "mrrClient", fallback: fallbackMrrClient, allowed: configuredMrrClients },
   ];
@@ -204,8 +246,27 @@ async function cleanupStoredClientTags() {
 // ============================================================
 async function startServer() {
   try {
+    // ============================================================
+    // PRE-FLIGHT: Kill stale process on our port
+    // ============================================================
+    try {
+      const { execSync } = await import("child_process");
+      const portCheck = execSync(`lsof -i :${PORT} -t 2>/dev/null || true`, { encoding: "utf-8" }).trim();
+      if (portCheck) {
+        const pids = portCheck.split("\n").filter(p => p && String(p).trim() !== String(process.pid));
+        if (pids.length > 0) {
+          console.log(`[init] ⚠️ Port ${PORT} is in use by PID(s): ${pids.join(", ")}. Killing...`);
+          execSync(`kill -9 ${pids.join(" ")} 2>/dev/null || true`);
+          await new Promise(r => setTimeout(r, 500));
+          console.log(`[init] ✅ Port ${PORT} freed`);
+        }
+      }
+    } catch (_) {
+      // lsof not available or other error — skip pre-flight
+    }
+
     console.log("[init] Initializing database...");
-    await getDb(); // This initializes and connects to the database.
+    await getDb();
 
     console.log("[init] Merging databases into stats.db...");
     try {
@@ -236,7 +297,16 @@ async function startServer() {
     console.log("[init] Initializing app...");
     await initializeApp(process.env);
 
-    // Register available-coins route BEFORE registerRoutes (must be before the /api 404 catch-all)
+    // ============================================================
+    // ✅ REGISTER ALL ROUTES (INCLUDING AUTH) - BEFORE ANY API 404 HANDLER
+    // ============================================================
+    console.log("[init] Registering routes...");
+    registerRoutes(app);
+    console.log("[Routes] All routes registered");
+
+    // ============================================================
+    // ✅ Register available-coins route (already in routes, but keep for safety)
+    // ============================================================
     app.get('/api/v2/db/available-coins', authMiddleware, async (req, res) => {
       try {
         const db = await getDb();
@@ -249,26 +319,29 @@ async function startServer() {
         res.json({ success: true, data: rows });
       } catch (error) {
         console.error('[DB] Error fetching available coins:', error);
-        // Never return 500 — return empty array so frontend doesn't break
         res.json({ success: true, data: [] });
       }
     });
 
-    console.log("[init] Registering routes...");
-    registerRoutes(app);
-    console.log("[Routes] All routes registered");
-
-    // Serve static files
-    app.use(express.static(distPath));
-
-    // API 404 handler
-    app.use('/src', (req, res) => {
-        res.status(404).send('Source files are not served in this environment.');
+    // ============================================================
+    // ✅ API 404 HANDLER - MUST BE AFTER ALL ROUTES
+    // ============================================================
+    app.use("/api", (req, res) => {
+      console.log(`[404] API endpoint not found: ${req.method} ${req.path}`);
+      res.status(404).json({ 
+        success: false, 
+        error: "API endpoint not found", 
+        path: req.path 
+      });
     });
 
-    // API 404 handler
-    app.use("/api", (req, res) => {
-      res.status(404).json({ success: false, error: "API endpoint not found", path: req.path });
+    // ============================================================
+    // SERVE STATIC FILES
+    // ============================================================
+    app.use(express.static(distPath));
+
+    app.use('/src', (req, res) => {
+        res.status(404).send('Source files are not served in this environment.');
     });
 
     app.use((req, res) => {
@@ -309,6 +382,8 @@ async function startServer() {
       console.log(`WebSocket on: ws://localhost:${PORT}/api/v2/prices/ws`);
       console.log(`Heartbeat: http://localhost:${PORT}/api/heartbeat`);
       console.log(`Ping: http://localhost:${PORT}/ping`);
+      console.log(`Auth Login: http://localhost:${PORT}/api/auth/login`);
+      console.log(`Auth Profile: http://localhost:${PORT}/api/auth/profile`);
 
       setTimeout(() => {
         console.log("[Mining Scanner] Initializing...");

@@ -193,8 +193,10 @@ const lastAlertTimes = new Map([['global_summary', Date.now()]]);
 const lastRigStates = new Map();
 const monitorNhPriceCache = new Map();
 const monitorNhPriceErrorCache = new Map();
-const monitorNhOrdersCache = new Map();
-const MONITOR_NH_ORDERS_TTL = 60 * 1000;
+
+// --- NEW: Global aggregator cache ---
+const allProviderOrdersCache = new Map();
+const ALL_PROVIDER_TTL = 60 * 1000; // 1 minute
 
 // ==========================
 //  HTML ESCAPING
@@ -208,32 +210,66 @@ function escapeHtml(text) {
 }
 
 // ==========================
-//  NICEHASH HELPERS
+//  NICEHASH HELPERS (UPDATED)
 // ==========================
+
+/**
+ * Fetch active orders from ALL configured NiceHash providers.
+ * Results are cached for 1 minute.
+ */
+export async function getAllNhActiveOrders() {
+  const cacheKey = 'ALL_PROVIDERS';
+  const cached = allProviderOrdersCache.get(cacheKey);
+  if (cached && (Date.now() - cached.ts < ALL_PROVIDER_TTL)) {
+    return cached.orders;
+  }
+
+  const allOrders = [];
+  const providerKeys = Object.keys(nhConfigs).filter(
+    key => nhConfigs[key].apiKey && nhConfigs[key].apiSecret && nhConfigs[key].orgId
+  );
+
+  console.log(`[NH] Fetching active orders from ${providerKeys.length} providers...`);
+
+  await Promise.all(
+    providerKeys.map(async (key) => {
+      try {
+        const { client } = resolveNhClient(key);
+        if (!client) {
+          console.warn(`[NH] No client for ${key}, skipping`);
+          return;
+        }
+        const result = await getNiceHashApp(client).hashpower.getMyOrders({ op: 'LE', limit: 100 });
+        const rawList = result?.list || result?.myOrders || (Array.isArray(result) ? result : []);
+        const active = rawList.filter(o =>
+          String(o?.status?.code || o?.status || '').toUpperCase() === 'ACTIVE'
+        );
+        // Tag each order with its provider (useful for debugging)
+        active.forEach(o => o._provider = key);
+        allOrders.push(...active);
+      } catch (err) {
+        console.warn(`[NH] Failed to fetch orders for ${key}: ${err.message}`);
+      }
+    })
+  );
+
+  console.log(`[NH] Total active orders fetched: ${allOrders.length}`);
+  allProviderOrdersCache.set(cacheKey, { orders: allOrders, ts: Date.now() });
+  return allOrders;
+}
+
+/**
+ * Legacy per‑account fetcher (kept for backward compatibility, but not used in the main monitor).
+ * You can remove this if no other code depends on it.
+ */
+async function getMonitorNhActiveOrders(clientName) {
+  // Just redirect to the aggregator.
+  return getAllNhActiveOrders();
+}
 
 function getMonitorNhAlgoPriceUnit(order, fallbackAlgo) {
   const algo = normalizeAlgoForNiceHash(order?.algorithm || order?.algo || order?.type || fallbackAlgo);
   return getMrrAlgorithmUnit(algo);
-}
-
-async function getMonitorNhActiveOrders(clientName) {
-  const cacheKey = String(clientName || 'BT').toUpperCase();
-  const cached = monitorNhOrdersCache.get(cacheKey);
-  if (cached && (Date.now() - cached.ts < MONITOR_NH_ORDERS_TTL)) {
-    return cached.orders;
-  }
-
-  const cfg = nhConfigs[cacheKey];
-  if (!cfg?.apiKey || !cfg?.apiSecret || !cfg?.orgId) return [];
-
-  const { client } = resolveNhClient(cacheKey);
-  if (!client) return [];
-
-  const result = await getNiceHashApp(client).hashpower.getMyOrders({ op: 'LE', limit: 100 });
-  const rawList = result?.list || result?.myOrders || (Array.isArray(result) ? result : []);
-  const activeOrders = rawList.filter(o => String(o?.status?.code || o?.status || '').toUpperCase() === 'ACTIVE');
-  monitorNhOrdersCache.set(cacheKey, { orders: activeOrders, ts: Date.now() });
-  return activeOrders;
 }
 
 // ==========================
@@ -271,8 +307,8 @@ export async function sendTelegramInternal(message) {
     return { ok: true, description: 'Notifications disabled' };
   }
 
-  const botToken = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_CHAT_ID;
+  const botToken = process.env.TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID || process.env.TELEGRAM_ID;
   if (!botToken || !chatId) {
     console.warn('[telegram] Credentials missing');
     throw new Error('Telegram credentials missing');
@@ -519,6 +555,14 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
     // ==========================
     //  PROCESS EACH ACCOUNT
     // ==========================
+
+    // Pre‑fetch all NiceHash orders once for the entire run (now using aggregator)
+    let allNhOrders = [];
+    try {
+      allNhOrders = await getAllNhActiveOrders();
+    } catch (err) {
+      console.warn(`[NH] Failed to fetch all orders: ${err.message}`);
+    }
 
     await Promise.all(mrrAccts.map(async (acct) => {
       const harvestedRentalIds = new Set();
@@ -781,7 +825,6 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
           const activeRentalId = String(r.id || r.rentalid || r.rental_id || '').trim();
           if (activeRentalId) {
             currentActiveRentalIds.add(activeRentalId);
-            // CRITICAL FIX: Add to real rentals set
             currentActiveRealRentalIds.add(activeRentalId);
           }
 
@@ -795,28 +838,33 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
           const efficiency = parseFloat(info.percent || 0);
           const currentHash = info.hashrate.current;
 
-          // Calculate Price ROI
+          // Calculate Price ROI - NOW USING GLOBAL ORDERS
           let priceRoi = null;
           try {
             const nhAlgo = normalizeAlgoForNiceHash(info.algo);
             if (!nhAlgo || nhAlgo === 'UNKNOWN' || nhAlgo === 'N/A') throw new Error('Unsupported algorithm');
 
-            const cacheKey = `${nhAlgo}:${acct}`;
+            // Cache key without account because orders are now global
+            const cacheKey = nhAlgo;
             const cachedError = monitorNhPriceErrorCache.get(cacheKey);
-            if (cachedError && now - cachedError.ts < 10 * 60 * 1000) {
+            if (cachedError && now - cachedError.ts < 5 * 60 * 1000) {
               throw new Error(cachedError.message);
             }
 
             let nhP = monitorNhPriceCache.get(cacheKey);
 
             if (!nhP) {
-              const cfg = nhConfigs[acct];
-              if (!cfg?.apiKey || !cfg?.apiSecret || !cfg?.orgId) {
-                throw new Error(`NiceHash client "${acct}" is not configured`);
+              // Use the pre‑fetched allNhOrders (or fetch fresh if not available)
+              let activeOrders = allNhOrders;
+              if (!activeOrders || activeOrders.length === 0) {
+                // Fallback: fetch now
+                activeOrders = await getAllNhActiveOrders();
+                allNhOrders = activeOrders; // update for subsequent rentals
               }
 
-              const activeOrders = await getMonitorNhActiveOrders(acct);
-              const matchedOrder = activeOrders.find(order => normalizeAlgoForNiceHash(order?.algorithm || order?.algo || order?.type) === nhAlgo);
+              const matchedOrder = activeOrders.find(order =>
+                normalizeAlgoForNiceHash(order?.algorithm || order?.algo || order?.type) === nhAlgo
+              );
               if (!matchedOrder) {
                 throw new Error(`No active NiceHash order found for ${nhAlgo}`);
               }
@@ -845,9 +893,9 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
           }
           catch (err) {
             const nhAlgoForLog = normalizeAlgoForNiceHash(info.algo);
-            const cacheKey = `${nhAlgoForLog}:${acct}`;
+            const cacheKey = nhAlgoForLog; // no account
             const cachedError = monitorNhPriceErrorCache.get(cacheKey);
-            if (!cachedError || cachedError.message !== err.message || now - cachedError.ts >= 10 * 60 * 1000) {
+            if (!cachedError || cachedError.message !== err.message || now - cachedError.ts >= 5 * 60 * 1000) {
               monitorNhPriceErrorCache.set(cacheKey, { message: err.message, ts: now });
               console.warn(`[monitor] ROI price skipped for ${cacheKey}: ${err.message}`);
             }
@@ -894,7 +942,7 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
           }
 
           // ==========================
-          //  ALERTS FOR REAL RENTALS
+          //  ALERTS FOR REAL RENTALS (unchanged)
           // ==========================
 
           if (efficiency < 50) {
@@ -1001,7 +1049,7 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
           }
 
           // ==========================
-          //  BUILD ACTIVE RENTAL LINE
+          //  BUILD ACTIVE RENTAL LINE (unchanged)
           // ==========================
 
           const hasEndTime = endT > 0;
@@ -1033,11 +1081,11 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
           ));
 
           // ==========================
-          //  SEND NOTIFICATION FOR NEW RENTAL
+          //  SEND NOTIFICATION FOR NEW RENTAL (unchanged)
           // ==========================
 
           const isNewToMonitor = lastNotified === 0;
-          const withinReasonableStart = startT > 0 && elapsedMs < (10 * 60 * 1000);
+          const withinReasonableStart = startT > 0 && elapsedMs < (5 * 60 * 1000);
           const alreadyNotifiedThisRun = notifiedRentalIdsThisRun.has(String(r.id));
           const shouldNotify = !alreadyNotifiedThisRun && (forceNotify || (isNewToMonitor && withinReasonableStart));
 
@@ -1077,7 +1125,7 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
         }
 
         // ==========================
-        //  PROCESS GHOST RENTALS
+        //  PROCESS GHOST RENTALS (unchanged)
         // ==========================
 
         for (const r of ghostRentals) {
@@ -1085,7 +1133,6 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
           if (ghostId) {
             currentGhostRentalIds.add(ghostId);
 
-            // Save ghost rental to database with is_real = 0
             try {
               await dbRunAsync(
                 `INSERT OR REPLACE INTO rentals (
@@ -1100,7 +1147,6 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
                 ]
               );
 
-              // Also track in ghost_rentals table
               await dbRunAsync(
                 `INSERT OR IGNORE INTO ghost_rentals (id, name, client, detected_at, reason) 
                  VALUES (?, ?, ?, ?, ?)`,
@@ -1129,12 +1175,11 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
     }));
 
     // ==========================
-    //  CLEANUP STALE RENTALS
+    //  CLEANUP STALE RENTALS (unchanged)
     // ==========================
 
     const successfulAcctList = Array.from(new Set(successfulAccts));
 
-    // Clean up real rentals
     if (currentActiveRealRentalIds.size > 0 && successfulAcctList.length > 0) {
       const activePlaceholders = Array.from(currentActiveRealRentalIds).map(() => '?').join(',');
       const clientPlaceholders = successfulAcctList.map(() => '?').join(',');
@@ -1150,7 +1195,6 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
       ).catch((err) => console.warn(`[monitor:db] Failed to clear stale rentals: ${err.message}`));
     }
 
-    // Clean up ghost rentals
     if (successfulAcctList.length > 0 && currentGhostRentalIds.size > 0) {
       const placeholders = successfulAcctList.map(() => '?').join(',');
       const ghostPlaceholders = Array.from(currentGhostRentalIds).map(() => '?').join(',');
@@ -1177,7 +1221,7 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
     const rented24hCount = rented24hRow ? rented24hRow.count : 0;
 
     // ==========================
-    //  DETECT FINISHED RENTALS
+    //  DETECT FINISHED RENTALS (unchanged)
     // ==========================
 
     if (successfulAcctList.length > 0) {
@@ -1192,7 +1236,7 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
         const lastUpdatedTs = Number(fr.last_updated || 0);
         const hadRealEndTime = endTs > 0;
         const endedRecently = hadRealEndTime && endTs <= now && now - endTs < 6 * 60 * 60 * 1000;
-        const wentMissingRecently = lastUpdatedTs > 0 && now - lastUpdatedTs < 10 * 60 * 1000;
+        const wentMissingRecently = lastUpdatedTs > 0 && now - lastUpdatedTs < 5 * 60 * 1000;
 
         if (!endedRecently && !wentMissingRecently) {
           await dbRunAsync(`DELETE FROM rentals WHERE id = ?`, [fr.id]);
@@ -1249,7 +1293,6 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
     rentedAll = accountMetrics.reduce((sum, metric) => sum + (Number(metric.rented) || 0), 0);
     ghostTotal = accountMetrics.reduce((sum, metric) => sum + (Number(metric.ghost) || 0), 0);
 
-    // Log summary with clear separation
     console.log(`[Monitor] 📊 Rental Summary for ${new Date().toLocaleTimeString()}:`);
     console.log(`   ✅ Real rentals: ${rentedAll}`);
     console.log(`   🚫 Ghost rentals: ${ghostTotal} (filtered out)`);
@@ -1261,7 +1304,7 @@ export async function runRentalMonitor(forceNotify = false, clientScope = 'ALL')
     }
 
     // ==========================
-    //  SEND SUMMARY HEARTBEAT
+    //  SEND SUMMARY HEARTBEAT (unchanged)
     // ==========================
 
     const shouldSendCombinedSummary = forceNotify || (now - (lastAlertTimes.get('global_summary') || 0) >= RENTED_HEARTBEAT_MS);
@@ -1387,5 +1430,6 @@ export default {
   runRentalMonitor,
   getTelegramStatus,
   setTelegramStatus,
-  sendTelegramInternal
+  sendTelegramInternal,
+  getAllNhActiveOrders   // <-- export aggregator for other modules
 };

@@ -2,6 +2,7 @@
 import MiningPoolCard from "./MiningPoolCard";
 import { useMiningWorkspace } from "../MiningWorkspaceProvider";
 import { normalizeMiningDutchRows } from "../miningWorkspaceData";
+import { TrendingUpIcon } from "../Icons.jsx";
 
 export default function MiningDutchPoolCard() {
   const {
@@ -16,7 +17,7 @@ export default function MiningDutchPoolCard() {
   return (
     <MiningPoolCard
       title="Mining-Dutch"
-      icon="🇳🇱"
+      icon={<TrendingUpIcon size={15} color="#fbbf24" />}
       accent="#fbbf24"
       rows={rows}
       loading={dutchLoading}

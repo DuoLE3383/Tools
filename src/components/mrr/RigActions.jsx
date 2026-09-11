@@ -1,3 +1,5 @@
+import { useCallback, useEffect } from "react";
+
 export const RigActions = ({
   isMine,
   isRented,
@@ -14,6 +16,26 @@ export const RigActions = ({
   loadingInfoIds,
   setEnrichedInfo,
 }) => {
+  const reloadRigDetailInfo = useCallback(() => {
+    if (loadingInfoIds && loadingInfoIds.has(rig.id)) {
+      console.debug("Auto reload skipped, already loading:", rig.id);
+      return;
+    }
+
+    console.debug("Auto reload triggered for rig:", rig.id);
+    setEnrichedInfo((prev) => {
+      const next = { ...prev };
+      delete next[rig.id];
+      return next;
+    });
+    fetchRigDetailInfo(rig);
+  }, [rig, fetchRigDetailInfo, setEnrichedInfo, loadingInfoIds]);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(reloadRigDetailInfo, 300000);
+    return () => window.clearInterval(intervalId);
+  }, [reloadRigDetailInfo]);
+
   return (
     <div
       style={{

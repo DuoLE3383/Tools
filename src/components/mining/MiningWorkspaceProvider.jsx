@@ -20,11 +20,11 @@ import {
   normalizeWtmRows,
   normalizeHashrateNoRows,
 } from "./miningWorkspaceData";
-import { getNiceHashPriceValue } from "../../core/mrrUtils";
+import { getNiceHashPriceWithUnit } from "../../core/mrrUtils";
 
 const MiningWorkspaceContext = createContext(null);
 
-export function MiningWorkspaceProvider({ children, onCall, nhClient = "VN", mrrClient = "BT" }) {
+export function MiningWorkspaceProvider({ children, onCall, nhClient = "ALL", mrrClient = "ALL" }) {
   const [heroStats, setHeroStats] = useState(null);
   const [dutchStats, setDutchStats] = useState(null);
   const [mrrMarketStats, setMrrMarketStats] = useState(null);
@@ -75,7 +75,7 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "VN", mrr
         setHeroLoading(true);
         const heroResult = await fetchMiningStats(
           "herominers",
-          "VN",
+          "ALL",
           null,
           null,
           20000,
@@ -91,7 +91,7 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "VN", mrr
         setDutchLoading(true);
         const dutchResult = await fetchMiningStats(
           "miningdutch",
-          "VN",
+          "ALL",
           null,
           null,
           20000,
@@ -123,7 +123,7 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "VN", mrr
         // 4. FETCH MINERSTAT DATA
         setMinerstatLoading(true);
         const minerstatResult = await fetchMiningStats(
-          "minerstat", "VN", null, null, 20000, force
+          "minerstat", "ALL", null, null, 20000, force
         ).catch(err => {
           console.warn("Minerstat fetch failed:", err);
           setMinerstatError(err.message || "Failed to fetch");
@@ -134,7 +134,7 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "VN", mrr
         // 5. FETCH WHAT-TO-MINE DATA
         setWtmLoading(true);
         const wtmResult = await fetchMiningStats(
-          "whattomine", "VN", null, null, 20000, force
+          "whattomine", "ALL", null, null, 20000, force
         ).catch(err => {
           console.warn("WhatToMine fetch failed:", err);
           setWtmError(err.message || "Failed to fetch");
@@ -145,7 +145,7 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "VN", mrr
         // 6. FETCH HASHRATE.NO DATA
         setHashrateNoLoading(true);
         const hashrateNoResult = await fetchMiningStats(
-          "hashrate.no", "VN", null, null, 20000, force
+          "hashrate.no", "ALL", null, null, 20000, force
         ).catch(err => {
           console.warn("Hashrate.no fetch failed:", err);
           setHashrateNoError(err.message || "Failed to fetch");
@@ -189,51 +189,62 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "VN", mrr
 
         console.log(`🔍 Algorithms to fetch: ${algos.length}`, algos);
 
-        // ✅ Fetch NiceHash prices for each algorithm
+        // ✅ Fetch NiceHash prices for each algorithm.
+        // Prices are kept in each algorithm's NATURAL display unit (the same
+        // unit Mining-Dutch's pool revenue uses in this table). The server's
+        // /order/price endpoint returns { fixedPrice, speedUnit } where
+        // speedUnit is already that natural unit (e.g. GH for KAWPOW, EH for
+        // SHA256). We take { price, unit } verbatim — no invented TH scaling,
+        // no fabricated pool-proxy quotes that created fake +40 billion %
+        // spreads. Conversions are only applied where a unit is actually
+        // different (order book / active orders vs the direct API).
         let nextNiceHashPrices = {};
         let priceStatus = {};
 
         if (typeof onCall === "function" && algos.length > 0) {
-          // ✅ Try multiple methods to get prices
           const pricePairs = await Promise.all(
             algos.map(async (algo) => {
               let price = 0;
               let success = false;
               let method = "";
 
-              // ✅ Try 1: Direct algorithm name
+              // ✅ Try 1: Direct algorithm price API (returns { fixedPrice, speedUnit, ... })
               try {
                 const data = await onCall("/api/v2/hashpower/order/price", {
-                  query: { 
-                    algorithm: algo, 
-                    market: "USA", 
-                    client: nhClient 
+                  query: {
+                    algorithm: algo,
+                    market: "USA",
+                    client: nhClient,
                   },
                   silent: true,
                 });
-                price = getNiceHashPriceValue(data);
-                if (price > 0) {
+                const parsed = getNiceHashPriceWithUnit(data);
+                if (parsed.price > 0) {
+                  // Keep the server's natural unit price as-is (e.g. GH for
+                  // KAWPOW, EH for SHA256) — this unit space is what the MD
+                  // pool revenue column in Route Intel is measured in.
+                  price = parsed.price;
                   success = true;
                   method = "direct";
-                  console.log(`✅ NH price ${algo}: ${price} (direct)`);
+                  console.log(`✅ NH price ${algo}: ${price} BTC/${parsed.unit}/day (direct)`);
                 }
               } catch (e1) {
                 // Silent fail
               }
 
-              // ✅ Try 2: Use market price API
+              // ✅ Try 2: Order book (same natural unit as the direct API)
               if (!success) {
                 try {
                   const data = await onCall("/api/v2/hashpower/order-book", {
-                    query: { 
-                      algorithm: algo, 
-                      market: "USA", 
-                      client: nhClient 
+                    query: {
+                      algorithm: algo,
+                      market: "USA",
+                      client: nhClient,
                     },
                     silent: true,
                   });
                   if (data?.buy && data.buy.length > 0) {
-                    const highestBuy = data.buy.sort((a, b) => 
+                    const highestBuy = data.buy.sort((a, b) =>
                       parseFloat(b.price || 0) - parseFloat(a.price || 0)
                     )[0];
                     price = parseFloat(highestBuy.price || 0);
@@ -248,26 +259,26 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "VN", mrr
                 }
               }
 
-              // ✅ Try 3: Check active orders
+              // ✅ Try 3: Active orders (prices in the same natural unit)
               if (!success) {
                 try {
                   const data = await onCall("/api/v2/hashpower/myOrders", {
-                    query: { 
-                      op: "LE", 
-                      limit: 100, 
+                    query: {
+                      op: "LE",
+                      limit: 100,
                       client: nhClient,
-                      algorithm: algo 
+                      algorithm: algo,
                     },
                     silent: true,
                   });
                   const orders = data?.list || data?.myOrders || [];
-                  const activeOrders = orders.filter(o => 
+                  const activeOrders = orders.filter(o =>
                     (o.status?.code || o.status) === "ACTIVE"
                   );
                   if (activeOrders.length > 0) {
-                    const orderPrices = activeOrders.map(o => 
-                      parseFloat(o.price || 0)
-                    ).filter(p => p > 0);
+                    const orderPrices = activeOrders
+                      .map(o => parseFloat(o.price || 0))
+                      .filter(p => p > 0);
                     if (orderPrices.length > 0) {
                       price = Math.max(...orderPrices);
                       success = true;
@@ -280,18 +291,12 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "VN", mrr
                 }
               }
 
-              // ✅ Try 4: Use pool revenue as fallback
+              // ✅ Honest fallback: do NOT invent a price from pool revenue.
+              // With no real market quote there is no reliable benchmark, so
+              // leave the price at 0 and mark it unavailable. Fabricating a
+              // proxy produces fake astronomical spreads (e.g. +40 billion %).
               if (!success) {
-                const dutchAlgo = nextDutchRows.find(r => r.nicehashAlgo === algo);
-                if (dutchAlgo && dutchAlgo.btcPerDay > 0) {
-                  price = dutchAlgo.btcPerDay * 0.85; // 85% of pool as fallback
-                  success = true;
-                  method = "pool-proxy";
-                  priceStatus[algo] = `Using pool proxy (${dutchAlgo.btcPerDay})`;
-                  console.log(`🔄 NH fallback ${algo}: ${price} (pool proxy)`);
-                } else {
-                  priceStatus[algo] = "No price available";
-                }
+                priceStatus[algo] = "No price available";
               } else {
                 priceStatus[algo] = `OK (${method})`;
               }
@@ -307,8 +312,8 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "VN", mrr
 
         // Merge and build opportunities
         const nextRoutes = mergeMiningRoutes(
-          nextDutchRows, 
-          nextHeroRows, 
+          nextDutchRows,
+          nextHeroRows,
           nextMinerstatRows,
           nextWtmRows,
           nextHashrateNoRows,
@@ -354,7 +359,7 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "VN", mrr
       } catch (err) {
       }
     },
-    [nhClient, onCall],
+    [nhClient, onCall, mrrClient],
   );
 
   useEffect(() => {
@@ -378,8 +383,8 @@ export function MiningWorkspaceProvider({ children, onCall, nhClient = "VN", mrr
   );
   const routes = useMemo(
     () => mergeMiningRoutes(
-      miningDutchRows, 
-      heroRows, 
+      miningDutchRows,
+      heroRows,
       minerstatRows,
       wtmRows,
       hashrateNoRows,

@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 
 function formatPrice(value) {
   const num = Number(value);
-  if (!num) return "$0.00";
+  if (!Number.isFinite(num) || num <= 0) return "N/A";
   if (num >= 1) return `$${num.toFixed(2)}`;
   if (num >= 0.0001) return `$${num.toFixed(4)}`;
   if (num >= 0.000001) return `$${num.toFixed(8)}`;
@@ -61,6 +61,7 @@ export default function CoinPriceModal({
     setError(null);
     
     const coinId = coin.coinId || coin.symbol?.toLowerCase() || coin.name?.toLowerCase();
+    const normalizedSymbol = coin?.symbol?.toUpperCase();
     
     let foundPrice = 0;
 
@@ -69,7 +70,7 @@ export default function CoinPriceModal({
       const result = await onCall("/api/v2/prices/coingecko", { query: { coinId }, silent: true });
       const data = result?.data || {};
       // Server returns { success: true, data: { usd: 12345, ... } }
-      if (data.usd !== undefined && data.usd > 0) {
+      if (data.usd !== undefined && Number(data.usd) > 0) {
         foundPrice = parseFloat(data.usd);
         setPriceData({ price: foundPrice, marketCap: 0, volume24h: 0, change24h: 0, high24h: 0, low24h: 0, supply: 0, lastUpdated: new Date().toISOString() });
         setLastUpdated(new Date().toISOString());
@@ -79,57 +80,7 @@ export default function CoinPriceModal({
       }
     } catch { /* coin not in DB, continue */ }
 
-    // --- Try CoinMarketCap / price-provider fallback ---
-    try {
-      const result = await onCall("/api/v2/prices/update", { method: "POST", silent: true });
-      // After update, try CG again if we got data
-      if (result?.success) {
-        const retry = await onCall("/api/v2/prices/coingecko", { query: { coinId }, silent: true });
-        const data = retry?.data || {};
-        if (data.usd !== undefined && data.usd > 0) {
-          foundPrice = parseFloat(data.usd);
-          setPriceData({ price: foundPrice, marketCap: 0, volume24h: 0, change24h: 0, high24h: 0, low24h: 0, supply: 0, lastUpdated: new Date().toISOString() });
-          setLastUpdated(new Date().toISOString());
-          setSource("coingecko");
-          setLoading(false);
-          return;
-        }
-      }
-    } catch { /* price update failed */ }
-
-    // --- Try Coingecko via CoinGeckoService (fetches live) ---
-    const tryCoinIds = [...new Set([coinId, coin.name?.toLowerCase(), coin.symbol?.toLowerCase()].filter(Boolean))];
-    for (const cid of tryCoinIds) {
-      try {
-        // Use the correct endpoint that supports symbol resolution and returns the simple format
-        const result = await onCall("/api/v2/prices/coingecko", { query: { coinId: cid, vs_currencies: "usd" }, silent: true });
-        if (result?.data?.usd > 0) {
-          foundPrice = result.data.usd;
-          setPriceData({ price: foundPrice, marketCap: 0, volume24h: 0, change24h: 0, high24h: 0, low24h: 0, supply: 0, lastUpdated: new Date().toISOString() });
-          setLastUpdated(new Date().toISOString());
-          setSource("coingecko");
-          setLoading(false);
-          return;
-        }
-      } catch { /* try next */ }
-    }
-
-    // --- Try DB fallback ---
-    for (const id of tryCoinIds) {
-      try {
-        const dbResult = await onCall(`/api/v2/prices/db/${id}`, { silent: true });
-        if (dbResult?.success && dbResult.data?.price_usd > 0) {
-          const d = dbResult.data;
-          foundPrice = parseFloat(d.price_usd);
-          setPriceData({ price: foundPrice, marketCap: d.market_cap || 0, volume24h: d.volume_24h || 0, change24h: d.price_change_24h || 0, high24h: d.high_24h || 0, low24h: d.low_24h || 0, supply: d.circulating_supply || 0, lastUpdated: d.captured_at || new Date().toISOString() });
-          setSource("database");
-          setLoading(false);
-          return;
-        }
-      } catch { /* try next */ }
-    }
-
-    setError("Failed to fetch price data from all sources");
+    setError(`No database price found for ${normalizedSymbol || coin?.name || coin?.coinId || "this coin"}. It will appear after the hourly price refresh.`);
     setLoading(false);
   }, [coin, onCall]);
 

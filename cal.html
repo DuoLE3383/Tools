@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Base – 35% · Dark</title>
+    <style>
+        /* ── Reset & base (dark) ── */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #0e1219;
+            padding: 1rem;
+            color: #e8edf5;
+        }
+
+        /* ── Card ── */
+        .calculator {
+            background: #1a1f2b;
+            border-radius: 2rem;
+            padding: 2.2rem 2.5rem 2.8rem;
+            max-width: 520px;
+            width: 100%;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+            border: 1px solid #2a3140;
+            transition: transform 0.2s;
+        }
+
+        .calculator:hover {
+            transform: translateY(-2px);
+        }
+
+        /* ── Header ── */
+        .header {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 2rem;
+        }
+
+        .header .icon {
+            font-size: 1.8rem;
+            line-height: 1;
+        }
+
+        .header h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #f0f4fe;
+            letter-spacing: -0.02em;
+        }
+
+        .header .badge {
+            margin-left: auto;
+            background: #2d3b57;
+            color: #b6c8f0;
+            font-size: 0.7rem;
+            font-weight: 600;
+            padding: 0.2rem 0.9rem;
+            border-radius: 100px;
+            letter-spacing: 0.3px;
+            border: 1px solid #3e4b68;
+        }
+
+        /* ── Input group: number ── */
+        .input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .input-group label {
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: #a8b9d9;
+            letter-spacing: 0.2px;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .input-group label span {
+            color: #6a7fa0;
+            font-weight: 400;
+        }
+
+        .input-row {
+            display: flex;
+            gap: 0.75rem;
+            align-items: center;
+        }
+
+        .input-row input[type="number"] {
+            flex: 1;
+            padding: 0.85rem 1.2rem;
+            font-size: 1.15rem;
+            font-weight: 500;
+            border: 2px solid #2d3b57;
+            border-radius: 1.2rem;
+            background: #11161f;
+            color: #f0f4fe;
+            outline: none;
+            transition: border 0.25s, box-shadow 0.25s;
+            font-family: inherit;
+            -moz-appearance: textfield;
+            appearance: textfield;
+        }
+
+        .input-row input[type="number"]::-webkit-outer-spin-button,
+        .input-row input[type="number"]::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+
+        .input-row input[type="number"]:focus {
+            border-color: #5b7bc7;
+            box-shadow: 0 0 0 4px rgba(91, 123, 199, 0.15);
+        }
+
+        .input-row input[type="number"]::placeholder {
+            color: #4a5a7a;
+            font-weight: 400;
+        }
+
+        .input-row .suffix {
+            font-size: 1.1rem;
+            font-weight: 500;
+            color: #7a8db0;
+            padding-right: 0.2rem;
+        }
+
+        /* ── Percentage selector ── */
+        .percent-section {
+            margin-bottom: 1.8rem;
+        }
+
+        .percent-section .label-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.6rem;
+        }
+
+        .percent-section .label-row label {
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: #a8b9d9;
+        }
+
+        .percent-section .label-row .custom-percent {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .percent-section .label-row .custom-percent input {
+            width: 70px;
+            padding: 0.4rem 0.6rem;
+            font-size: 0.9rem;
+            font-weight: 500;
+            border: 2px solid #2d3b57;
+            border-radius: 0.8rem;
+            background: #11161f;
+            color: #f0f4fe;
+            outline: none;
+            text-align: center;
+            -moz-appearance: textfield;
+            appearance: textfield;
+            transition: border 0.25s;
+        }
+
+        .percent-section .label-row .custom-percent input::-webkit-outer-spin-button,
+        .percent-section .label-row .custom-percent input::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+
+        .percent-section .label-row .custom-percent input:focus {
+            border-color: #5b7bc7;
+            box-shadow: 0 0 0 3px rgba(91, 123, 199, 0.12);
+        }
+
+        .percent-section .label-row .custom-percent span {
+            color: #7a8db0;
+            font-weight: 500;
+            font-size: 0.9rem;
+        }
+
+        .percent-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.6rem;
+        }
+
+        .percent-buttons button {
+            flex: 1 0 auto;
+            min-width: 56px;
+            padding: 0.5rem 0.2rem;
+            background: #222b3b;
+            border: 1px solid #2d3b57;
+            border-radius: 1rem;
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: #b6c8f0;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: inherit;
+            text-align: center;
+        }
+
+        .percent-buttons button:hover {
+            background: #2d3b57;
+            border-color: #4a5f88;
+            transform: translateY(-1px);
+        }
+
+        .percent-buttons button.active {
+            background: #3b5190;
+            border-color: #5b7bc7;
+            color: #fff;
+            box-shadow: 0 0 12px rgba(91, 123, 199, 0.2);
+        }
+
+        .percent-buttons button:active {
+            transform: scale(0.96);
+        }
+
+        /* ── Calculate button ── */
+        .actions {
+            display: flex;
+            gap: 0.75rem;
+            margin-bottom: 1.8rem;
+        }
+
+        .actions button {
+            flex: 1;
+            padding: 0.9rem 1.2rem;
+            font-size: 1rem;
+            font-weight: 600;
+            border: none;
+            border-radius: 1.2rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-family: inherit;
+            letter-spacing: 0.3px;
+        }
+
+        .btn-calc {
+            background: #3b5190;
+            color: #fff;
+            box-shadow: 0 6px 16px rgba(59, 81, 144, 0.3);
+        }
+
+        .btn-calc:hover {
+            background: #2f4278;
+            transform: translateY(-2px);
+            box-shadow: 0 10px 24px rgba(59, 81, 144, 0.4);
+        }
+
+        .btn-calc:active {
+            transform: translateY(0);
+        }
+
+        .btn-clear {
+            background: #222b3b;
+            color: #a8b9d9;
+            border: 1px solid #2d3b57;
+        }
+
+        .btn-clear:hover {
+            background: #2d3b57;
+            transform: translateY(-2px);
+        }
+
+        .btn-clear:active {
+            transform: translateY(0);
+        }
+
+        /* ── Result ── */
+        .result {
+            background: #11161f;
+            border-radius: 1.4rem;
+            padding: 1.4rem 1.8rem;
+            border: 1px solid #2a3140;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 0.5rem 1rem;
+        }
+
+        .result .label {
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: #7a8db0;
+        }
+
+        .result .value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #f0f4fe;
+            letter-spacing: -0.02em;
+            word-break: break-all;
+            text-align: right;
+        }
+
+        .result .value .highlight {
+            color: #8aadff;
+        }
+
+        .result .value .dim {
+            color: #4a5a7a;
+            font-weight: 400;
+            font-size: 1.1rem;
+        }
+
+        /* ── Quick examples ── */
+        .examples {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 1.2rem;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .examples button {
+            background: #1a212e;
+            border: 1px solid #2d3b57;
+            padding: 0.35rem 1rem;
+            border-radius: 100px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            color: #a8b9d9;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-family: inherit;
+        }
+
+        .examples button:hover {
+            background: #2d3b57;
+            border-color: #4a5f88;
+            transform: translateY(-1px);
+        }
+
+        /* ── Responsive ── */
+        @media (max-width: 500px) {
+            .calculator {
+                padding: 1.5rem 1.2rem 2rem;
+                border-radius: 1.5rem;
+            }
+            .header h1 {
+                font-size: 1.2rem;
+            }
+            .input-row input[type="number"] {
+                font-size: 1rem;
+                padding: 0.7rem 1rem;
+            }
+            .percent-buttons button {
+                min-width: 44px;
+                font-size: 0.8rem;
+                padding: 0.4rem 0.2rem;
+            }
+            .percent-section .label-row .custom-percent input {
+                width: 60px;
+                font-size: 0.8rem;
+            }
+            .result .value {
+                font-size: 1.6rem;
+            }
+            .actions {
+                flex-direction: column;
+            }
+        }
+
+        @media (max-width: 380px) {
+            .calculator {
+                padding: 1rem 0.8rem 1.5rem;
+            }
+            .header .badge {
+                font-size: 0.6rem;
+                padding: 0.1rem 0.6rem;
+            }
+            .result .value {
+                font-size: 1.3rem;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="calculator" role="main" aria-label="Subtract percentage from base">
+
+        <!-- Header -->
+        <div class="header">
+            <span class="icon">⬇️</span>
+            <h1>Base – %</h1>
+            <span class="badge">subtract percent</span>
+        </div>
+
+        <!-- Number input (base) -->
+        <div class="input-group">
+            <label>
+                Base number
+                <span>– value to reduce</span>
+            </label>
+            <div class="input-row">
+                <input
+                type="number"
+                id="numberInput"
+                placeholder="e.g. 200"
+                step="any"
+                autofocus
+                aria-label="Enter the base number"
+                />
+            </div>
+        </div>
+
+        <!-- Percentage selection -->
+        <div class="percent-section">
+            <div class="label-row">
+                <label>Percentage to subtract</label>
+                <div class="custom-percent">
+                    <input
+                    type="number"
+                    id="percentInput"
+                    value="4"
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    aria-label="Custom percentage"
+                    />
+                    <span>%</span>
+                </div>
+            </div>
+            <div class="percent-buttons" id="percentButtons">
+                <button data-percent="1">1%</button>
+                <button data-percent="2">2%</button>
+                <button data-percent="3" class="active">3%</button>
+                <button data-percent="5">5%</button>
+                <button data-percent="7">7%</button>
+            </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="actions">
+            <button class="btn-calc" id="calcBtn">Calculate</button>
+            <button class="btn-clear" id="clearBtn">Clear</button>
+        </div>
+
+        <!-- Result -->
+        <div class="result" id="resultBox">
+            <span class="label">Base – %</span>
+            <span class="value" id="resultDisplay">
+                <span class="dim">—</span>
+            </span>
+        </div>
+
+        <!-- Quick examples (numbers) -->
+        <div class="examples">
+            <button data-value="100">100</button>
+            <button data-value="250">250</button>
+            <button data-value="480">480</button>
+            <button data-value="999">999</button>
+            <button data-value="1250">1,250</button>
+        </div>
+    </div>
+
+    <script>
+        (function() {
+            'use strict';
+
+            // ─── DOM refs ───────────────────────────────────────────────
+            const numberInput = document.getElementById('numberInput');
+            const percentInput = document.getElementById('percentInput');
+            const percentButtons = document.getElementById('percentButtons');
+            const calcBtn = document.getElementById('calcBtn');
+            const clearBtn = document.getElementById('clearBtn');
+            const resultDisplay = document.getElementById('resultDisplay');
+
+            // ─── Helpers ──────────────────────────────────────────────
+            function formatNumber(num) {
+                if (Number.isInteger(num)) return num.toString();
+                const s = num.toFixed(8);
+                return parseFloat(s).toString();
+            }
+
+            function computeAndDisplay() {
+                const rawNumber = numberInput.value.trim();
+                const rawPercent = percentInput.value.trim();
+
+                if (rawNumber === '' || rawPercent === '') {
+                    resultDisplay.innerHTML = `<span class="dim">Please fill both fields</span>`;
+                    return;
+                }
+
+                const num = Number(rawNumber);
+                const pct = Number(rawPercent);
+
+                if (isNaN(num) || !isFinite(num)) {
+                    resultDisplay.innerHTML = `<span class="dim">Invalid number</span>`;
+                    return;
+                }
+                if (isNaN(pct) || !isFinite(pct) || pct < 0) {
+                    resultDisplay.innerHTML = `<span class="dim">Invalid percentage</span>`;
+                    return;
+                }
+
+                // ★ NEW: subtract percentage from base
+                const result = num * (1 - pct / 100);
+                const formattedResult = formatNumber(result);
+                const formattedNum = formatNumber(num);
+                const formattedPct = formatNumber(pct);
+
+                resultDisplay.innerHTML = `
+                            <span class="highlight">${formattedResult}</span>
+                            <span class="dim">&nbsp;← ${formattedNum} − ${formattedPct}%</span>
+                        `;
+            }
+
+            function syncPercentButtons(percent) {
+                const buttons = percentButtons.querySelectorAll('button');
+                buttons.forEach(btn => {
+                    const val = parseFloat(btn.getAttribute('data-percent'));
+                    btn.classList.toggle('active', Math.abs(val - percent) < 0.001);
+                });
+            }
+
+            function setPercent(value) {
+                const clamped = Math.min(Math.max(value, 0), 100);
+                percentInput.value = clamped;
+                syncPercentButtons(clamped);
+                if (numberInput.value.trim() !== '') {
+                    computeAndDisplay();
+                }
+            }
+
+            // ─── Event listeners ──────────────────────────────────────
+
+            calcBtn.addEventListener('click', computeAndDisplay);
+
+            [numberInput, percentInput].forEach(input => {
+                input.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        computeAndDisplay();
+                    }
+                });
+            });
+
+            clearBtn.addEventListener('click', function() {
+                numberInput.value = '';
+                percentInput.value = '35';
+                syncPercentButtons(35);
+                resultDisplay.innerHTML = `<span class="dim">—</span>`;
+                numberInput.focus();
+            });
+
+            percentButtons.addEventListener('click', function(e) {
+                const btn = e.target.closest('button');
+                if (!btn) return;
+                const percent = parseFloat(btn.getAttribute('data-percent'));
+                if (!isNaN(percent) && isFinite(percent)) {
+                    setPercent(percent);
+                }
+            });
+
+            percentInput.addEventListener('input', function() {
+                const val = parseFloat(this.value);
+                if (!isNaN(val) && isFinite(val) && val >= 0 && val <= 100) {
+                    syncPercentButtons(val);
+                    if (numberInput.value.trim() !== '') {
+                        computeAndDisplay();
+                    }
+                } else {
+                    percentButtons.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+                }
+            });
+
+            let debounceTimer = null;
+            numberInput.addEventListener('input', function() {
+                clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(function() {
+                    if (this.value.trim() !== '' && percentInput.value.trim() !== '') {
+                        computeAndDisplay();
+                    } else {
+                        resultDisplay.innerHTML = `<span class="dim">—</span>`;
+                    }
+                }.bind(this), 300);
+            });
+
+            document.querySelectorAll('.examples button').forEach(function(btn) {
+                btn.addEventListener('click', function() {
+                    const val = this.getAttribute('data-value');
+                    if (val) {
+                        numberInput.value = val;
+                        if (percentInput.value.trim() !== '') {
+                            computeAndDisplay();
+                        }
+                    }
+                });
+            });
+
+            // ─── Initialisation ──────────────────────────────────────
+            syncPercentButtons(35);
+            numberInput.value = '100';
+            computeAndDisplay();
+            numberInput.focus();
+            numberInput.select();
+
+        })();
+    </script>
+</body>
+</html>

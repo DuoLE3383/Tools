@@ -149,7 +149,7 @@ async function getPriceRoi(info, acct, now) {
 
         const cacheKey = `${nhAlgo}:${acct}`;
         const cachedError = monitorNhPriceErrorCache.get(cacheKey);
-        if (cachedError && now - cachedError.ts < 10 * 60 * 1000) {
+        if (cachedError && now - cachedError.ts < 5 * 60 * 1000) {
             throw new Error(cachedError.message);
         }
 
@@ -185,7 +185,7 @@ async function getPriceRoi(info, acct, now) {
         const nhAlgoForLog = normalizeAlgoForNiceHash(info.algo);
         const cacheKey = `${nhAlgoForLog}:${acct}`;
         const cachedError = monitorNhPriceErrorCache.get(cacheKey);
-        if (!cachedError || cachedError.message !== err.message || now - cachedError.ts >= 10 * 60 * 1000) {
+        if (!cachedError || cachedError.message !== err.message || now - cachedError.ts >= 5 * 60 * 1000) {
             monitorNhPriceErrorCache.set(cacheKey, { message: err.message, ts: now });
             logger.warn(`[monitor] ROI price skipped for ${cacheKey}: ${err.message}`);
         }
@@ -312,6 +312,82 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
         zeroHashStart = 0;
     }
 
+    // --- Startup Alert ---
+    if (elapsedMs > 0 && elapsedMs < 3600000 && efficiency < 50) {
+        const startupKey = `${rental.id}_startup_50`;
+        if (now - (lastAlertTimes.get(startupKey) || 0) > ALERT_COOLDOWN_MS) {
+            const msg = TelegramTemplates.startup(acct, rental, info, efficiency, displayTarget, info.algo);
+            sendTelegramNotification(msg, {
+                type: 'STARTUP ALERT',
+                label: `Startup alert ${acct} ${rental.id}`
+            });
+            lastAlertTimes.set(startupKey, now);
+        }
+    }
+
+    // --- Completion Alert ---
+    if (remainingMs > 0 && remainingMs < 3600000 && efficiency < 70) {
+        const completionKey = `${rental.id}_completion_70`;
+        if (now - (lastAlertTimes.get(completionKey) || 0) > ALERT_COOLDOWN_MS) {
+            const msg = TelegramTemplates.completionAlert(acct, rental, info, efficiency, displayTarget, info.algo);
+            sendTelegramNotification(msg, {
+                type: 'ALMOST COMPLETE',
+                label: `Completion alert ${acct} ${rental.id}`
+            });
+            lastAlertTimes.set(completionKey, now);
+        }
+    }
+
+    // --- Completion Success Alert ---
+    if (remainingMs > 0 && remainingMs < 600000 && efficiency >= 95) {
+        const successKey = `${rental.id}_success_95`;
+        if (now - (lastAlertTimes.get(successKey) || 0) > ALERT_COOLDOWN_MS) {
+            const msg = TelegramTemplates.completionSuccess(
+                acct,
+                rental,
+                info,
+                efficiency,
+                advDisplay,
+                avgDisplay,
+                suffix,
+                info.algo
+            );
+            sendTelegramNotification(msg, {
+                type: 'RENTAL SUCCESS',
+                label: `Completion success ${acct} ${rental.id}`
+            });
+            lastAlertTimes.set(successKey, now);
+        }
+    }
+
+    // --- Perfect Efficiency Alert ---
+    if (efficiency >= 100) {
+        const perfectKey = `perfect_100_${rental.id}`;
+        if (now - (lastAlertTimes.get(perfectKey) || 0) >= 3600000) { // Cooldown of 1 hour
+            const msg = TelegramTemplates.perfectEfficiency(acct, rental, efficiency, info, remainingMs, info.algo);
+            sendTelegramNotification(msg, {
+                type: 'PERFECT 100%',
+                label: `Perfect efficiency ${acct} ${rental.id}`
+            });
+            lastAlertTimes.set(perfectKey, now);
+        }
+    }
+
+    // --- High ROI Alert ---
+    const HIGH_ROI_THRESHOLD = 20;
+    if (priceRoi !== null && priceRoi > HIGH_ROI_THRESHOLD) {
+        const alertKey = `${rental.id}_high_roi`;
+        // Check if cooldown has passed
+        if (now - (lastAlertTimes.get(alertKey) || 0) > ALERT_COOLDOWN_MS) {
+            const msg = TelegramTemplates.highRoiAlert(acct, rental, info, priceRoi);
+            sendTelegramNotification(msg, {
+                type: "HIGH ROI",
+                label: `High ROI ${acct} ${rental.id}`
+            });
+            lastAlertTimes.set(alertKey, now); // Update last alert time
+        }
+    }
+
     // --- New Rental Notification ---
     const isNewToMonitor = lastNotified === 0;
     const alreadyNotifiedThisRun = notifiedRentalIdsThisRun.has(String(rental.id));
@@ -337,7 +413,7 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
             : TelegramTemplates.newRental(
                 acct,
                 rentalForNotice,
-                info.price?.paid || "0.00",
+                info,
                 info.startTime,
                 info.endTime,
                 getAlgoMapping(info.algo).niceHash,
@@ -389,6 +465,7 @@ export async function processRental(rental, acct, now, forceNotify, notifiedRent
         advDisplay,                   // 8: ads
         currentDisplay,               // 9: cur (now with fallback)
         displayTarget,                // 10: target
+        '',                           // 11: optional extra content
         acct,                         // 12: client
         info                          // 13: info
     );
